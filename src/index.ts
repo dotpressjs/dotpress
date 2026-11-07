@@ -5,7 +5,12 @@ import { AuthSettings, DataProvider, KeyPairSettings } from './types/types.js'
 import { setSettings } from './lib/settings.js'
 import { registerHandlers } from './lib/handlers.js'
 import { attachAuthenticatedUser } from './lib/middleware.js'
-import { generateAccessToken } from './lib/tokens.js'
+import {
+  generateAccessToken,
+  generateTokensForUser,
+  generateRefreshToken,
+} from './lib/tokens.js'
+import { setAuthCookies } from './lib/cookies.js'
 
 type Settings = Partial<AuthSettings> & {
   keys: KeyPairSettings
@@ -34,4 +39,9 @@ export const generatePasswordHash = (
   return bcrypt.hash(password, salt)
 }
 
-export { generateAccessToken }
+export {
+  generateAccessToken,
+  generateRefreshToken,
+  generateTokensForUser,
+  setAuthCookies,
+}

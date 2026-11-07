@@ -1,0 +1,9 @@
+dist
+coverage
+pnpm-lock.yaml
+
+# Internal working documents
+docs
+
+# Hand-written documentation: no automatic reformatting
+*.md

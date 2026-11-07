@@ -1,4 +1,5 @@
 import express, {
+  Express,
   RequestHandler,
   Request,
   Response,
@@ -21,7 +22,7 @@ import {
 } from '../middlewares/file.js'
 import { registerResponseFilter } from './filters.js'
 
-export const createApp = async (options: AppOptions = {}) => {
+export const createApp = async (options: AppOptions = {}): Promise<Express> => {
   const app = express()
   app.use(express.json())
 

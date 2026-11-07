@@ -1,6 +1,7 @@
 import type { HttpError } from './errors.js'
 import type { QueryValues } from './http.js'
 import type { Logger } from './logger.js'
+import type { EmptyObject } from './path.js'
 import type { DotpressRequest } from './request.js'
 import type { DotpressResponse } from './response.js'
 import type { JsonResult, RawResult, ResponseResult } from './results.js'
@@ -51,19 +52,24 @@ export type ResponseFilter = (
 ) => unknown | Promise<unknown>
 
 /**
- * Request typed from the route schema.
+ * Request typed from the route schema. With `rawBody: true`, `rawBody` is
+ * always defined.
  */
-export type RouteRequest<S, TPathParams> = DotpressRequest<
+export type RouteRequest<S, TPathParams, TRawBody = false> = DotpressRequest<
   SchemaOutput<S, 'params', TPathParams>,
   SchemaOutput<S, 'query', QueryValues>,
   SchemaOutput<S, 'body', unknown>
->
+> &
+  (TRawBody extends true ? { readonly rawBody: Uint8Array } : EmptyObject)
 
 /**
  * Context received by a route handler.
  */
-export type HandlerContext<S, TPathParams> = Omit<RequestContext, 'req'> & {
-  req: RouteRequest<S, TPathParams>
+export type HandlerContext<S, TPathParams, TRawBody = false> = Omit<
+  RequestContext,
+  'req'
+> & {
+  req: RouteRequest<S, TPathParams, TRawBody>
 }
 
 /**
@@ -78,6 +84,6 @@ export type HandlerResult<S> = S extends { response: unknown }
     | undefined
   : unknown
 
-export type RouteHandler<S, TPathParams> = (
-  ctx: HandlerContext<S, TPathParams>
+export type RouteHandler<S, TPathParams, TRawBody = false> = (
+  ctx: HandlerContext<S, TPathParams, TRawBody>
 ) => HandlerResult<S> | Promise<HandlerResult<S>>

@@ -106,6 +106,27 @@ describe('type inference', () => {
     })
   })
 
+  it('types the raw body from the rawBody option', () => {
+    router.defineRoute({
+      method: 'post',
+      path: '/webhooks/stripe',
+      rawBody: true,
+      schema: (z) => ({ body: z.object({ type: z.string() }) }),
+      handler: ({ req }) => {
+        expectTypeOf(req.rawBody).toEqualTypeOf<Uint8Array>()
+        expectTypeOf(req.body).toEqualTypeOf<{ type: string }>()
+      },
+    })
+
+    router.defineRoute({
+      method: 'post',
+      path: '/regular',
+      handler: ({ req }) => {
+        expectTypeOf(req.rawBody).toEqualTypeOf<Uint8Array | undefined>()
+      },
+    })
+  })
+
   it('exposes context augmentations', () => {
     router.defineRoute({
       path: '/me',

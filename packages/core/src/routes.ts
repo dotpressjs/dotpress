@@ -34,6 +34,7 @@ export interface RouteConfig<
   P extends string,
   S extends RouteSchema,
   TParentParams = EmptyObject,
+  TRawBody extends boolean = false,
 > {
   /** Defaults to `get`. */
   method?: HttpMethod
@@ -41,7 +42,12 @@ export interface RouteConfig<
   schema?: SchemaDefinition<S>
   /** Route middlewares, run after global and group middlewares. */
   middlewares?: Middleware[]
-  handler: RouteHandler<S, Simplify<TParentParams & PathParams<P>>>
+  /**
+   * Keeps the raw bytes of the request body in `req.rawBody`, in addition
+   * to the parsed body. Use it to verify webhook signatures.
+   */
+  rawBody?: TRawBody
+  handler: RouteHandler<S, Simplify<TParentParams & PathParams<P>>, TRawBody>
   meta?: RouteMeta
   /** Success status. Defaults to 200 (204 when nothing is returned). */
   status?: number
@@ -58,12 +64,17 @@ export interface RouteRecord {
   readonly handler: RouteHandler<RouteSchema, Record<string, string>>
   readonly meta: RouteMeta
   readonly status: number | undefined
+  readonly rawBody: boolean
 }
 
 export interface RouteGroup<TParams = EmptyObject> {
   readonly prefix: string
-  defineRoute<const P extends string, S extends RouteSchema = EmptyObject>(
-    route: RouteConfig<P, S, TParams>
+  defineRoute<
+    const P extends string,
+    S extends RouteSchema = EmptyObject,
+    TRawBody extends boolean = false,
+  >(
+    route: RouteConfig<P, S, TParams, TRawBody>
   ): void
   /** Creates a nested group, inheriting the prefix and middlewares. */
   createGroup<const P extends string>(
@@ -100,7 +111,7 @@ export const createRouter = (): Router => {
   const register = (
     prefix: string,
     groupMiddlewares: readonly Middleware[],
-    route: RouteConfig<string, RouteSchema, unknown>
+    route: RouteConfig<string, RouteSchema, unknown, boolean>
   ) => {
     const method = route.method ?? 'get'
 
@@ -115,6 +126,10 @@ export const createRouter = (): Router => {
     const path = joinPaths(prefix, route.path)
     assertStatus(route.status, path)
 
+    if (route.rawBody !== undefined && typeof route.rawBody !== 'boolean') {
+      throw new TypeError(`Invalid rawBody option for route "${path}".`)
+    }
+
     routes.push({
       method,
       path,
@@ -123,6 +138,7 @@ export const createRouter = (): Router => {
       handler: route.handler as RouteRecord['handler'],
       meta: { ...route.meta },
       status: route.status,
+      rawBody: route.rawBody === true,
     })
   }
 
@@ -135,7 +151,7 @@ export const createRouter = (): Router => {
       register(
         prefix,
         middlewares,
-        route as unknown as RouteConfig<string, RouteSchema, unknown>
+        route as unknown as RouteConfig<string, RouteSchema, unknown, boolean>
       ),
     createGroup: (subPrefix, subMiddlewares = []) =>
       createGroup(joinPaths(prefix, normalizePath(subPrefix)), [

@@ -26,6 +26,12 @@ export interface DotpressRequest<
   readonly headers: Readonly<Record<string, string | undefined>>
   readonly cookies: Readonly<Record<string, string>>
   /**
+   * Raw bytes of the body, for instance to verify a webhook signature.
+   * Only defined on routes declared with `rawBody: true` (empty when the
+   * request has no body).
+   */
+  readonly rawBody: Uint8Array | undefined
+  /**
    * Aborted when the client disconnects. Pass it to long-running work
    * (database queries, `fetch()` calls, streams) to stop it early.
    */
@@ -62,7 +68,26 @@ const normalizeHeaders = (
 // Signal for adapters that cannot detect disconnections: it never aborts.
 const NEVER_ABORTED = new AbortController().signal
 
-export const createRequest = (input: NormalizedRequest): MutableRequest => {
+const EMPTY_BODY = new Uint8Array(0)
+
+const resolveRawBody = (input: NormalizedRequest): Uint8Array => {
+  if (input.rawBody !== undefined) return input.rawBody
+  if (input.body === undefined) return EMPTY_BODY
+
+  throw new Error(
+    'The raw request body is not available: it was probably read by a native middleware of the HTTP server before Dotpress.'
+  )
+}
+
+export interface CreateRequestOptions {
+  /** Exposes the raw body (`rawBody: true` routes). */
+  readonly rawBody?: boolean
+}
+
+export const createRequest = (
+  input: NormalizedRequest,
+  options: CreateRequestOptions = {}
+): MutableRequest => {
   const headers = normalizeHeaders(input.headers)
 
   return {
@@ -75,6 +100,7 @@ export const createRequest = (input: NormalizedRequest): MutableRequest => {
     headers,
     cookies: parseCookieHeader(headers.cookie),
     signal: input.signal ?? NEVER_ABORTED,
+    rawBody: options.rawBody ? resolveRawBody(input) : undefined,
     header: (name) => headers[name.toLowerCase()],
   }
 }

@@ -4,6 +4,7 @@ import type { Middleware, RequestContext, ResponseFilter } from './context.js'
 import {
   HttpError,
   isHttpError,
+  methodNotAllowedError,
   routeNotFoundError,
   toErrorBody,
   validationError,
@@ -15,6 +16,7 @@ import type {
   ResponseHeaders,
 } from './http.js'
 import type { Logger } from './logger.js'
+import type { RouteMatcher } from './matcher.js'
 import { getPathParamNames } from './path.js'
 import { createRequest, type MutableRequest } from './request.js'
 import {
@@ -229,6 +231,7 @@ export const compileRoute = (
     schema: Object.freeze({ ...schema }),
     meta: Object.freeze({ ...route.meta }),
     status: route.status,
+    rawBody: route.rawBody,
   })
 
   const validateRequest = async (
@@ -430,7 +433,7 @@ export const compileRoute = (
     const state = createResponseState()
 
     try {
-      const req = createRequest(request)
+      const req = createRequest(request, { rawBody: route.rawBody })
       ctx = {
         req,
         res: state,
@@ -486,7 +489,10 @@ export const compileRoute = (
 /**
  * Builds the runtime given to adapters.
  */
-export const createRuntime = (config: PipelineConfig) => {
+export const createRuntime = (
+  config: PipelineConfig,
+  matcher: RouteMatcher
+) => {
   const { handle: handleError } = createErrorHandler(config)
 
   const requestIdFor = (request: NormalizedRequest | undefined) => {
@@ -500,11 +506,17 @@ export const createRuntime = (config: PipelineConfig) => {
 
   return Object.freeze({
     logger: config.logger,
-    handleNotFound: async (request: NormalizedRequest) =>
-      withRequestId(
-        errorToResponse(routeNotFoundError()),
-        requestIdFor(request)
-      ),
+    handleNotFound: async (request: NormalizedRequest) => {
+      const allowed = matcher.allowedMethods(request.path)
+      const response =
+        allowed.length > 0
+          ? errorToResponse(methodNotAllowedError(), {
+              allow: allowed.map((method) => method.toUpperCase()).join(', '),
+            })
+          : errorToResponse(routeNotFoundError())
+
+      return withRequestId(response, requestIdFor(request))
+    },
     handleError: async (error: unknown, request?: NormalizedRequest) => {
       const requestId = requestIdFor(request)
       const logger = config.logger.child({ requestId })

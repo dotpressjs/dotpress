@@ -19,6 +19,8 @@ export interface RouteInfo {
   readonly schema: Readonly<RouteSchema>
   readonly meta: Readonly<RouteMeta>
   readonly status: number | undefined
+  /** Whether the route needs `NormalizedRequest.rawBody`. */
+  readonly rawBody: boolean
 }
 
 /**
@@ -39,7 +41,11 @@ export interface CompiledRoute {
  */
 export interface DotpressRuntime {
   readonly logger: Logger
-  /** Response for requests matching no route. Never rejects. */
+  /**
+   * Response for requests matching no route: `404 NOT_FOUND`, or
+   * `405 METHOD_NOT_ALLOWED` with an `Allow` header when the path exists for
+   * other methods. Never rejects.
+   */
   handleNotFound(request: NormalizedRequest): Promise<NormalizedResponse>
   /**
    * Response for errors raised by the adapter itself, for instance a body
@@ -56,6 +62,23 @@ export interface DotpressRuntime {
  *
  * An adapter translates native requests into `NormalizedRequest`, calls
  * `CompiledRoute.execute()`, and writes the returned `NormalizedResponse`.
+ * To behave like every other adapter, it must:
+ *
+ * - match routes with `createRouteMatcher()`, or follow its rules;
+ * - parse the query with `parseQueryString()`, and the body with
+ *   `parseRequestBody()`, limited to `DEFAULT_BODY_LIMIT` unless configured
+ *   otherwise (`PAYLOAD_TOO_LARGE`), rejecting `Content-Encoding` other than
+ *   `identity` (`UNSUPPORTED_MEDIA_TYPE`);
+ * - send body errors through `DotpressRuntime.handleError()`, and requests
+ *   matching no route through `DotpressRuntime.handleNotFound()`;
+ * - provide `NormalizedRequest.signal`, aborted when the client disconnects;
+ * - send the headers of streamed responses immediately and flush each
+ *   chunk; cancel the body stream when the client disconnects; abort the
+ *   connection (instead of ending the response) when the body stream fails;
+ * - not send a body for `HEAD` requests.
+ *
+ * New capabilities are always added as optional members, so that existing
+ * adapters keep working.
  */
 export interface HttpAdapter<TNative = unknown> {
   readonly name: string

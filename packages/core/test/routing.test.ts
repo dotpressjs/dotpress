@@ -74,6 +74,30 @@ describe('routing', () => {
     expect(res.headers['x-request-id']).toEqual(expect.any(String))
   })
 
+  it('returns 405 with an Allow header when the path exists for other methods', async () => {
+    const { inject } = await createTestApp((router) => {
+      router.defineRoute({ path: '/items', handler: () => [] })
+      router.defineRoute({
+        method: 'post',
+        path: '/items',
+        handler: () => null,
+      })
+    })
+
+    for (const method of ['PUT', 'OPTIONS']) {
+      const res = await inject({ method, url: '/items' })
+
+      expect(res.status).toBe(405)
+      expect(res.headers.allow).toBe('GET, HEAD, POST')
+      expect(res.headers['x-request-id']).toEqual(expect.any(String))
+      expect(res.body).toEqual({
+        status: 405,
+        error: 'METHOD_NOT_ALLOWED',
+        message: 'Method not allowed',
+      })
+    }
+  })
+
   describe('groups', () => {
     it('applies prefixes and middlewares to nested groups', async () => {
       const calls: string[] = []

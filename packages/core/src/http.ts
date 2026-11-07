@@ -66,6 +66,11 @@ export interface NormalizedRequest {
   /** Parsed request body (`undefined` when there is none). */
   body: unknown
   /**
+   * Raw bytes of the body, when the adapter read it itself. Required by
+   * routes declared with `rawBody: true`.
+   */
+  rawBody?: Uint8Array
+  /**
    * Aborted when the client disconnects before the response is complete.
    * Adapters should provide it, and also cancel a streamed response body
    * when the client goes away.

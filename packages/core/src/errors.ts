@@ -121,6 +121,25 @@ export const malformedBodyError = (message = 'Malformed request body') =>
   errorResponse(400, 'MALFORMED_BODY', message)
 
 /**
+ * Error used by adapters when the request body exceeds their size limit.
+ */
+export const payloadTooLargeError = (message = 'Request body too large') =>
+  errorResponse(413, 'PAYLOAD_TOO_LARGE', message)
+
+/**
+ * Error used by adapters for unsupported body encodings or charsets.
+ */
+export const unsupportedMediaTypeError = (message = 'Unsupported Media Type') =>
+  errorResponse(415, 'UNSUPPORTED_MEDIA_TYPE', message)
+
+/**
+ * Error returned when the path exists, but not for the request method. The
+ * response also carries an `Allow` header.
+ */
+export const methodNotAllowedError = () =>
+  errorResponse(405, 'METHOD_NOT_ALLOWED', 'Method not allowed')
+
+/**
  * Error returned when no route matches the request.
  */
 export const routeNotFoundError = () =>

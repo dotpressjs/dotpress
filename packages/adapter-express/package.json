@@ -1,0 +1,55 @@
+{
+  "name": "@dotpress/adapter-express",
+  "version": "2.0.0-alpha.0",
+  "description": "Express 4 and 5 adapter for Dotpress",
+  "author": "Renaud Guyon",
+  "license": "MIT",
+  "homepage": "https://dotpress.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/renoguyon/dotpress",
+    "directory": "packages/adapter-express"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "test:watch": "vitest watch"
+  },
+  "peerDependencies": {
+    "@dotpress/core": "workspace:^",
+    "express": "^4.21.0 || ^5.0.0"
+  },
+  "devDependencies": {
+    "@dotpress/core": "workspace:*",
+    "@dotpress/testing": "workspace:*",
+    "@types/express": "^5.0.6",
+    "express": "^5.3.0",
+    "express-4": "npm:express@^4.22.3",
+    "zod": "^4.6.7"
+  },
+  "keywords": [
+    "dotpress",
+    "express",
+    "adapter",
+    "typescript",
+    "zod"
+  ]
+}

@@ -1,14 +1,15 @@
 import {
   createApp,
+  createRouteMatcher,
   createRouter,
   malformedBodyError,
+  parseQueryString,
   type AppOptions,
   type CompiledRoute,
   type DotpressRuntime,
   type HttpAdapter,
   type NormalizedRequest,
   type NormalizedResponse,
-  type QueryValues,
   type Router,
 } from '../../src/index.js'
 
@@ -43,29 +44,6 @@ export interface MemoryAdapter extends HttpAdapter<{
   dispatch(options: InjectOptions): Promise<NormalizedResponse>
 }
 
-const matchPath = (
-  routePath: string,
-  path: string
-): Record<string, string> | undefined => {
-  const routeSegments = routePath.split('/').filter(Boolean)
-  const segments = path.split('/').filter(Boolean)
-
-  if (routeSegments.length !== segments.length) return undefined
-
-  const params: Record<string, string> = {}
-
-  for (const [index, routeSegment] of routeSegments.entries()) {
-    const segment = segments[index]!
-    if (routeSegment.startsWith(':')) {
-      params[routeSegment.slice(1)] = decodeURIComponent(segment)
-    } else if (routeSegment !== segment) {
-      return undefined
-    }
-  }
-
-  return params
-}
-
 const readBody = async (body: NormalizedResponse['body']) => {
   if (body === null) return undefined
   if (typeof body === 'string') return body
@@ -78,6 +56,7 @@ const readBody = async (body: NormalizedResponse['body']) => {
  */
 export const memoryAdapter = (): MemoryAdapter => {
   let routes: readonly CompiledRoute[] = []
+  let matcher = createRouteMatcher([])
   let runtime: DotpressRuntime | undefined
 
   const dispatch = async (
@@ -88,11 +67,7 @@ export const memoryAdapter = (): MemoryAdapter => {
     const url = new URL(options.url, 'http://localhost')
     const method = (options.method ?? 'GET').toLowerCase()
 
-    const query: QueryValues = {}
-    for (const key of new Set(url.searchParams.keys())) {
-      const values = url.searchParams.getAll(key)
-      query[key] = values.length === 1 ? values[0]! : values
-    }
+    const query = parseQueryString(url.search)
 
     const headers: Record<string, string | string[]> = {}
     for (const [name, value] of Object.entries(options.headers ?? {})) {
@@ -112,6 +87,7 @@ export const memoryAdapter = (): MemoryAdapter => {
     }
 
     if (options.rawBody !== undefined) {
+      request.rawBody = new TextEncoder().encode(options.rawBody)
       try {
         request.body = JSON.parse(options.rawBody)
       } catch {
@@ -119,12 +95,9 @@ export const memoryAdapter = (): MemoryAdapter => {
       }
     }
 
-    for (const route of routes) {
-      if (route.method !== method) continue
-      const params = matchPath(route.path, url.pathname)
-      if (params) {
-        return route.execute({ ...request, params })
-      }
+    const match = matcher.match(method, url.pathname)
+    if (match) {
+      return match.route.execute({ ...request, params: match.params })
     }
 
     return runtime.handleNotFound(request)
@@ -134,6 +107,7 @@ export const memoryAdapter = (): MemoryAdapter => {
     name: 'memory',
     mount(compiledRoutes, dotpressRuntime) {
       routes = compiledRoutes
+      matcher = createRouteMatcher(compiledRoutes)
       runtime = dotpressRuntime
     },
     native: () => ({ routes }),

@@ -1,5 +1,11 @@
 export { createApp, type App, type AppOptions } from './app.js'
 
+export {
+  DEFAULT_BODY_LIMIT,
+  parseQueryString,
+  parseRequestBody,
+} from './body.js'
+
 export type {
   CompiledRoute,
   DotpressRuntime,
@@ -33,12 +39,15 @@ export {
   internalError,
   isHttpError,
   malformedBodyError,
+  methodNotAllowedError,
   notFoundError,
+  payloadTooLargeError,
   routeNotFoundError,
   toErrorBody,
   tooManyRequestsError,
   unauthorizedError,
   unprocessableError,
+  unsupportedMediaTypeError,
   validationError,
   type ErrorBody,
   type ErrorData,
@@ -66,6 +75,12 @@ export {
   type LogLevel,
   type Logger,
 } from './logger.js'
+
+export {
+  createRouteMatcher,
+  type RouteMatch,
+  type RouteMatcher,
+} from './matcher.js'
 
 export type { EmptyObject, PathParams } from './path.js'
 

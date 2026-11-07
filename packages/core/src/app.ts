@@ -7,6 +7,7 @@ import type {
 import type { Middleware, ResponseFilter } from './context.js'
 import type { NormalizedRequest } from './http.js'
 import { createConsoleLogger, type Logger } from './logger.js'
+import { createRouteMatcher } from './matcher.js'
 import { routeKey } from './path.js'
 import {
   compileRoute,
@@ -109,7 +110,10 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
 
   const routers = options.routers ?? [globalRouter]
   const routes = compileRouters(routers, config)
-  const runtime: DotpressRuntime = createRuntime(config)
+  const runtime: DotpressRuntime = createRuntime(
+    config,
+    createRouteMatcher(routes)
+  )
 
   await adapter.mount(routes, runtime)
 

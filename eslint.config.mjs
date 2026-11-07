@@ -1,8 +1,12 @@
 // @ts-check
+import { builtinModules } from 'node:module'
 import { defineConfig } from 'eslint/config'
 import eslint from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
+
+// Packages that must stay runtime-agnostic: Web-standard APIs only.
+const RUNTIME_AGNOSTIC_SOURCES = ['packages/core/src/**/*.ts']
 
 export default defineConfig(
   {
@@ -10,5 +14,59 @@ export default defineConfig(
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,
-  eslintPluginPrettierRecommended
+  eslintPluginPrettierRecommended,
+  {
+    files: RUNTIME_AGNOSTIC_SOURCES,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: builtinModules.map((name) => ({
+            name,
+            message:
+              'Node.js modules are not allowed in runtime-agnostic packages.',
+          })),
+          patterns: [
+            {
+              group: ['node:*'],
+              message:
+                'Node.js modules are not allowed in runtime-agnostic packages.',
+            },
+            {
+              group: [
+                'express',
+                'express/*',
+                'hono',
+                'hono/*',
+                'fastify',
+                'fastify/*',
+                '@hono/*',
+                '@fastify/*',
+              ],
+              message:
+                'The core must not depend on an HTTP server. Use an adapter package.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        ...[
+          'Buffer',
+          'process',
+          'global',
+          'require',
+          'module',
+          '__dirname',
+          '__filename',
+          'setImmediate',
+          'clearImmediate',
+        ].map((name) => ({
+          name,
+          message:
+            'Node.js globals are not allowed in runtime-agnostic packages.',
+        })),
+      ],
+    },
+  }
 )

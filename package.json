@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "packageManager": "pnpm@10.34.9",
+  "packageManager": "pnpm@12.18.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "build": "pnpm -r build",
@@ -20,19 +20,20 @@
     "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.1",
-    "@eslint/js": "^9.39.5",
-    "@types/node": "^22.18.0",
-    "@vitest/ui": "^3.2.7",
-    "eslint": "^9.39.5",
+    "@changesets/cli": "^3.0.3",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "@types/supertest": "^7.2.1",
+    "@vitest/ui": "^5.1.0",
+    "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.7",
     "prettier": "^3.9.10",
-    "supertest": "^7.3.2",
-    "@types/supertest": "^6.0.3",
-    "tsup": "^8.5.1",
-    "typescript": "~5.9.3",
-    "typescript-eslint": "^8.46.0",
-    "vitest": "^3.2.7"
+    "supertest": "^7.3.1",
+    "tsup": "^9.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }

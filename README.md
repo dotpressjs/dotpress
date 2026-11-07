@@ -13,7 +13,7 @@ A lightweight, decorator-free TypeScript framework for building end-to-end typed
 
 ## Development
 
-Requirements: Node ≥ 22, pnpm 10.
+Requirements: Node ≥ 22.18, pnpm 12.
 
 ```sh
 pnpm install

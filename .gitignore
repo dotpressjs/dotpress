@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+*.tgz
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/
+.serverless/
+.claude/settings.local.json
+
+# Internal working documents (French), never published
+docs/

@@ -34,6 +34,7 @@ export type {
   LoginFailedEvent,
   LoginSuccessEvent,
   RefreshTokenData,
+  RefreshTokenReuseEvent,
   ResolvedAuthSettings,
   ResolvedCookieSettings,
   StoreRefreshTokenDto,

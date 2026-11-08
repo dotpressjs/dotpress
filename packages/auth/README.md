@@ -94,6 +94,8 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `aud` | — | `{ required?, isUserRoleAllowed(role, aud) }`: audience checked at login. |
 | `onLoginSuccess` / `onLoginFailed` | — | Login events (user, client, IP address). |
 | `getUserRoles` | `user.roles` / `user.role` | Roles checked by `requireRole()`. |
+| `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it. |
+| `onRefreshTokenReuse` | — | Called with `{ userId, familyId, jwtId }` when a session is revoked because a used refresh token was reused. |
 
 To convert PKCS#1 keys (`BEGIN RSA PRIVATE KEY`):
 
@@ -108,16 +110,23 @@ openssl rsa -RSAPublicKey_in -in public.pem -pubout -out public.spki.pem # BEGIN
 import type { DataProvider } from '@dotpress/auth'
 
 const dataProvider: DataProvider = {
-  storeRefreshToken: ({ tokenHash, userId, jwtId, expiresAt }) => db.refreshToken.create({ … }),
-  findRefreshToken: (tokenHash) => db.refreshToken.find({ tokenHash }),
-  markRefreshTokenAsUsed: (tokenHash) => db.refreshToken.update({ tokenHash }, { isUsed: true }),
+  storeRefreshToken: ({ tokenHash, userId, jwtId, familyId, expiresAt }) => db.refreshToken.create({ … }),
+  findRefreshToken: (tokenHash) => db.refreshToken.find({ tokenHash }), // { userId, jwtId, familyId, expiresAt, isUsed, usedAt, revokedAt }
+  markRefreshTokenAsUsed: (tokenHash, usedAt) => db.refreshToken.update({ tokenHash }, { isUsed: true, usedAt }),
   revokeTokens: (userId) => db.refreshToken.updateMany({ userId }, { revokedAt: new Date() }),
+  revokeTokenFamily: (familyId) => db.refreshToken.updateMany({ familyId }, { revokedAt: new Date() }),
   findUserById: (userId) => db.user.findPublicProfile(userId),
   findUserIdentifiers: (username) => db.user.findCredentials(username), // { userId, passwordHash, role? }
 }
 ```
 
 Refresh tokens are random 128-byte values; only their SHA-256 hash is stored.
+
+## Refresh token rotation
+
+Each refresh returns a new refresh token and invalidates the previous one. All the refresh tokens of a session share a `familyId`, created at login.
+
+A refresh token can only be used once. When a used token is presented again, it was probably stolen (the attacker and the legitimate client both hold it): the whole session is revoked, `onRefreshTokenReuse` is called, and the request gets `401 INVALID_REFRESH_TOKEN`. Within `refreshTokenReuseInterval` (10 seconds by default) after its first use, a token presented again gets a new token pair in the same session, like with Auth0 or Okta: concurrent refreshes (several tabs) and retries after a lost response keep working. The interval is counted from the first use and is not extended by later presentations. Reusing the token after the interval revokes the whole session, including the pairs issued within the interval.
 
 ## Service
 

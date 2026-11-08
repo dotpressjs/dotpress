@@ -68,6 +68,14 @@ export interface LoginFailedEvent {
   ipAddress: string
 }
 
+export interface RefreshTokenReuseEvent {
+  userId: string
+  /** Revoked session; undefined for tokens stored without family. */
+  familyId: string | undefined
+  /** `jti` of the access token the reused refresh token was issued with. */
+  jwtId: string
+}
+
 export interface LoginSuccessEvent {
   userId: string
   username: string
@@ -80,14 +88,23 @@ export interface StoreRefreshTokenDto {
   tokenHash: string
   userId: string
   jwtId: string
+  /**
+   * Session the token belongs to: created at login, kept by every
+   * rotation. Used to revoke the whole session when a token is reused.
+   */
+  familyId: string
   expiresAt: Date
 }
 
 export interface RefreshTokenData {
   userId: string
   jwtId: string
+  /** `null` or missing for tokens stored before families existed. */
+  familyId?: string | null
   expiresAt: Date
   isUsed: boolean
+  /** When the token was used (see `refreshTokenReuseInterval`). */
+  usedAt?: Date | null
   revokedAt?: Date | null
 }
 
@@ -104,8 +121,12 @@ export interface UserIdentifiers {
 export interface DataProvider {
   storeRefreshToken(payload: StoreRefreshTokenDto): Promise<void>
   findRefreshToken(tokenHash: string): Promise<RefreshTokenData | undefined>
-  markRefreshTokenAsUsed(tokenHash: string): Promise<void>
+  /** Marks a token as used, storing `usedAt`. */
+  markRefreshTokenAsUsed(tokenHash: string, usedAt: Date): Promise<void>
+  /** Revokes every refresh token of a user. */
   revokeTokens(userId: string): Promise<void>
+  /** Revokes every refresh token of a session (`familyId`). */
+  revokeTokenFamily(familyId: string): Promise<void>
   findUserById(userId: string): Promise<AuthUser | undefined>
   findUserIdentifiers(username: string): Promise<UserIdentifiers | undefined>
 }
@@ -130,6 +151,19 @@ export interface AuthSettings {
   onLoginFailed?: (event: LoginFailedEvent) => Promise<void>
   onLoginSuccess?: (event: LoginSuccessEvent) => Promise<void>
   /**
+   * Delay, in seconds after its first use, during which a refresh token can
+   * be presented again without being treated as stolen: concurrent
+   * refreshes (several tabs) and retries after a lost response get a new
+   * token pair in the same session. Defaults to 10; 0 disables it.
+   */
+  refreshTokenReuseInterval?: number
+  /**
+   * Called when a used refresh token is presented again after the reuse
+   * interval: the session has been revoked, as the token was probably
+   * stolen. Errors thrown by the hook are ignored.
+   */
+  onRefreshTokenReuse?: (event: RefreshTokenReuseEvent) => Promise<void>
+  /**
    * Roles of a user, checked by `requireRole()`. Defaults to its `roles`
    * array, or to its `role` string.
    */
@@ -137,12 +171,21 @@ export interface AuthSettings {
 }
 
 export interface ResolvedAuthSettings extends Required<
-  Omit<AuthSettings, 'cookies' | 'aud' | 'onLoginFailed' | 'onLoginSuccess'>
+  Omit<
+    AuthSettings,
+    | 'cookies'
+    | 'aud'
+    | 'onLoginFailed'
+    | 'onLoginSuccess'
+    | 'onRefreshTokenReuse'
+  >
 > {
   cookies: ResolvedCookieSettings
   aud: AudienceSettings | undefined
   onLoginFailed: ((event: LoginFailedEvent) => Promise<void>) | undefined
   onLoginSuccess: ((event: LoginSuccessEvent) => Promise<void>) | undefined
+  onRefreshTokenReuse:
+    ((event: RefreshTokenReuseEvent) => Promise<void>) | undefined
 }
 
 export interface TokenPair {

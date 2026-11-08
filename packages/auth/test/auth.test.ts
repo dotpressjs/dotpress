@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { decodeJwt, decodeProtectedHeader } from 'jose'
 import jwt from 'jsonwebtoken'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   AuthError,
   createAuth,
@@ -225,7 +225,6 @@ describe('createAuth()', () => {
     })
 
     it.each([
-      ['used', (data: { isUsed: boolean }) => (data.isUsed = true)],
       [
         'revoked',
         (data: { revokedAt?: Date | null }) => (data.revokedAt = new Date()),
@@ -242,6 +241,175 @@ describe('createAuth()', () => {
 
       await expect(auth.refreshTokens(pair)).rejects.toMatchObject({
         code: 'INVALID_REFRESH_TOKEN',
+      })
+    })
+
+    it('rejects invalid reuse intervals', () => {
+      expect(() => authWith({ refreshTokenReuseInterval: -1 })).toThrow(
+        'Invalid refreshTokenReuseInterval'
+      )
+    })
+
+    describe('reuse detection', () => {
+      const subject = { userId: 'u1', username: 'ada' }
+      const storedOf = (store: ReturnType<typeof createStore>, index: number) =>
+        [...store.refreshTokens.values()][index]!
+
+      it('keeps the session family across rotations', async () => {
+        const { auth, store } = authWith()
+        const pair = await auth.generateTokensForUser(subject)
+        await auth.refreshTokens(pair)
+
+        const [first, second] = [storedOf(store, 0), storedOf(store, 1)]
+        expect(first.familyId).toEqual(expect.any(String))
+        expect(second.familyId).toBe(first.familyId)
+        expect(first.usedAt).toBeInstanceOf(Date)
+      })
+
+      it('revokes the session when a used refresh token is presented again', async () => {
+        const onRefreshTokenReuse = vi.fn(async () => {})
+        const { auth, store } = authWith({
+          refreshTokenReuseInterval: 0,
+          onRefreshTokenReuse,
+        })
+        const stolen = await auth.generateTokensForUser(subject)
+        // The attacker (or the client) rotates first…
+        const rotated = await auth.refreshTokens(stolen)
+
+        // …then the other one presents the used token.
+        await expect(auth.refreshTokens(stolen)).rejects.toMatchObject({
+          code: 'REFRESH_TOKEN_REUSED',
+        })
+
+        // The whole session is revoked: the rotated token is unusable.
+        await expect(auth.refreshTokens(rotated)).rejects.toMatchObject({
+          code: 'INVALID_REFRESH_TOKEN',
+        })
+        expect(onRefreshTokenReuse).toHaveBeenCalledWith({
+          userId: 'u1',
+          familyId: storedOf(store, 0).familyId,
+          jwtId: storedOf(store, 0).jwtId,
+        })
+      })
+
+      it('only revokes the reused session', async () => {
+        const { auth } = authWith({ refreshTokenReuseInterval: 0 })
+        const laptop = await auth.generateTokensForUser(subject)
+        const phone = await auth.generateTokensForUser(subject)
+
+        await auth.refreshTokens(laptop)
+        await expect(auth.refreshTokens(laptop)).rejects.toMatchObject({
+          code: 'REFRESH_TOKEN_REUSED',
+        })
+
+        await expect(auth.refreshTokens(phone)).resolves.toMatchObject({
+          userId: 'u1',
+        })
+      })
+
+      it('issues a new pair in the same session within the reuse interval', async () => {
+        const onRefreshTokenReuse = vi.fn(async () => {})
+        const { auth, store } = authWith({ onRefreshTokenReuse })
+        const pair = await auth.generateTokensForUser(subject)
+        const rotated = await auth.refreshTokens(pair)
+        const firstUse = storedOf(store, 0).usedAt
+
+        // A second tab, or a retry after a lost response, presents the same
+        // token just after: it gets its own pair, in the same session.
+        const retried = await auth.refreshTokens(pair)
+
+        expect(retried.refreshToken).not.toBe(rotated.refreshToken)
+        expect(storedOf(store, 2).familyId).toBe(storedOf(store, 0).familyId)
+        // The interval stays counted from the first use.
+        expect(storedOf(store, 0).usedAt).toBe(firstUse)
+        await expect(auth.refreshTokens(rotated)).resolves.toMatchObject({
+          userId: 'u1',
+        })
+        await expect(auth.refreshTokens(retried)).resolves.toMatchObject({
+          userId: 'u1',
+        })
+        expect(onRefreshTokenReuse).not.toHaveBeenCalled()
+      })
+
+      it('revokes the pairs issued within the interval on a later reuse', async () => {
+        const { auth, store } = authWith()
+        const pair = await auth.generateTokensForUser(subject)
+        const rotated = await auth.refreshTokens(pair)
+        const retried = await auth.refreshTokens(pair)
+        storedOf(store, 0).usedAt = new Date(Date.now() - 11_000)
+
+        await expect(auth.refreshTokens(pair)).rejects.toMatchObject({
+          code: 'REFRESH_TOKEN_REUSED',
+        })
+        for (const tokens of [rotated, retried]) {
+          await expect(auth.refreshTokens(tokens)).rejects.toMatchObject({
+            code: 'INVALID_REFRESH_TOKEN',
+          })
+        }
+      })
+
+      it('revokes the session after the reuse interval', async () => {
+        const { auth, store } = authWith({ refreshTokenReuseInterval: 10 })
+        const pair = await auth.generateTokensForUser(subject)
+        const rotated = await auth.refreshTokens(pair)
+        storedOf(store, 0).usedAt = new Date(Date.now() - 11_000)
+
+        await expect(auth.refreshTokens(pair)).rejects.toMatchObject({
+          code: 'REFRESH_TOKEN_REUSED',
+        })
+        await expect(auth.refreshTokens(rotated)).rejects.toMatchObject({
+          code: 'INVALID_REFRESH_TOKEN',
+        })
+      })
+
+      it('revokes every session of the user for tokens stored without family', async () => {
+        const { auth, store } = authWith()
+        const legacy = await auth.generateTokensForUser(subject)
+        const other = await auth.generateTokensForUser(subject)
+        // Token stored before families existed, already used.
+        Object.assign(storedOf(store, 0), {
+          familyId: null,
+          isUsed: true,
+          usedAt: null,
+        })
+
+        await expect(auth.refreshTokens(legacy)).rejects.toMatchObject({
+          code: 'REFRESH_TOKEN_REUSED',
+        })
+        await expect(auth.refreshTokens(other)).rejects.toMatchObject({
+          code: 'INVALID_REFRESH_TOKEN',
+        })
+      })
+
+      it('starts a family when rotating a token stored without one', async () => {
+        const { auth, store } = authWith()
+        const legacy = await auth.generateTokensForUser(subject)
+        storedOf(store, 0).familyId = null
+
+        await auth.refreshTokens(legacy)
+        await auth.refreshTokens(legacy)
+
+        // Both pairs issued from the legacy token share the new family.
+        expect(storedOf(store, 1).familyId).toEqual(expect.any(String))
+        expect(storedOf(store, 2).familyId).toBe(storedOf(store, 1).familyId)
+      })
+
+      it('revokes the session even when the reuse hook fails', async () => {
+        const { auth } = authWith({
+          refreshTokenReuseInterval: 0,
+          onRefreshTokenReuse: async () => {
+            throw new Error('Alerting down')
+          },
+        })
+        const pair = await auth.generateTokensForUser(subject)
+        const rotated = await auth.refreshTokens(pair)
+
+        await expect(auth.refreshTokens(pair)).rejects.toMatchObject({
+          code: 'REFRESH_TOKEN_REUSED',
+        })
+        await expect(auth.refreshTokens(rotated)).rejects.toMatchObject({
+          code: 'INVALID_REFRESH_TOKEN',
+        })
       })
     })
 

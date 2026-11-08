@@ -13,6 +13,7 @@ import type {
   AuthUser,
   CreatedAccessToken,
   CreatedRefreshToken,
+  RefreshTokenData,
   ResolvedAuthSettings,
   ResolvedCookieSettings,
   TokenPair,
@@ -22,7 +23,11 @@ import type {
 const ALGORITHM = 'RS256'
 
 export type AuthErrorCode =
-  'INVALID_ACCESS_TOKEN' | 'INVALID_REFRESH_TOKEN' | 'EXPIRED_REFRESH_TOKEN'
+  | 'INVALID_ACCESS_TOKEN'
+  | 'INVALID_REFRESH_TOKEN'
+  | 'EXPIRED_REFRESH_TOKEN'
+  /** A used refresh token was presented again: its session is revoked. */
+  | 'REFRESH_TOKEN_REUSED'
 
 /**
  * Error raised by the token helpers.
@@ -48,6 +53,13 @@ export interface Auth {
   /**
    * Rotates a token pair. The access token may be expired, but must be
    * signed by the key pair and match the refresh token.
+   *
+   * A refresh token can only be used once. Within
+   * `refreshTokenReuseInterval` after its first use, it may be presented
+   * again (concurrent refreshes, retries after a lost response): a new pair
+   * is issued in the same session. After, presenting it again means it was
+   * probably stolen: the whole session (token family) is revoked, and
+   * `REFRESH_TOKEN_REUSED` is thrown.
    */
   refreshTokens(tokens: TokenPair): Promise<TokenPair & { userId: string }>
   /** Verifies a valid (not expired) access token. */
@@ -97,6 +109,15 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
   if (!settings.dataProvider) {
     throw new TypeError('createAuth() requires a dataProvider.')
   }
+  const reuseInterval = settings.refreshTokenReuseInterval
+  if (
+    reuseInterval !== undefined &&
+    (!Number.isFinite(reuseInterval) || reuseInterval < 0)
+  ) {
+    throw new RangeError(
+      'Invalid refreshTokenReuseInterval: expected a non-negative number of seconds.'
+    )
+  }
 
   return {
     keys: settings.keys,
@@ -108,6 +129,8 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     aud: settings.aud,
     onLoginFailed: settings.onLoginFailed,
     onLoginSuccess: settings.onLoginSuccess,
+    refreshTokenReuseInterval: settings.refreshTokenReuseInterval ?? 10,
+    onRefreshTokenReuse: settings.onRefreshTokenReuse,
     getUserRoles: settings.getUserRoles ?? defaultUserRoles,
   }
 }
@@ -234,14 +257,53 @@ export const createAuth = (input: AuthSettings): Auth => {
   const storeRefreshToken = async (
     userId: string,
     jwtId: string,
+    familyId: string,
     refreshToken: CreatedRefreshToken
   ) =>
     settings.dataProvider.storeRefreshToken({
       ...refreshToken,
       userId,
       jwtId,
+      familyId,
       expiresAt: addDaysFromNow(settings.refreshTokenTTLInDays),
     })
+
+  /**
+   * Handles a used refresh token presented again. Within the reuse
+   * interval (counted from its first use), it is a concurrent refresh or a
+   * retry after a lost response: returns, and a new token pair is issued in
+   * the same session. After, the token was probably stolen: the session is
+   * revoked.
+   */
+  const checkReuse = async (stored: RefreshTokenData): Promise<void> => {
+    const usedAt = stored.usedAt?.getTime()
+    if (
+      usedAt !== undefined &&
+      Date.now() - usedAt < settings.refreshTokenReuseInterval * 1000
+    ) {
+      return
+    }
+
+    const familyId = stored.familyId ?? undefined
+    if (familyId) {
+      await settings.dataProvider.revokeTokenFamily(familyId)
+    } else {
+      // Tokens stored without family: revoke every session of the user.
+      await settings.dataProvider.revokeTokens(stored.userId)
+    }
+
+    try {
+      await settings.onRefreshTokenReuse?.({
+        userId: stored.userId,
+        familyId,
+        jwtId: stored.jwtId,
+      })
+    } catch {
+      // The session is revoked; a failing notification must not hide it.
+    }
+
+    throw new AuthError('REFRESH_TOKEN_REUSED')
+  }
 
   const generateAccessToken = ({ userId, username, aud }: TokenSubject) =>
     signAccessToken({
@@ -270,7 +332,12 @@ export const createAuth = (input: AuthSettings): Auth => {
     async generateTokensForUser(subject) {
       const { jwtId, accessToken } = await generateAccessToken(subject)
       const refreshToken = await generateRefreshToken()
-      await storeRefreshToken(subject.userId, jwtId, refreshToken)
+      await storeRefreshToken(
+        subject.userId,
+        jwtId,
+        crypto.randomUUID(),
+        refreshToken
+      )
       return { accessToken, refreshToken: refreshToken.token }
     },
 
@@ -296,16 +363,19 @@ export const createAuth = (input: AuthSettings): Auth => {
       const stored =
         await settings.dataProvider.findRefreshToken(refreshTokenHash)
 
+      // Unknown token, or token presented with an access token it was not
+      // issued with: nothing proves possession of the session.
       if (
         !userId ||
         !stored ||
-        stored.revokedAt ||
-        stored.isUsed ||
         stored.userId !== userId ||
-        stored.jwtId !== claims.jti
+        stored.jwtId !== claims.jti ||
+        stored.revokedAt
       ) {
         throw new AuthError('INVALID_REFRESH_TOKEN')
       }
+
+      if (stored.isUsed) await checkReuse(stored)
 
       if (stored.expiresAt.getTime() <= Date.now()) {
         throw new AuthError('EXPIRED_REFRESH_TOKEN')
@@ -322,8 +392,22 @@ export const createAuth = (input: AuthSettings): Auth => {
       })
 
       const newRefreshToken = await generateRefreshToken()
-      await storeRefreshToken(userId, created.jwtId, newRefreshToken)
-      await settings.dataProvider.markRefreshTokenAsUsed(refreshTokenHash)
+      await storeRefreshToken(
+        userId,
+        created.jwtId,
+        // Tokens stored without family start one, derived from the token
+        // so that concurrent rotations land in the same family.
+        stored.familyId || stored.jwtId,
+        newRefreshToken
+      )
+      // A token reused within the interval keeps its first use date: the
+      // interval cannot be extended by presenting it again.
+      if (!stored.isUsed) {
+        await settings.dataProvider.markRefreshTokenAsUsed(
+          refreshTokenHash,
+          new Date()
+        )
+      }
 
       return {
         userId,

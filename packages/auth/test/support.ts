@@ -50,23 +50,39 @@ export const createStore = () => {
   const refreshTokens = new Map<string, RefreshTokenData>()
 
   const provider: DataProvider = {
-    storeRefreshToken: async ({ tokenHash, userId, jwtId, expiresAt }) => {
+    storeRefreshToken: async ({
+      tokenHash,
+      userId,
+      jwtId,
+      familyId,
+      expiresAt,
+    }) => {
       refreshTokens.set(tokenHash, {
         userId,
         jwtId,
+        familyId,
         expiresAt,
         isUsed: false,
+        usedAt: null,
         revokedAt: null,
       })
     },
     findRefreshToken: async (tokenHash) => refreshTokens.get(tokenHash),
-    markRefreshTokenAsUsed: async (tokenHash) => {
+    markRefreshTokenAsUsed: async (tokenHash, usedAt) => {
       const token = refreshTokens.get(tokenHash)
-      if (token) token.isUsed = true
+      if (token) {
+        token.isUsed = true
+        token.usedAt = usedAt
+      }
     },
     revokeTokens: async (userId) => {
       for (const token of refreshTokens.values()) {
         if (token.userId === userId) token.revokedAt = new Date()
+      }
+    },
+    revokeTokenFamily: async (familyId) => {
+      for (const token of refreshTokens.values()) {
+        if (token.familyId === familyId) token.revokedAt = new Date()
       }
     },
     findUserById: async (userId) => {

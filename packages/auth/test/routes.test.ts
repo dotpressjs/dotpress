@@ -183,11 +183,12 @@ describe('auth routes', () => {
       expect(refreshed).toMatchObject({ userId: 'u1', expiresIn: 3600 })
       expect(refreshed.refreshToken).not.toBe(tokens.refreshToken)
 
-      const reused = await fetch('/auth/refresh', postJson(tokens))
-      expect(reused.status).toBe(401)
-      expect(await reused.json()).toMatchObject({
-        message: 'INVALID_REFRESH_TOKEN',
-      })
+      // Retry within the reuse interval (lost response): a new pair.
+      const retried = await fetch('/auth/refresh', postJson(tokens))
+      expect(retried.status).toBe(200)
+      expect(((await retried.json()) as typeof tokens).refreshToken).not.toBe(
+        refreshed.refreshToken
+      )
     })
 
     it('rotates tokens sent as cookies, and only sets the new cookies', async () => {
@@ -249,6 +250,26 @@ describe('auth routes', () => {
       expect(refreshed.refreshToken).toBeUndefined()
       expect(refreshed.accessToken).toEqual(expect.any(String))
       expect(Object.keys(cookiesOf(res))).toEqual(['dotpress_refresh_token'])
+    })
+
+    it('revokes the session when a used refresh token is reused', async () => {
+      const { fetch } = await createAuthApp({
+        settings: { refreshTokenReuseInterval: 0 },
+      })
+      const { body: stolen } = await login(fetch)
+      const attacker = (await (
+        await fetch('/auth/refresh', postJson(stolen))
+      ).json()) as typeof stolen
+
+      const reused = await fetch('/auth/refresh', postJson(stolen))
+      expect(reused.status).toBe(401)
+      expect(await reused.json()).toMatchObject({
+        message: 'INVALID_REFRESH_TOKEN',
+      })
+
+      // The attacker's rotated tokens are revoked with the session.
+      const next = await fetch('/auth/refresh', postJson(attacker))
+      expect(next.status).toBe(401)
     })
 
     it('reports missing and expired tokens', async () => {

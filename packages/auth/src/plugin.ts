@@ -2,18 +2,21 @@ import {
   definePlugin,
   forbiddenError,
   internalError,
+  tooManyRequestsError,
   unauthorizedError,
   type DotpressRequest,
   type Middleware,
   type RouteGroup,
 } from '@dotpress/core'
 import { AuthError, type Auth } from './auth.js'
+import { sha256 } from './crypto.js'
 import { isCookieAuthenticationAllowed } from './csrf.js'
 import { requireAuth } from './middlewares.js'
 import type {
   IssuedTokens,
   LoginFailedEvent,
   ResolvedCookieSettings,
+  ResolvedLoginThrottleSettings,
   TokenPair,
 } from './types.js'
 import './context.js'
@@ -75,6 +78,30 @@ export const extractAccessToken = (
   req: DotpressRequest,
   cookies: ResolvedCookieSettings
 ): string | undefined => findAccessToken(req, cookies)?.token
+
+/**
+ * Counters of the login throttle for an attempt. The username is
+ * normalized (letter case, spaces), and the keys are hashed: bounded size,
+ * and no personal data in the store.
+ */
+const loginThrottleKeys = async (
+  throttle: ResolvedLoginThrottleSettings,
+  username: string,
+  ipAddress: string
+) => {
+  const normalized = username.trim().toLowerCase()
+  const { usernameAndIp, username: perUsername } = throttle.limits
+  return {
+    usernameAndIp: usernameAndIp && {
+      key: `dotpress:login:username-ip:${await sha256(`${normalized}\n${ipAddress}`)}`,
+      limit: usernameAndIp,
+    },
+    username: perUsername && {
+      key: `dotpress:login:username:${await sha256(normalized)}`,
+      limit: perUsername,
+    },
+  }
+}
 
 /** Response of the cookie routes to a cross-origin request. */
 const crossOriginError = () => forbiddenError('CROSS_ORIGIN_REQUEST')
@@ -202,6 +229,42 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         ipAddress: clientIp(req),
       }
 
+      // Brute force protection, before any password check: the attempt
+      // is counted first (atomic increment), so that parallel attempts
+      // cannot pass before the counter is updated.
+      const throttle = settings.loginThrottle
+      const counters =
+        throttle &&
+        (await loginThrottleKeys(throttle, username, event.ipAddress))
+      if (throttle && counters) {
+        let retryAfter = 0
+        for (const counter of [counters.usernameAndIp, counters.username]) {
+          if (!counter) continue
+          const state = await throttle.store.increment(
+            counter.key,
+            counter.limit.window
+          )
+          if (state.count > counter.limit.max) {
+            retryAfter = Math.max(
+              retryAfter,
+              Math.ceil((state.resetAt.getTime() - Date.now()) / 1000),
+              1
+            )
+          }
+        }
+        if (retryAfter > 0) {
+          await settings.onLoginFailed?.({
+            ...event,
+            errorType: 'too_many_attempts',
+          })
+          res.setHeader('retry-after', String(retryAfter))
+          return tooManyRequestsError('TOO_MANY_LOGIN_ATTEMPTS')
+        }
+      }
+
+      const rejected = await settings.beforeLogin?.({ ...event, req })
+      if (rejected) return rejected
+
       const user = await dataProvider.findUserIdentifiers(username)
       // The password is checked even for unknown users, against a dummy
       // hash: both failures take the same time.
@@ -232,6 +295,12 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         // login events: an unchecked value is not written in the token.
         clientId: clients ? clientId : undefined,
       })
+
+      // A successful login clears the counter of this client only: a
+      // distributed attack on the account keeps being counted.
+      if (throttle && counters?.usernameAndIp) {
+        await throttle.store.reset(counters.usernameAndIp.key)
+      }
 
       await settings.onLoginSuccess?.({ ...event, userId: user.userId })
 

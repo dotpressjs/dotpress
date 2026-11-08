@@ -1,3 +1,6 @@
+import type { DotpressRequest, HttpError } from '@dotpress/core'
+import type { RateLimitStore } from './rate-limit.js'
+
 /**
  * Authenticated user, as returned by `DataProvider.findUserById()`.
  * Declare its shape through module augmentation:
@@ -77,10 +80,62 @@ export type ResolvedCookieSettings = Required<
 
 export interface LoginFailedEvent {
   username: string
-  errorType: 'invalid_username' | 'invalid_password' | 'invalid_role'
+  errorType:
+    | 'invalid_username'
+    | 'invalid_password'
+    | 'invalid_role'
+    /** Blocked by the login throttle, before checking the password. */
+    | 'too_many_attempts'
   /** `clientId` sent at login; empty when missing. */
   clientId: string
   ipAddress: string
+}
+
+/** Login attempt, before the password is checked. */
+export interface BeforeLoginEvent {
+  username: string
+  /** `clientId` sent at login; empty when missing. */
+  clientId: string
+  ipAddress: string
+  req: DotpressRequest
+}
+
+/** At most `max` failed logins per `window` seconds. */
+export interface RateLimit {
+  max: number
+  window: number
+}
+
+/**
+ * Login throttle: failed logins are counted per username and IP address,
+ * and per username, whether the account exists or not.
+ */
+export interface LoginThrottleSettings {
+  /**
+   * Counters storage. Defaults to an in-memory store, for a single
+   * instance: use a shared store (Redis, database) with several instances.
+   */
+  store?: RateLimitStore
+  limits?: {
+    /**
+     * Against brute force from one client, without letting others block
+     * the account. Defaults to 5 per minute; `false` disables it.
+     */
+    usernameAndIp?: RateLimit | false
+    /**
+     * Against distributed brute force on an account. Defaults to 100 per
+     * hour (NIST 800-63B); `false` disables it.
+     */
+    username?: RateLimit | false
+  }
+}
+
+export interface ResolvedLoginThrottleSettings {
+  store: RateLimitStore
+  limits: {
+    usernameAndIp: RateLimit | undefined
+    username: RateLimit | undefined
+  }
 }
 
 export interface RefreshTokenReuseEvent {
@@ -221,6 +276,20 @@ export interface AuthSettings {
   onLoginFailed?: (event: LoginFailedEvent) => Promise<void>
   onLoginSuccess?: (event: LoginSuccessEvent) => Promise<void>
   /**
+   * Login throttle (brute force protection), enabled by default. `false`
+   * disables it, when the infrastructure (gateway, WAF) already limits
+   * `/auth/login`.
+   */
+  loginThrottle?: LoginThrottleSettings | false
+  /**
+   * Called before checking the password, after the login throttle: return
+   * an error (`tooManyRequestsError()`, `forbiddenError()`…) to reject the
+   * attempt, for example to require a CAPTCHA or to block an IP address.
+   */
+  beforeLogin?: (
+    event: BeforeLoginEvent
+  ) => Promise<HttpError | void> | HttpError | void
+  /**
    * bcrypt cost of `hashPassword()`, and of the dummy hash compared when
    * the user is unknown or has no password, so that every login takes the
    * same time. Set it to the cost of the hashes stored in the database.
@@ -255,6 +324,8 @@ export interface ResolvedAuthSettings extends Required<
     | 'session'
     | 'onLoginFailed'
     | 'onLoginSuccess'
+    | 'loginThrottle'
+    | 'beforeLogin'
     | 'onRefreshTokenReuse'
   >
 > {
@@ -263,6 +334,8 @@ export interface ResolvedAuthSettings extends Required<
   session: ResolvedSessionSettings
   onLoginFailed: ((event: LoginFailedEvent) => Promise<void>) | undefined
   onLoginSuccess: ((event: LoginSuccessEvent) => Promise<void>) | undefined
+  loginThrottle: ResolvedLoginThrottleSettings | undefined
+  beforeLogin: AuthSettings['beforeLogin']
   onRefreshTokenReuse:
     ((event: RefreshTokenReuseEvent) => Promise<void>) | undefined
 }

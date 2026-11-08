@@ -7,6 +7,8 @@ import {
   importSPKI,
   jwtVerify,
 } from 'jose'
+import { sha256, toHex } from './crypto.js'
+import { memoryRateLimitStore } from './rate-limit.js'
 import type {
   AuthSession,
   AuthSettings,
@@ -14,9 +16,12 @@ import type {
   CreatedAccessToken,
   CreatedRefreshToken,
   IssuedTokens,
+  LoginThrottleSettings,
+  RateLimit,
   RefreshTokenData,
   ResolvedAuthSettings,
   ResolvedCookieSettings,
+  ResolvedLoginThrottleSettings,
   ResolvedSessionSettings,
   SessionSettings,
   TokenPair,
@@ -138,6 +143,54 @@ const checkSession = (session: SessionSettings | undefined, name: string) => {
   }
 }
 
+const DEFAULT_LOGIN_LIMITS = {
+  usernameAndIp: { max: 5, window: 60 },
+  username: { max: 100, window: 60 * 60 },
+} as const
+
+const resolveLoginThrottle = (
+  input: LoginThrottleSettings | false | undefined
+): ResolvedLoginThrottleSettings | undefined => {
+  if (input === false) return undefined
+
+  const limit = (
+    name: keyof typeof DEFAULT_LOGIN_LIMITS
+  ): RateLimit | undefined => {
+    const value = input?.limits?.[name]
+    if (value === false) return undefined
+    const resolved = value ?? DEFAULT_LOGIN_LIMITS[name]
+    if (
+      !Number.isInteger(resolved.max) ||
+      resolved.max < 1 ||
+      !Number.isFinite(resolved.window) ||
+      resolved.window <= 0
+    ) {
+      throw new RangeError(
+        `Invalid loginThrottle.limits.${name}: expected a positive integer max and a positive window, in seconds.`
+      )
+    }
+    return { max: resolved.max, window: resolved.window }
+  }
+
+  const store = input?.store ?? memoryRateLimitStore()
+  if (
+    typeof store.increment !== 'function' ||
+    typeof store.reset !== 'function'
+  ) {
+    throw new TypeError(
+      'Invalid loginThrottle.store: expected increment() and reset() methods.'
+    )
+  }
+
+  return {
+    store,
+    limits: {
+      usernameAndIp: limit('usernameAndIp'),
+      username: limit('username'),
+    },
+  }
+}
+
 const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
   if (!settings?.keys?.secretKey || !settings.keys.publicKey) {
     throw new TypeError(
@@ -232,6 +285,8 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     clients: settings.clients,
     onLoginFailed: settings.onLoginFailed,
     onLoginSuccess: settings.onLoginSuccess,
+    loginThrottle: resolveLoginThrottle(settings.loginThrottle),
+    beforeLogin: settings.beforeLogin,
     passwordHashRounds: settings.passwordHashRounds ?? 10,
     refreshTokenReuseInterval: settings.refreshTokenReuseInterval ?? 10,
     onRefreshTokenReuse: settings.onRefreshTokenReuse,
@@ -272,16 +327,6 @@ const importKeys = async ({
     publicKey: await load('publicKey', () => importSPKI(publicKey, ALGORITHM)),
   }
 }
-
-const toHex = (bytes: Uint8Array) =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-
-const sha256 = async (value: string) =>
-  toHex(
-    new Uint8Array(
-      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-    )
-  )
 
 /** bcrypt hash format: `$2a$`, `$2b$` or `$2y$`, cost, salt and hash. */
 const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/

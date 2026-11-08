@@ -22,8 +22,16 @@ export {
   type AuthPluginOptions,
 } from './plugin.js'
 
+export {
+  memoryRateLimitStore,
+  type MemoryRateLimitStoreOptions,
+  type RateLimitState,
+  type RateLimitStore,
+} from './rate-limit.js'
+
 export type {
   AuthSession,
+  BeforeLoginEvent,
   AuthSettings,
   AuthUser,
   ClientSettings,
@@ -35,10 +43,13 @@ export type {
   KeyPairSettings,
   LoginFailedEvent,
   LoginSuccessEvent,
+  LoginThrottleSettings,
+  RateLimit,
   RefreshTokenData,
   RefreshTokenReuseEvent,
   ResolvedAuthSettings,
   ResolvedCookieSettings,
+  ResolvedLoginThrottleSettings,
   ResolvedSessionSettings,
   SessionSettings,
   StoreRefreshTokenDto,

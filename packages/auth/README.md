@@ -113,6 +113,8 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: client applications (see [Clients](#clients)). |
 | `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (`[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`), `accessTokenName`, `refreshTokenName`, `accessTokenInCookie` (`false`). |
 | `onLoginSuccess` / `onLoginFailed` | — | Login events (user, `clientId`, IP address). |
+| `loginThrottle` | enabled, in memory | Brute force protection: `{ store?, limits? }`, or `false`. See [Brute force protection](#brute-force-protection). |
+| `beforeLogin` | — | Called before checking the password: return an error to reject the attempt. |
 | `passwordHashRounds` | `10` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. Set it to the cost of the hashes stored in your database. |
 | `getUserRoles` | `user.roles` / `user.role` | Roles checked by `requireRole()`. |
 | `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it. |
@@ -123,6 +125,67 @@ To convert PKCS#1 keys (`BEGIN RSA PRIVATE KEY`):
 ```sh
 openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem
 openssl rsa -RSAPublicKey_in -in public.pem -pubout -out public.spki.pem # BEGIN RSA PUBLIC KEY only
+```
+
+## Brute force protection
+
+Login attempts are counted per username, whether the account exists or not (a `429` does not reveal it), before the password is checked:
+
+| Counter | Default | Against |
+| --- | --- | --- |
+| username + IP address | 5 per minute | brute force from one client, without letting others block the account |
+| username | 100 per hour (NIST 800-63B) | distributed brute force on an account |
+
+Over a limit, the login answers `429 TOO_MANY_LOGIN_ATTEMPTS` with a `Retry-After` header, and `onLoginFailed` gets `errorType: 'too_many_attempts'`. A successful login clears the counter of the client. Usernames are normalized (letter case, spaces), and the counter keys are hashed.
+
+```ts
+createAuth({
+  loginThrottle: {
+    store: redisStore, // see below
+    limits: { usernameAndIp: { max: 10, window: 60 }, username: false },
+  },
+})
+```
+
+`loginThrottle: false` disables it, when the infrastructure (gateway, WAF) already limits `/auth/login`. The client IP address comes from the HTTP server: behind a proxy, configure it to trust the proxy headers (Express `trust proxy`), or every client shares the proxy address.
+
+The default store keeps the counters in memory, for a single instance (with several instances, each one counts on its own). Use a shared store, which increments a counter atomically:
+
+```ts
+import type { RateLimitStore } from '@dotpress/auth'
+
+// Redis (ioredis)
+const redisStore: RateLimitStore = {
+  async increment(key, windowSeconds) {
+    const results = await redis
+      .multi()
+      .set(key, 0, 'EX', windowSeconds, 'NX') // starts a window
+      .incr(key)
+      .pttl(key)
+      .exec()
+    return { count: Number(results![1]![1]), resetAt: new Date(Date.now() + Number(results![2]![1])) }
+  },
+  reset: async (key) => void (await redis.del(key)),
+}
+```
+
+```sql
+-- PostgreSQL: rate_limits (key TEXT PRIMARY KEY, count INT, reset_at TIMESTAMPTZ)
+INSERT INTO rate_limits (key, count, reset_at) VALUES ($1, 1, now() + make_interval(secs => $2))
+ON CONFLICT (key) DO UPDATE SET
+  count = CASE WHEN rate_limits.reset_at <= now() THEN 1 ELSE rate_limits.count + 1 END,
+  reset_at = CASE WHEN rate_limits.reset_at <= now() THEN EXCLUDED.reset_at ELSE rate_limits.reset_at END
+RETURNING count, reset_at;
+```
+
+`beforeLogin` adds custom policies (CAPTCHA after some failures, blocked addresses…). It is called after the throttle, before the password check:
+
+```ts
+createAuth({
+  beforeLogin: async ({ username, ipAddress, clientId, req }) => {
+    if (await isBlocked(ipAddress)) return forbiddenError('LOGIN_BLOCKED')
+  },
+})
 ```
 
 ## Access tokens

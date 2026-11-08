@@ -83,7 +83,7 @@ For older browsers without `Sec-Fetch-Site`, the `Origin` is compared with the `
 
 The refresh token cookie is `SameSite=Strict`: it never accompanies a navigation from another site, while the requests of the app keep sending it.
 
-`authPlugin(auth, { prefix: '/api/auth' })` changes the prefix; `{ routes: false }` keeps only the authentication middleware.
+`authPlugin(auth, { prefix: '/api/auth' })` changes the prefix; `{ routes: false }` keeps only the authentication middleware; `{ jwks: true }` publishes the public keys (see [Keys and rotation](#keys-and-rotation)).
 
 ## Guards
 
@@ -104,7 +104,7 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `keys` | — | RSA key pair: `secretKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM). Tokens are signed with RS256. |
+| `keys` | — | RSA key pair: `secretKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM), plus optional `kid` and `additionalPublicKeys`. Tokens are signed with RS256. See [Keys and rotation](#keys-and-rotation). |
 | `dataProvider` | — | Storage of users and refresh tokens. |
 | `accessTokenTTL` | `3600` | Access token lifetime, in seconds. |
 | `session` | `{ idleTimeout: 14 days }` | Session lifetimes, in seconds: `idleTimeout` (inactivity) and `absoluteTimeout` (none by default). See [Sessions](#sessions). |
@@ -120,12 +120,45 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it. |
 | `onRefreshTokenReuse` | — | Called with `{ userId, familyId, jwtId }` when a session is revoked because a used refresh token was reused. |
 
+## Keys and rotation
+
+To generate a key pair:
+
+```sh
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem # PKCS#8
+openssl pkey -in private.pem -pubout -out public.pem # SPKI
+```
+
 To convert PKCS#1 keys (`BEGIN RSA PRIVATE KEY`):
 
 ```sh
 openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem
 openssl rsa -RSAPublicKey_in -in public.pem -pubout -out public.spki.pem # BEGIN RSA PUBLIC KEY only
 ```
+
+`createApp()` fails when `publicKey` does not match `secretKey`.
+
+Tokens carry a `kid` header: the RFC 7638 thumbprint of the public key, or `keys.kid`. It designates the verification key, among the configured keys only; tokens without `kid` (issued by V1) are tried with every key.
+
+To rotate keys without logging users out, accept other public keys with `additionalPublicKeys`:
+
+| Step | Configuration |
+| --- | --- |
+| 1. Announce the new key (rolling deployments) | old pair active, new public key in `additionalPublicKeys` |
+| 2. Switch | new pair active, old public key in `additionalPublicKeys` |
+| 3. After `session.idleTimeout` | remove the old public key |
+
+```ts
+keys: {
+  secretKey: process.env.JWT_PRIVATE_KEY!, // new pair
+  publicKey: process.env.JWT_PUBLIC_KEY!,
+  additionalPublicKeys: [process.env.JWT_PREVIOUS_PUBLIC_KEY!],
+}
+```
+
+Keep the old public key for the inactivity timeout of the sessions (14 days by default), not only for the access token lifetime: a refresh verifies the signature of the (expired) access token, so an inactive client still presents a token of the old key. After a compromise, configure the new pair alone at once: the tokens of the old key, including forged ones, are rejected, and every user logs in again.
+
+`authPlugin(auth, { jwks: true })` publishes the public keys at `GET /.well-known/jwks.json` (cached 5 minutes), so that other services can verify the tokens and follow rotations, for example with `createRemoteJWKSet()` of jose. `auth.getJwks()` returns the same key set.
 
 ## Brute force protection
 

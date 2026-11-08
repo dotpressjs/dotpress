@@ -122,6 +122,7 @@ describe('createAuth()', () => {
       expect(decodeProtectedHeader(accessToken)).toEqual({
         alg: 'RS256',
         typ: 'at+jwt',
+        kid: expect.any(String),
       })
       const claims = decodeJwt(accessToken)
       expect(claims).toMatchObject({

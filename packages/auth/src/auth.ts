@@ -1,11 +1,17 @@
 import type { DotpressResponse } from '@dotpress/core'
 import bcrypt from 'bcryptjs'
 import {
+  CompactSign,
   SignJWT,
+  calculateJwkThumbprint,
   compactVerify,
+  decodeProtectedHeader,
+  errors,
+  exportJWK,
   importPKCS8,
   importSPKI,
   jwtVerify,
+  type JWK,
 } from 'jose'
 import { sha256, toHex } from './crypto.js'
 import { memoryRateLimitStore } from './rate-limit.js'
@@ -83,6 +89,12 @@ export interface Auth {
    * from the `auth_time` claim).
    */
   getSessionExpiresAt(session: AuthSession): Date | undefined
+  /**
+   * Public keys as a JSON Web Key Set (RFC 7517): the active key first,
+   * then the additional keys. Other services can verify the tokens with
+   * it (`createRemoteJWKSet()` of jose).
+   */
+  getJwks(): Promise<{ keys: JWK[] }>
   /** Roles of a user, from the `getUserRoles` setting. */
   getUserRoles(user: AuthUser): readonly string[]
   /**
@@ -294,38 +306,129 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
   }
 }
 
+const PKCS1_PUBLIC_KEY_ERROR =
+  'PKCS#1 keys ("BEGIN RSA PUBLIC KEY") are not supported, use SPKI ("BEGIN PUBLIC KEY"). Convert it with: openssl rsa -RSAPublicKey_in -in public.pem -pubout -out public.spki.pem'
+
+/** Public key accepted to verify tokens. */
+interface VerificationKey {
+  kid: string
+  key: CryptoKey
+  jwk: JWK
+}
+
+const loadKey = async (kind: string, load: () => Promise<CryptoKey>) => {
+  try {
+    return await load()
+  } catch (error) {
+    throw new TypeError(
+      `Invalid auth ${kind}: expected an RSA PEM key (${(error as Error).message}).`,
+      { cause: error }
+    )
+  }
+}
+
+const loadPublicKey = async (
+  kind: string,
+  pem: string,
+  kid: string | undefined
+): Promise<VerificationKey> => {
+  if (pem.includes('BEGIN RSA PUBLIC KEY')) {
+    throw new TypeError(`Invalid auth ${kind}: ${PKCS1_PUBLIC_KEY_ERROR}`)
+  }
+  const key = await loadKey(kind, () =>
+    importSPKI(pem, ALGORITHM, { extractable: true })
+  )
+  const { kty, n, e } = await exportJWK(key)
+  const jwk: JWK = { kty, n, e }
+  return { kid: kid ?? (await calculateJwkThumbprint(jwk)), key, jwk }
+}
+
 const importKeys = async ({
   secretKey,
   publicKey,
+  kid,
+  additionalPublicKeys = [],
 }: ResolvedAuthSettings['keys']) => {
   if (secretKey.includes('BEGIN RSA PRIVATE KEY')) {
     throw new TypeError(
       'Invalid auth secretKey: PKCS#1 keys ("BEGIN RSA PRIVATE KEY") are not supported, use PKCS#8 ("BEGIN PRIVATE KEY"). Convert it with: openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem'
     )
   }
-  if (publicKey.includes('BEGIN RSA PUBLIC KEY')) {
+
+  const privateKey = await loadKey('secretKey', () =>
+    importPKCS8(secretKey, ALGORITHM)
+  )
+  const active = await loadPublicKey('publicKey', publicKey, kid)
+
+  // A public key that does not match the private key would reject every
+  // token: fail at startup instead.
+  try {
+    const probe = await new CompactSign(new Uint8Array([1]))
+      .setProtectedHeader({ alg: ALGORITHM })
+      .sign(privateKey)
+    await compactVerify(probe, active.key)
+  } catch (error) {
     throw new TypeError(
-      'Invalid auth publicKey: PKCS#1 keys ("BEGIN RSA PUBLIC KEY") are not supported, use SPKI ("BEGIN PUBLIC KEY"). Convert it with: openssl rsa -RSAPublicKey_in -in public.pem -pubout -out public.spki.pem'
+      'Invalid auth keys: publicKey does not match secretKey.',
+      { cause: error }
     )
   }
 
-  const load = async (kind: string, load: () => Promise<CryptoKey>) => {
-    try {
-      return await load()
-    } catch (error) {
+  const verificationKeys = [active]
+  for (const [index, entry] of additionalPublicKeys.entries()) {
+    const { publicKey: pem, kid: entryKid } =
+      typeof entry === 'string' ? { publicKey: entry, kid: undefined } : entry
+    const loaded = await loadPublicKey(
+      `additionalPublicKeys[${index}]`,
+      pem,
+      entryKid
+    )
+    const existing = verificationKeys.find((item) => item.kid === loaded.kid)
+    if (!existing) {
+      verificationKeys.push(loaded)
+    } else if (
+      existing.jwk.n !== loaded.jwk.n ||
+      existing.jwk.e !== loaded.jwk.e
+    ) {
       throw new TypeError(
-        `Invalid auth ${kind}: expected an RSA PEM key (${(error as Error).message}).`,
-        { cause: error }
+        `Invalid auth keys: kid "${loaded.kid}" is used by several keys.`
       )
     }
   }
 
-  return {
-    privateKey: await load('secretKey', () =>
-      importPKCS8(secretKey, ALGORITHM)
-    ),
-    publicKey: await load('publicKey', () => importSPKI(publicKey, ALGORITHM)),
+  return { privateKey, kid: active.kid, verificationKeys }
+}
+
+/**
+ * Verifies a token with the key designated by its `kid` header, chosen
+ * among the configured keys only. Tokens without `kid` (issued by V1) are
+ * tried with every key.
+ */
+const verifyWithKeys = async <T>(
+  token: string,
+  verificationKeys: readonly VerificationKey[],
+  verify: (key: CryptoKey) => Promise<T>
+): Promise<T> => {
+  const { kid } = decodeProtectedHeader(token)
+  const candidates =
+    kid === undefined
+      ? verificationKeys
+      : verificationKeys.filter((item) => item.kid === kid)
+  if (candidates.length === 0) {
+    throw new errors.JWKSNoMatchingKey(`Unknown key id: ${String(kid)}`)
   }
+
+  let lastError: unknown
+  for (const candidate of candidates) {
+    try {
+      return await verify(candidate.key)
+    } catch (error) {
+      // Only a signature mismatch means another key may match.
+      if (!(error instanceof errors.JWSSignatureVerificationFailed)) throw error
+      lastError = error
+    }
+  }
+  throw lastError
 }
 
 /** bcrypt hash format: `$2a$`, `$2b$` or `$2y$`, cost, salt and hash. */
@@ -414,7 +517,7 @@ export const createAuth = (input: AuthSettings): Auth => {
     auth_time: number
     client_id?: string
   }): Promise<CreatedAccessToken> => {
-    const { privateKey } = await getKeys()
+    const { privateKey, kid } = await getKeys()
     const jwtId = crypto.randomUUID()
     const issuedAt = nowInSeconds()
     // An access token never outlives its session.
@@ -428,7 +531,7 @@ export const createAuth = (input: AuthSettings): Auth => {
       auth_time: claims.auth_time,
       ...(claims.client_id !== undefined && { client_id: claims.client_id }),
     })
-      .setProtectedHeader({ alg: ALGORITHM, typ: ACCESS_TOKEN_TYPE })
+      .setProtectedHeader({ alg: ALGORITHM, typ: ACCESS_TOKEN_TYPE, kid })
       .setSubject(claims.sub)
       .setIssuer(settings.issuer)
       .setAudience(settings.audience)
@@ -575,7 +678,7 @@ export const createAuth = (input: AuthSettings): Auth => {
     },
 
     async refreshTokens({ accessToken, refreshToken }) {
-      const { publicKey } = await getKeys()
+      const { verificationKeys } = await getKeys()
 
       let claims: Record<string, unknown>
       let legacy: boolean
@@ -584,10 +687,10 @@ export const createAuth = (input: AuthSettings): Auth => {
         // `iss`, `aud` and `typ` are not checked, so that tokens issued
         // by V1 (or before a configuration change) are migrated. The
         // stored refresh token proves the session.
-        const { payload, protectedHeader } = await compactVerify(
+        const { payload, protectedHeader } = await verifyWithKeys(
           accessToken,
-          publicKey,
-          { algorithms: [ALGORITHM] }
+          verificationKeys,
+          (key) => compactVerify(accessToken, key, { algorithms: [ALGORITHM] })
         )
         claims = JSON.parse(new TextDecoder().decode(payload)) as Record<
           string,
@@ -673,14 +776,19 @@ export const createAuth = (input: AuthSettings): Auth => {
     },
 
     async verifyAccessToken(accessToken) {
-      const { publicKey } = await getKeys()
+      const { verificationKeys } = await getKeys()
       try {
-        const { payload } = await jwtVerify(accessToken, publicKey, {
-          algorithms: [ALGORITHM],
-          typ: ACCESS_TOKEN_TYPE,
-          issuer: settings.issuer,
-          audience: settings.audience,
-        })
+        const { payload } = await verifyWithKeys(
+          accessToken,
+          verificationKeys,
+          (key) =>
+            jwtVerify(accessToken, key, {
+              algorithms: [ALGORITHM],
+              typ: ACCESS_TOKEN_TYPE,
+              issuer: settings.issuer,
+              audience: settings.audience,
+            })
+        )
         const session = toSession(payload as Record<string, unknown>, [])
         if (!isClientAccepted(session.clientId)) {
           throw new AuthError('INVALID_ACCESS_TOKEN')
@@ -689,6 +797,18 @@ export const createAuth = (input: AuthSettings): Auth => {
       } catch (error) {
         if (error instanceof AuthError) throw error
         throw new AuthError('INVALID_ACCESS_TOKEN', { cause: error })
+      }
+    },
+
+    async getJwks() {
+      const { verificationKeys } = await getKeys()
+      return {
+        keys: verificationKeys.map(({ kid, jwk }) => ({
+          ...jwk,
+          kid,
+          alg: ALGORITHM,
+          use: 'sig',
+        })),
       }
     },
 

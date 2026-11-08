@@ -30,6 +30,7 @@ export {
 } from './rate-limit.js'
 
 export type {
+  AdditionalPublicKey,
   AuthSession,
   BeforeLoginEvent,
   AuthSettings,

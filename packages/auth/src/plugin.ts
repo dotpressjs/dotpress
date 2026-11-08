@@ -26,6 +26,11 @@ export interface AuthPluginOptions {
   prefix?: string
   /** Registers the authentication routes. Defaults to `true`. */
   routes?: boolean
+  /**
+   * Publishes the public keys at `GET /.well-known/jwks.json`, for other
+   * services verifying the tokens. Defaults to `false`.
+   */
+  jwks?: boolean
 }
 
 /** Security schemes of the plugin, for documentation generators. */
@@ -505,6 +510,18 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       }
 
       api.addGlobalMiddleware(authenticate)
+
+      if (options.jwks) {
+        api.addRoute({
+          path: '/.well-known/jwks.json',
+          meta: { tags: ['auth'], summary: 'Public keys of the access tokens' },
+          handler: async ({ res }) => {
+            // Short cache: verifiers pick up a rotation within minutes.
+            res.setHeader('cache-control', 'public, max-age=300')
+            return auth.getJwks()
+          },
+        })
+      }
 
       if (options.routes !== false) {
         registerRoutes(api.addRouteGroup(prefix), auth)

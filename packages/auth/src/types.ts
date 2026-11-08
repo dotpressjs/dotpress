@@ -37,6 +37,22 @@ export interface KeyPairSettings {
   secretKey: string
   /** RSA public key, PEM encoded in SPKI (`BEGIN PUBLIC KEY`). */
   publicKey: string
+  /**
+   * Key identifier (`kid` header of the tokens). Defaults to the RFC 7638
+   * thumbprint of the public key.
+   */
+  kid?: string
+  /**
+   * Other public keys accepted to verify tokens (SPKI PEM, with an optional
+   * `kid`, defaulting to their thumbprint): the previous key after a
+   * rotation, or the next key before it, during rolling deployments.
+   */
+  additionalPublicKeys?: readonly (string | AdditionalPublicKey)[]
+}
+
+export interface AdditionalPublicKey {
+  publicKey: string
+  kid?: string
 }
 
 export interface CookieSettings {

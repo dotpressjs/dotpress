@@ -13,6 +13,31 @@ const RUNTIME_AGNOSTIC_SOURCES = [
   'packages/openapi/src/**/*.ts',
 ]
 
+const NODE_MESSAGE =
+  'Node.js modules are not allowed in runtime-agnostic packages.'
+const NODE_MODULES = builtinModules.map((name) => ({
+  name,
+  message: NODE_MESSAGE,
+}))
+const NODE_PROTOCOL = { group: ['node:*'], message: NODE_MESSAGE }
+const NODE_GLOBALS = [
+  'error',
+  ...[
+    'Buffer',
+    'process',
+    'global',
+    'require',
+    'module',
+    '__dirname',
+    '__filename',
+    'setImmediate',
+    'clearImmediate',
+  ].map((name) => ({
+    name,
+    message: 'Node.js globals are not allowed in runtime-agnostic packages.',
+  })),
+]
+
 export default defineConfig(
   {
     ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'docs/**'],
@@ -33,17 +58,9 @@ export default defineConfig(
       'no-restricted-imports': [
         'error',
         {
-          paths: builtinModules.map((name) => ({
-            name,
-            message:
-              'Node.js modules are not allowed in runtime-agnostic packages.',
-          })),
+          paths: NODE_MODULES,
           patterns: [
-            {
-              group: ['node:*'],
-              message:
-                'Node.js modules are not allowed in runtime-agnostic packages.',
-            },
+            NODE_PROTOCOL,
             {
               group: [
                 'express',
@@ -61,24 +78,20 @@ export default defineConfig(
           ],
         },
       ],
-      'no-restricted-globals': [
+      'no-restricted-globals': NODE_GLOBALS,
+    },
+  },
+  {
+    // Main entry of the Hono adapter: Hono and Web-standard APIs only. The
+    // Node.js server lives in its `node` entry.
+    files: ['packages/adapter-hono/src/**/*.ts'],
+    ignores: ['packages/adapter-hono/src/node.ts'],
+    rules: {
+      'no-restricted-imports': [
         'error',
-        ...[
-          'Buffer',
-          'process',
-          'global',
-          'require',
-          'module',
-          '__dirname',
-          '__filename',
-          'setImmediate',
-          'clearImmediate',
-        ].map((name) => ({
-          name,
-          message:
-            'Node.js globals are not allowed in runtime-agnostic packages.',
-        })),
+        { paths: NODE_MODULES, patterns: [NODE_PROTOCOL] },
       ],
+      'no-restricted-globals': NODE_GLOBALS,
     },
   }
 )

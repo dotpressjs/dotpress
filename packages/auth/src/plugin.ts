@@ -56,11 +56,15 @@ const bodyField = (body: unknown, key: string): string | undefined => {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
-/** Access token of a request, and where it was found. */
+/**
+ * Access token of a request, and where it was found. The request body is
+ * never read: an app route may receive an `accessToken` field of its own
+ * (a third-party token, for example), and RFC 6750 discourages it.
+ */
 const findAccessToken = (
   req: DotpressRequest,
   cookies: ResolvedCookieSettings
-): { token: string; source: 'header' | 'cookie' | 'body' } | undefined => {
+): { token: string; source: 'header' | 'cookie' } | undefined => {
   const header = req.header('authorization')
   if (header?.startsWith('Bearer ')) {
     return { token: header.slice('Bearer '.length), source: 'header' }
@@ -71,13 +75,12 @@ const findAccessToken = (
     if (cookie) return { token: cookie, source: 'cookie' }
   }
 
-  const body = bodyField(req.body, 'accessToken')
-  return body === undefined ? undefined : { token: body, source: 'body' }
+  return undefined
 }
 
 /**
  * Access token of a request: `Authorization: Bearer` header, then cookie
- * (when enabled), then `accessToken` body field.
+ * (when enabled). The request body is never read.
  */
 export const extractAccessToken = (
   req: DotpressRequest,

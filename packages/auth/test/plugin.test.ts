@@ -34,7 +34,7 @@ const whoAmI = (router: ReturnType<typeof createRouter>) => {
 
 describe('authPlugin()', () => {
   describe('authentication', () => {
-    it('reads the bearer token, then the cookie, then the body', async () => {
+    it('reads the bearer token, then the cookie', async () => {
       const { fetch } = await createAuthApp({
         settings: { cookies: { enabled: true, accessTokenInCookie: true } },
         routes: whoAmI,
@@ -56,9 +56,33 @@ describe('authPlugin()', () => {
           },
         })
       ).toEqual({ user: 'u1', roles: ['admin'] })
+    })
+
+    it('never reads the access token from the body', async () => {
+      const { fetch, logger } = await createAuthApp({
+        settings: { cookies: { enabled: true, accessTokenInCookie: true } },
+        routes: (router) => {
+          // App route receiving a token of its own.
+          router.defineRoute({
+            method: 'post',
+            path: '/integrations',
+            schema: (z) => ({ body: z.object({ accessToken: z.string() }) }),
+            handler: ({ req, user }) => ({
+              received: req.body.accessToken,
+              user: user?.id ?? null,
+            }),
+          })
+        },
+      })
+      const { body: tokens } = await login(fetch)
+
+      for (const accessToken of [tokens.accessToken, 'third-party-token']) {
+        const res = await fetch('/integrations', postJson({ accessToken }))
+        expect(await res.json()).toEqual({ received: accessToken, user: null })
+      }
       expect(
-        await whoami(postJson({ accessToken: tokens.accessToken }))
-      ).toEqual({ user: 'u1', roles: ['admin'] })
+        logger.entries.some((entry) => entry.args[1] === 'Invalid access token')
+      ).toBe(false)
     })
 
     it('ignores the access token cookie unless configured', async () => {

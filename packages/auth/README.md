@@ -42,7 +42,9 @@ const app = await createApp({ adapter: expressAdapter(), plugins: [authPlugin(au
 await app.listen(3000)
 ```
 
-The plugin reads the access token of every request (`Authorization: Bearer` header, then the access token cookie when enabled, then an `accessToken` body field). When it is valid, `ctx.user` and `ctx.auth` are set; otherwise the request stays anonymous.
+The plugin reads the access token of every request: the `Authorization: Bearer` header, then the access token cookie when enabled. When it is valid, `ctx.user` and `ctx.auth` are set; otherwise the request stays anonymous.
+
+The request body is never read, so an app route can receive an `accessToken` field of its own (a third-party token, for example) without side effects. Only `POST /auth/refresh` reads tokens from the body (see the table below).
 
 ## Routes
 

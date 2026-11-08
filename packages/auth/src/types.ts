@@ -84,11 +84,25 @@ export interface CookieSettings {
    */
   trustedOrigins?: readonly string[]
   domain?: string
-  /** Defaults to `/`. */
+  /** Path of the access token cookie. Defaults to `/`. */
   path?: string
-  /** Defaults to `dotpress_access_token`. */
+  /**
+   * Path of the refresh token cookie: the browser path of the auth routes,
+   * the only ones that need it. Defaults to `/auth`. Set it when the routes
+   * have another prefix, or are served under a path by a proxy (for
+   * example `/api/auth`).
+   */
+  refreshTokenPath?: string
+  /**
+   * Defaults to `dotpress_access_token`, prefixed with `__Host-` when the
+   * cookie is secure, without domain and with path `/`, or with
+   * `__Secure-` when it is only secure.
+   */
   accessTokenName?: string
-  /** Defaults to `dotpress_refresh_token`. */
+  /**
+   * Defaults to `dotpress_refresh_token`, prefixed like the access token
+   * cookie (`__Secure-` with the default path).
+   */
   refreshTokenName?: string
   /** Also stores the access token in a cookie. Defaults to `false`. */
   accessTokenInCookie?: boolean

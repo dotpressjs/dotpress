@@ -68,10 +68,61 @@ describe('createAuth()', () => {
         secure: true,
         sameSite: 'lax',
         path: '/',
-        accessTokenName: 'dotpress_access_token',
-        refreshTokenName: 'dotpress_refresh_token',
+        refreshTokenPath: '/auth',
+        accessTokenName: '__Host-dotpress_access_token',
+        refreshTokenName: '__Secure-dotpress_refresh_token',
         accessTokenInCookie: false,
       },
+    })
+  })
+
+  describe('cookies', () => {
+    const names = (cookies: AuthSettings['cookies']) => {
+      const { accessTokenName, refreshTokenName } = authWith({ cookies }).auth
+        .settings.cookies
+      return [accessTokenName, refreshTokenName]
+    }
+
+    it.each([
+      [{}, '__Host-', '__Secure-'],
+      [{ refreshTokenPath: '/' }, '__Host-', '__Host-'],
+      [{ path: '/api' }, '__Secure-', '__Secure-'],
+      [{ domain: 'example.com' }, '__Secure-', '__Secure-'],
+      [{ secure: false }, '', ''],
+      [
+        { path: undefined, refreshTokenPath: undefined },
+        '__Host-',
+        '__Secure-',
+      ],
+    ])(
+      'prefixes the default names (%o)',
+      (cookies, accessPrefix, refreshPrefix) => {
+        expect(names(cookies)).toEqual([
+          `${accessPrefix}dotpress_access_token`,
+          `${refreshPrefix}dotpress_refresh_token`,
+        ])
+      }
+    )
+
+    it('keeps custom names', () => {
+      expect(
+        names({ accessTokenName: 'at', refreshTokenName: '__Secure-rt' })
+      ).toEqual(['at', '__Secure-rt'])
+      expect(
+        names({ refreshTokenName: '__Host-rt', refreshTokenPath: '/' })
+      ).toEqual(['__Host-dotpress_access_token', '__Host-rt'])
+    })
+
+    it.each([
+      [{ accessTokenName: '__Host-at', domain: 'example.com' }, 'a __Host-'],
+      [{ accessTokenName: '__Host-at', path: '/api' }, 'a __Host-'],
+      [{ refreshTokenName: '__host-rt' }, 'a __Host-'],
+      [{ accessTokenName: '__Secure-at', secure: false }, 'a __Secure-'],
+      [{ refreshTokenName: '__SECURE-rt', secure: false }, 'a __Secure-'],
+      [{ path: 'api' }, 'Invalid cookies.path'],
+      [{ refreshTokenPath: '' }, 'Invalid cookies.refreshTokenPath'],
+    ])('rejects invalid cookie settings (%o)', (cookies, message) => {
+      expect(() => authWith({ cookies })).toThrow(message)
     })
   })
 

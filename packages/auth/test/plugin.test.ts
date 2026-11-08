@@ -13,12 +13,14 @@ import {
   type AuthUser,
 } from '../src/index.js'
 import {
+  ACCESS_COOKIE,
   cookieHeader,
   createAuthApp,
   createStore,
   keys,
   login,
   postJson,
+  REFRESH_COOKIE,
 } from './support.js'
 
 const whoAmI = (router: ReturnType<typeof createRouter>) => {
@@ -52,7 +54,7 @@ describe('authPlugin()', () => {
       expect(
         await whoami({
           headers: {
-            cookie: cookieHeader({ dotpress_access_token: tokens.accessToken }),
+            cookie: cookieHeader({ [ACCESS_COOKIE]: tokens.accessToken }),
           },
         })
       ).toEqual({ user: 'u1', roles: ['admin'] })
@@ -92,7 +94,7 @@ describe('authPlugin()', () => {
       const res = await fetch('/whoami', {
         method: 'POST',
         headers: {
-          cookie: cookieHeader({ dotpress_access_token: tokens.accessToken }),
+          cookie: cookieHeader({ [ACCESS_COOKIE]: tokens.accessToken }),
         },
       })
 
@@ -151,8 +153,8 @@ describe('authPlugin()', () => {
       })
       const { body } = await login(app.fetch)
       const cookie = cookieHeader({
-        dotpress_access_token: body.accessToken,
-        dotpress_refresh_token: body.refreshToken,
+        [ACCESS_COOKIE]: body.accessToken,
+        [REFRESH_COOKIE]: body.refreshToken,
       })
       const whoami = async (
         headers: Record<string, string>,

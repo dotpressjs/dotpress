@@ -28,6 +28,10 @@ export const keys = await (async () => {
 })()
 
 /** bcrypt cost of the test users, and of the dummy hash. */
+/** Default cookie names, with the default (secure) attributes. */
+export const ACCESS_COOKIE = '__Host-dotpress_access_token'
+export const REFRESH_COOKIE = '__Secure-dotpress_refresh_token'
+
 export const TEST_HASH_ROUNDS = 4
 
 interface StoredUser {

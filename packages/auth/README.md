@@ -66,6 +66,25 @@ In cookie mode, tokens set as cookies are never returned in the response body, s
 
 Every route still returns `userId`, `expiresIn` and `expiresAt` (access token expiration), plus `sessionExpiresAt` when the session has an absolute timeout (see [Sessions](#sessions)).
 
+### Cookie names and paths
+
+| Cookie | Default name | Path | Lifetime |
+| --- | --- | --- | --- |
+| Access token | `__Host-dotpress_access_token` | `cookies.path` (`/`) | refresh token lifetime |
+| Refresh token | `__Secure-dotpress_refresh_token` | `cookies.refreshTokenPath` (`/auth`) | refresh token lifetime |
+
+The refresh token cookie is only sent to the auth routes. **`refreshTokenPath` is the browser path of the auth routes**: set it when the plugin has another prefix (`authPlugin()` fails at startup otherwise), or when a proxy serves the API under a path:
+
+```ts
+cookies: { enabled: true, refreshTokenPath: '/api/auth' } // browser URL: https://example.com/api/auth/refresh
+```
+
+With a wrong path, the browser does not send the cookie, and refreshes fail with `401 NO_TOKENS_PROVIDED`.
+
+The default names get the strongest prefix their attributes allow, like Auth.js: `__Host-` (secure, without `domain`, path `/`) prevents a subdomain or an insecure page from overwriting the cookie; `__Secure-` (secure) prevents an insecure page from overwriting it. Without `secure`, the names have no prefix. Custom names are kept as is, and checked at startup: a `__Host-` or `__Secure-` name without the required attributes would be silently rejected by browsers.
+
+The access token cookie lives as long as the refresh token, and not `accessTokenTTL`: refreshing requires the access token, even expired.
+
 ### Cross-site request forgery
 
 The browser attaches cookies to every request, including the ones forged by another site. In cookie mode, the plugin checks the origin of the requests authenticated by a cookie, with the headers set by the browser (`Sec-Fetch-Site`, then `Origin` for older browsers), like the OWASP recommendations and Go's `http.CrossOriginProtection`. Clients need no CSRF token.
@@ -113,7 +132,7 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `issuer` | — | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair. |
 | `audience` | `issuer` | `aud` claim (the API that accepts the tokens), checked on every request. |
 | `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: client applications (see [Clients](#clients)). |
-| `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (`[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`), `accessTokenName`, `refreshTokenName`, `accessTokenInCookie` (`false`). |
+| `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (`[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`, access token cookie), `refreshTokenPath` (`/auth`), `accessTokenName`, `refreshTokenName` (see [Cookie names and paths](#cookie-names-and-paths)), `accessTokenInCookie` (`false`). |
 | `onLoginSuccess` / `onLoginFailed` | — | Login events (user, `clientId`, IP address). |
 | `loginThrottle` | enabled, in memory | Brute force protection: `{ store?, limits? }`, or `false`. See [Brute force protection](#brute-force-protection). |
 | `beforeLogin` | — | Called before checking the password: return an error to reject the attempt. |

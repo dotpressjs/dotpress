@@ -19,6 +19,7 @@ import type {
   AuthSession,
   AuthSettings,
   AuthUser,
+  CookieSettings,
   CreatedAccessToken,
   CreatedRefreshToken,
   IssuedTokens,
@@ -146,6 +147,7 @@ const DEFAULT_COOKIE_SETTINGS: ResolvedCookieSettings = {
   secure: true,
   sameSite: 'lax',
   path: '/',
+  refreshTokenPath: '/auth',
   refreshTokenSameSite: 'strict',
   trustedOrigins: [],
   accessTokenName: 'dotpress_access_token',
@@ -305,13 +307,7 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     },
     issuer: settings.issuer,
     audience: settings.audience ?? settings.issuer,
-    cookies: {
-      ...DEFAULT_COOKIE_SETTINGS,
-      ...settings.cookies,
-      refreshTokenSameSite:
-        settings.cookies?.refreshTokenSameSite ??
-        (settings.cookies?.sameSite === 'none' ? 'none' : 'strict'),
-    },
+    cookies: resolveCookies(settings.cookies),
     clients: settings.clients,
     onLoginFailed: settings.onLoginFailed,
     onLoginSuccess: settings.onLoginSuccess,
@@ -321,6 +317,77 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     refreshTokenReuseInterval: settings.refreshTokenReuseInterval ?? 10,
     onRefreshTokenReuse: settings.onRefreshTokenReuse,
     getUserRoles: settings.getUserRoles ?? defaultUserRoles,
+  }
+}
+
+/**
+ * Name of a cookie. Like Auth.js, the default names get the strongest
+ * prefix the attributes allow: `__Host-` (secure, no domain, path `/`)
+ * cannot be overwritten by a subdomain or an insecure page; `__Secure-`
+ * (secure) cannot be overwritten by an insecure page.
+ */
+const cookieName = (
+  setting: 'accessTokenName' | 'refreshTokenName',
+  name: string | undefined,
+  base: string,
+  attributes: { secure: boolean; domain: string | undefined; path: string }
+) => {
+  const { secure, domain, path } = attributes
+  const hostAllowed = secure && domain === undefined && path === '/'
+  if (name === undefined) {
+    if (!secure) return base
+    return hostAllowed ? `__Host-${base}` : `__Secure-${base}`
+  }
+
+  // Browsers silently reject a prefixed cookie without its requirements.
+  const lowerName = name.toLowerCase()
+  if (lowerName.startsWith('__host-') && !hostAllowed) {
+    throw new TypeError(
+      `Invalid cookies.${setting}: a __Host- cookie must be secure, without domain, and with path "/".`
+    )
+  }
+  if (lowerName.startsWith('__secure-') && !secure) {
+    throw new TypeError(
+      `Invalid cookies.${setting}: a __Secure- cookie must be secure.`
+    )
+  }
+  return name
+}
+
+const resolveCookies = (
+  settings: CookieSettings = {}
+): ResolvedCookieSettings => {
+  const merged: ResolvedCookieSettings = { ...DEFAULT_COOKIE_SETTINGS }
+  for (const [key, value] of Object.entries(settings)) {
+    // An explicit `undefined` keeps the default.
+    if (value !== undefined) Object.assign(merged, { [key]: value })
+  }
+  for (const key of ['path', 'refreshTokenPath'] as const) {
+    if (!merged[key].startsWith('/')) {
+      throw new TypeError(
+        `Invalid cookies.${key}: expected a path starting with "/".`
+      )
+    }
+  }
+  const { secure, domain } = merged
+
+  return {
+    ...merged,
+    refreshTokenSameSite:
+      settings.refreshTokenSameSite ??
+      (settings.sameSite === 'none' ? 'none' : 'strict'),
+    accessTokenName: cookieName(
+      'accessTokenName',
+      settings.accessTokenName,
+      'dotpress_access_token',
+      { secure, domain, path: merged.path }
+    ),
+    refreshTokenName: cookieName(
+      'refreshTokenName',
+      settings.refreshTokenName,
+      'dotpress_refresh_token',
+      { secure, domain, path: merged.refreshTokenPath }
+    ),
   }
 }
 
@@ -875,6 +942,8 @@ export const createAuth = (input: AuthSettings): Auth => {
       const cookies = settings.cookies
       if (!cookies.enabled) return
 
+      // Both cookies live as long as the refresh token: refreshing requires
+      // the access token, even expired (its claims and signature).
       const expiresAt = tokens.refreshTokenExpiresAt?.getTime()
       const options = {
         ...cookieOptions(),
@@ -887,6 +956,7 @@ export const createAuth = (input: AuthSettings): Auth => {
 
       res.setCookie(cookies.refreshTokenName, tokens.refreshToken, {
         ...options,
+        path: cookies.refreshTokenPath,
         sameSite: cookies.refreshTokenSameSite,
       })
       if (cookies.accessTokenInCookie) {
@@ -898,7 +968,11 @@ export const createAuth = (input: AuthSettings): Auth => {
       const cookies = settings.cookies
       if (!cookies.enabled) return
 
-      res.clearCookie(cookies.refreshTokenName, cookieOptions())
+      // A cookie is only cleared with its path.
+      res.clearCookie(cookies.refreshTokenName, {
+        ...cookieOptions(),
+        path: cookies.refreshTokenPath,
+      })
       if (cookies.accessTokenInCookie) {
         res.clearCookie(cookies.accessTokenName, cookieOptions())
       }

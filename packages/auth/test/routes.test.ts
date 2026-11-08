@@ -2,11 +2,13 @@ import bcrypt from 'bcryptjs'
 import { decodeJwt } from 'jose'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  ACCESS_COOKIE,
   cookieHeader,
   cookiesOf,
   createAuthApp,
   login,
   postJson,
+  REFRESH_COOKIE,
 } from './support.js'
 
 const COOKIES = { enabled: true, accessTokenInCookie: true }
@@ -177,14 +179,18 @@ describe('auth routes', () => {
         expiresIn: 3600,
         expiresAt: expect.any(String),
       })
-      const refreshToken = cookies.dotpress_refresh_token?.value
+      const refreshToken = cookies[REFRESH_COOKIE]?.value
       expect(refreshToken).toMatch(/^[0-9a-f]{256}$/)
-      expect(cookies.dotpress_refresh_token?.raw).toBe(
-        `dotpress_refresh_token=${refreshToken}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Strict`
+      expect(cookies[REFRESH_COOKIE]?.raw).toBe(
+        `${REFRESH_COOKIE}=${refreshToken}; Max-Age=1209600; Path=/auth; HttpOnly; Secure; SameSite=Strict`
       )
-      expect(decodeJwt(cookies.dotpress_access_token!.value).sub).toBe('u1')
-      // The access token cookie accompanies navigations from other sites.
-      expect(cookies.dotpress_access_token?.raw).toContain('SameSite=Lax')
+      const accessToken = cookies[ACCESS_COOKIE]!.value
+      expect(decodeJwt(accessToken).sub).toBe('u1')
+      // It accompanies navigations from other sites, and lives as long as
+      // the refresh token: refreshing requires it, even expired.
+      expect(cookies[ACCESS_COOKIE]?.raw).toBe(
+        `${ACCESS_COOKIE}=${accessToken}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Lax`
+      )
     })
 
     it('returns the access token only, when it is not a cookie', async () => {
@@ -200,7 +206,7 @@ describe('auth routes', () => {
 
       expect(body.refreshToken).toBeUndefined()
       expect(decodeJwt(body.accessToken).sub).toBe('u1')
-      expect(Object.keys(cookiesOf(res))).toEqual(['dotpress_refresh_token'])
+      expect(Object.keys(cookiesOf(res))).toEqual([REFRESH_COOKIE])
     })
 
     it('returns the tokens when cookie mode is requested but disabled', async () => {
@@ -253,8 +259,8 @@ describe('auth routes', () => {
         method: 'POST',
         headers: {
           cookie: cookieHeader({
-            dotpress_refresh_token: sent.dotpress_refresh_token!.value,
-            dotpress_access_token: sent.dotpress_access_token!.value,
+            [REFRESH_COOKIE]: sent[REFRESH_COOKIE]!.value,
+            [ACCESS_COOKIE]: sent[ACCESS_COOKIE]!.value,
           }),
         },
       })
@@ -266,11 +272,11 @@ describe('auth routes', () => {
         expiresAt: expect.any(String),
       })
       const cookies = cookiesOf(res)
-      expect(cookies.dotpress_refresh_token?.value).toMatch(/^[0-9a-f]{256}$/)
-      expect(cookies.dotpress_refresh_token?.value).not.toBe(
-        sent.dotpress_refresh_token!.value
+      expect(cookies[REFRESH_COOKIE]?.value).toMatch(/^[0-9a-f]{256}$/)
+      expect(cookies[REFRESH_COOKIE]?.value).not.toBe(
+        sent[REFRESH_COOKIE]!.value
       )
-      expect(cookies.dotpress_access_token?.value).toBeDefined()
+      expect(cookies[ACCESS_COOKIE]?.value).toBeDefined()
     })
 
     it('returns the access token only in hybrid mode', async () => {
@@ -288,8 +294,7 @@ describe('auth routes', () => {
         headers: {
           'content-type': 'application/json',
           cookie: cookieHeader({
-            dotpress_refresh_token:
-              cookiesOf(loginRes).dotpress_refresh_token!.value,
+            [REFRESH_COOKIE]: cookiesOf(loginRes)[REFRESH_COOKIE]!.value,
           }),
         },
       })
@@ -298,7 +303,7 @@ describe('auth routes', () => {
       expect(res.status).toBe(200)
       expect(refreshed.refreshToken).toBeUndefined()
       expect(refreshed.accessToken).toEqual(expect.any(String))
-      expect(Object.keys(cookiesOf(res))).toEqual(['dotpress_refresh_token'])
+      expect(Object.keys(cookiesOf(res))).toEqual([REFRESH_COOKIE])
     })
 
     it('revokes the session when a used refresh token is reused', async () => {
@@ -401,7 +406,7 @@ describe('auth routes', () => {
         message: 'NO_REFRESH_TOKEN',
       })
       expect(
-        await (await restore(fetch, { dotpress_refresh_token: 'r' })).json()
+        await (await restore(fetch, { [REFRESH_COOKIE]: 'r' })).json()
       ).toMatchObject({ message: 'NO_ACCESS_TOKEN' })
     })
 
@@ -410,8 +415,8 @@ describe('auth routes', () => {
       const { body: tokens } = await login(fetch)
 
       const res = await restore(fetch, {
-        dotpress_refresh_token: tokens.refreshToken,
-        dotpress_access_token: tokens.accessToken,
+        [REFRESH_COOKIE]: tokens.refreshToken,
+        [ACCESS_COOKIE]: tokens.accessToken,
       })
 
       expect(await res.json()).toEqual({
@@ -430,8 +435,8 @@ describe('auth routes', () => {
       const { body: tokens } = await login(fetch)
 
       const res = await restore(fetch, {
-        dotpress_refresh_token: tokens.refreshToken,
-        dotpress_access_token: tokens.accessToken,
+        [REFRESH_COOKIE]: tokens.refreshToken,
+        [ACCESS_COOKIE]: tokens.accessToken,
       })
       const restored = (await res.json()) as Record<string, unknown>
       const cookies = cookiesOf(res)
@@ -444,11 +449,9 @@ describe('auth routes', () => {
         expiresAt: expect.any(String),
         user: { id: 'u1', username: 'ada', roles: ['admin'] },
       })
-      expect(cookies.dotpress_refresh_token?.value).toMatch(/^[0-9a-f]{256}$/)
-      expect(cookies.dotpress_refresh_token?.value).not.toBe(
-        tokens.refreshToken
-      )
-      expect(cookies.dotpress_access_token?.value).toBeDefined()
+      expect(cookies[REFRESH_COOKIE]?.value).toMatch(/^[0-9a-f]{256}$/)
+      expect(cookies[REFRESH_COOKIE]?.value).not.toBe(tokens.refreshToken)
+      expect(cookies[ACCESS_COOKIE]?.value).toBeDefined()
     })
   })
 
@@ -471,10 +474,10 @@ describe('auth routes', () => {
         })
         const cookies = cookiesOf(res)
 
-        expect(cookies.dotpress_refresh_token?.raw).toContain(
+        expect(cookies[REFRESH_COOKIE]?.raw).toContain(
           `SameSite=${refreshSameSite}`
         )
-        expect(cookies.dotpress_access_token?.raw).toContain(
+        expect(cookies[ACCESS_COOKIE]?.raw).toContain(
           `SameSite=${accessSameSite}`
         )
       }
@@ -504,7 +507,7 @@ describe('auth routes', () => {
       // The refresh token cookie expires with the session, not after the
       // inactivity timeout.
       const maxAge = Number(
-        /Max-Age=(\d+)/.exec(cookiesOf(res).dotpress_refresh_token!.raw)![1]
+        /Max-Age=(\d+)/.exec(cookiesOf(res)[REFRESH_COOKIE]!.raw)![1]
       )
       expect(maxAge).toBeGreaterThan(DAY - 10)
       expect(maxAge).toBeLessThanOrEqual(DAY)
@@ -636,8 +639,7 @@ describe('auth routes', () => {
         { refreshToken: other.refreshToken },
         {
           cookie: cookieHeader({
-            dotpress_refresh_token:
-              cookiesOf(loginRes).dotpress_refresh_token!.value,
+            [REFRESH_COOKIE]: cookiesOf(loginRes)[REFRESH_COOKIE]!.value,
           }),
         }
       )
@@ -659,15 +661,20 @@ describe('auth routes', () => {
         mode: 'cookie',
       })
       const other = (await login(fetch)).body
-      const refreshToken = cookiesOf(loginRes).dotpress_refresh_token!.value
+      const refreshToken = cookiesOf(loginRes)[REFRESH_COOKIE]!.value
 
       const res = await logout(fetch, undefined, {
-        cookie: cookieHeader({ dotpress_refresh_token: refreshToken }),
+        cookie: cookieHeader({ [REFRESH_COOKIE]: refreshToken }),
       })
 
       expect(res.status).toBe(200)
-      expect(cookiesOf(res).dotpress_refresh_token?.raw).toContain('Max-Age=0')
-      expect(cookiesOf(res).dotpress_access_token?.raw).toContain('Max-Age=0')
+      // A cookie is only cleared with its path.
+      expect(cookiesOf(res)[REFRESH_COOKIE]?.raw).toMatch(
+        /Max-Age=0;.* Path=\/auth;/
+      )
+      expect(cookiesOf(res)[ACCESS_COOKIE]?.raw).toMatch(
+        /Max-Age=0;.* Path=\/;/
+      )
       const revoked = [...store.refreshTokens.values()].filter(
         (token) => token.revokedAt
       )
@@ -689,8 +696,7 @@ describe('auth routes', () => {
         origin: 'https://evil.com',
         'sec-fetch-site': 'cross-site',
         cookie: cookieHeader({
-          dotpress_refresh_token:
-            cookiesOf(loginRes).dotpress_refresh_token!.value,
+          [REFRESH_COOKIE]: cookiesOf(loginRes)[REFRESH_COOKIE]!.value,
         }),
       })
 
@@ -711,9 +717,7 @@ describe('auth routes', () => {
           authorization: 'Bearer not.a.token',
         })
         expect(res.status).toBe(200)
-        expect(cookiesOf(res).dotpress_refresh_token?.raw).toContain(
-          'Max-Age=0'
-        )
+        expect(cookiesOf(res)[REFRESH_COOKIE]?.raw).toContain('Max-Age=0')
       }
       expect(
         [...store.refreshTokens.values()].some((token) => token.revokedAt)
@@ -749,6 +753,60 @@ describe('auth routes', () => {
   })
 
   describe('options', () => {
+    it('requires cookies.refreshTokenPath with a custom prefix', async () => {
+      const cookies = { enabled: true, accessTokenInCookie: true }
+      for (const prefix of ['/api/session', '/']) {
+        await expect(
+          createAuthApp({ settings: { cookies }, plugin: { prefix } })
+        ).rejects.toThrow(
+          `cookies.refreshTokenPath ("/auth") does not match the auth routes prefix ("${prefix}")`
+        )
+      }
+
+      // Without cookies, without routes, or with the default prefix.
+      for (const options of [
+        { plugin: { prefix: '/api/session' } },
+        { settings: { cookies }, plugin: { prefix: '/api', routes: false } },
+        { settings: { cookies }, plugin: { prefix: '/auth/' } },
+      ]) {
+        await expect(createAuthApp(options)).resolves.toBeDefined()
+      }
+    })
+
+    it('refreshes cookie sessions under a custom prefix', async () => {
+      const { fetch } = await createAuthApp({
+        settings: {
+          cookies: {
+            enabled: true,
+            accessTokenInCookie: true,
+            refreshTokenPath: '/api/session',
+          },
+        },
+        plugin: { prefix: '/api/session' },
+      })
+      const loginRes = await fetch(
+        '/api/session/login',
+        postJson({ username: 'ada', password: 'secret', mode: 'cookie' })
+      )
+      const sent = cookiesOf(loginRes)
+      expect(sent[REFRESH_COOKIE]?.raw).toContain('Path=/api/session;')
+
+      const res = await fetch('/api/session/refresh', {
+        method: 'POST',
+        headers: {
+          cookie: cookieHeader({
+            [REFRESH_COOKIE]: sent[REFRESH_COOKIE]!.value,
+            [ACCESS_COOKIE]: sent[ACCESS_COOKIE]!.value,
+          }),
+        },
+      })
+
+      expect(res.status).toBe(200)
+      expect(cookiesOf(res)[REFRESH_COOKIE]?.raw).toContain(
+        'Path=/api/session;'
+      )
+    })
+
     it('mounts the routes under a custom prefix', async () => {
       const { fetch } = await createAuthApp({
         plugin: { prefix: '/api/session' },

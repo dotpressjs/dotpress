@@ -505,6 +505,20 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
  */
 export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
   const prefix = options.prefix ?? '/auth'
+  const { cookies } = auth.settings
+
+  // The refresh token cookie is only sent under its path: with another
+  // prefix, refreshes would silently fail.
+  if (
+    cookies.enabled &&
+    options.routes !== false &&
+    cookies.refreshTokenPath === '/auth' &&
+    prefix.replace(/\/+$/, '') !== '/auth'
+  ) {
+    throw new TypeError(
+      `cookies.refreshTokenPath ("/auth") does not match the auth routes prefix ("${prefix}"): set it to the browser path of the auth routes.`
+    )
+  }
 
   return definePlugin({
     name: 'auth',

@@ -167,3 +167,12 @@ export type {
   SchemaInput,
   SchemaOutput,
 } from './schema.js'
+
+export {
+  fromWebHeaders,
+  fromWebRequest,
+  readRequestBody,
+  toWebResponse,
+  type RequestBody,
+  type WebRequestOptions,
+} from './web.js'

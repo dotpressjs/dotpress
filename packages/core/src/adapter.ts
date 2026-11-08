@@ -89,6 +89,9 @@ export interface DotpressRuntime {
  *   connection (instead of ending the response) when the body stream fails;
  * - not send a body for `HEAD` requests.
  *
+ * Adapters built on the Web `Request` and `Response` can rely on
+ * `fromWebRequest()`, `readRequestBody()` and `toWebResponse()`.
+ *
  * New capabilities are always added as optional members, so that existing
  * adapters keep working.
  */

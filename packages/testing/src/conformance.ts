@@ -15,6 +15,7 @@ import {
 } from '@dotpress/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryLogger } from './logger.js'
+import { toRequest } from './request.js'
 
 /**
  * Running application under test.
@@ -46,6 +47,18 @@ export const createHttpTarget = (
   close: () => Promise<void>
 ): ConformanceTarget => ({
   fetch: (path, init) => fetch(new URL(path, baseUrl), init),
+  close,
+})
+
+/**
+ * Target for adapters handling Web requests in memory (`fetch()` of the
+ * adapter, serverless handlers). `path` is relative to `http://localhost`.
+ */
+export const createFetchTarget = (
+  handle: (request: Request) => Promise<Response>,
+  close: () => Promise<void>
+): ConformanceTarget => ({
+  fetch: async (path, init) => handle(await toRequest(path, init)),
   close,
 })
 

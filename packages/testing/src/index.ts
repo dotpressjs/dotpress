@@ -1,4 +1,5 @@
 export {
+  createFetchTarget,
   createHttpTarget,
   runConformanceSuite,
   type ConformanceAppOptions,

@@ -28,7 +28,7 @@ runConformanceSuite({
 })
 ```
 
-`setup()` is called once per test with the app options of the scenario. Adapters that do not listen on a port (serverless) can return their own `fetch()` implementation.
+`setup()` is called once per test with the app options of the scenario. Adapters that do not listen on a port return `createFetchTarget(handle, close)`, where `handle` takes a Web `Request` and returns a `Response` (in-memory `fetch()`, simulated serverless events).
 
 ## Memory logger
 

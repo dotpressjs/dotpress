@@ -1,0 +1,56 @@
+{
+  "name": "@dotpress/openapi",
+  "version": "2.0.0-alpha.0",
+  "description": "OpenAPI 3.1 documents generated from Dotpress routes, with a Scalar API reference",
+  "author": "Renaud Guyon",
+  "license": "MIT",
+  "homepage": "https://dotpress.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/renoguyon/dotpress",
+    "directory": "packages/openapi"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "test:watch": "vitest watch"
+  },
+  "peerDependencies": {
+    "@dotpress/core": "workspace:^",
+    "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@dotpress/auth": "workspace:*",
+    "@dotpress/core": "workspace:*",
+    "@dotpress/testing": "workspace:*",
+    "@seriousme/openapi-schema-validator": "^2.11.0",
+    "zod": "^4.6.7"
+  },
+  "keywords": [
+    "dotpress",
+    "openapi",
+    "swagger",
+    "scalar",
+    "documentation",
+    "zod",
+    "typescript"
+  ]
+}

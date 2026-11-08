@@ -202,11 +202,21 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
   }
 
   const meta = { tags: ['auth'] }
+  /** Cookie routes refuse requests from other origins. */
+  const crossOrigin =
+    'Cross-origin request in cookie mode (`CROSS_ORIGIN_REQUEST`, see cookies.trustedOrigins).'
 
   group.defineRoute({
     method: 'post',
     path: '/login',
-    meta: { ...meta, summary: 'Log in with a username and a password' },
+    meta: {
+      ...meta,
+      summary: 'Log in with a username and a password',
+      responses: {
+        401: 'Invalid credentials (`INVALID_LOGIN`).',
+        429: 'Too many failed attempts (`TOO_MANY_LOGIN_ATTEMPTS`), with a `Retry-After` header.',
+      },
+    },
     schema: (z) => ({
       body: z.object({
         username: z.string(),
@@ -345,7 +355,14 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
   group.defineRoute({
     method: 'post',
     path: '/refresh',
-    meta: { ...meta, summary: 'Rotate a token pair' },
+    meta: {
+      ...meta,
+      summary: 'Rotate a token pair',
+      responses: {
+        401: 'Missing, invalid, expired or reused tokens.',
+        403: crossOrigin,
+      },
+    },
     schema: (z) => ({
       body: z
         .object({
@@ -397,7 +414,14 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
   group.defineRoute({
     method: 'post',
     path: '/restore',
-    meta: { ...meta, summary: 'Restore a session from the auth cookies' },
+    meta: {
+      ...meta,
+      summary: 'Restore a session from the auth cookies',
+      responses: {
+        401: 'Missing or invalid auth cookies.',
+        403: crossOrigin,
+      },
+    },
     schema: (z) => ({
       response: z.object({
         userId: z.string(),
@@ -463,6 +487,10 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
     meta: {
       ...meta,
       summary: 'Revoke the current session, or every session of the user',
+      responses: {
+        401: '`scope: "all"` without a valid refresh token or access token.',
+        403: crossOrigin,
+      },
     },
     schema: (z) => ({
       body: z

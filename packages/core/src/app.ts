@@ -86,6 +86,8 @@ export interface App<TNative = unknown> {
   readonly logger: Logger
   /** Mounted routes (introspection), with the `basePath`. */
   readonly routes: readonly RouteInfo[]
+  /** Installed plugins, in setup order (dependencies first). */
+  readonly plugins: readonly Plugin[]
   /** Normalized `basePath` option. Empty when not configured. */
   readonly basePath: string
   /** Normalized `publicBasePath` option. Empty when not configured. */
@@ -170,7 +172,7 @@ const setupPlugins = async (
   logger: Logger,
   getRoutes: () => readonly RouteInfo[],
   paths: BasePaths
-): Promise<PluginRegistry> => {
+): Promise<PluginRegistry & { plugins: readonly Plugin[] }> => {
   const registry = createPluginRegistry()
   const sorted = Object.freeze(sortPlugins(plugins))
   const byName = new Map(sorted.map((plugin) => [plugin.name, plugin]))
@@ -267,7 +269,7 @@ const setupPlugins = async (
     }
   }
 
-  return registry
+  return { ...registry, plugins: sorted }
 }
 
 /**
@@ -403,6 +405,7 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     adapter: typedAdapter,
     logger,
     routes: routeInfos,
+    plugins: registry.plugins,
     ...paths,
     native: () => typedAdapter.native(),
     listen: async (port: number, host?: string) => {

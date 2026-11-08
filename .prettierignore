@@ -7,3 +7,4 @@ docs
 
 # Hand-written documentation: no automatic reformatting
 *.md
+**/__snapshots__/**

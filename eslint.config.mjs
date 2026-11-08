@@ -10,6 +10,7 @@ import globals from 'globals'
 const RUNTIME_AGNOSTIC_SOURCES = [
   'packages/core/src/**/*.ts',
   'packages/auth/src/**/*.ts',
+  'packages/openapi/src/**/*.ts',
 ]
 
 export default defineConfig(

@@ -199,7 +199,7 @@ describe('documentation metadata', () => {
     })
   })
 
-  describe('api.getPlugins()', () => {
+  describe('api.getPlugins() and app.plugins', () => {
     it('lists the plugins in setup order', async () => {
       let names: string[] = []
       const plugin = (name: string, dependsOn?: string[]): Plugin =>
@@ -211,11 +211,12 @@ describe('documentation metadata', () => {
           },
         })
 
-      await createTestApp(() => {}, {
+      const { app } = await createTestApp(() => {}, {
         plugins: [plugin('docs', ['auth']), plugin('auth')],
       })
 
       expect(names).toEqual(['auth', 'docs'])
+      expect(app.plugins.map((item) => item.name)).toEqual(['auth', 'docs'])
     })
   })
 })

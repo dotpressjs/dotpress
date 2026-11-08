@@ -1,51 +1,63 @@
-// Checks that the published @dotpress/core package only depends on Zod:
-// no HTTP server, no Node.js types or modules. Run after `pnpm build`.
+// Checks that the published runtime-agnostic packages only depend on what
+// they declare: no HTTP server, no Node.js types or modules. Run after
+// `pnpm build`.
 import { readFile } from 'node:fs/promises'
 
-const ALLOWED_IMPORTS = new Set(['zod'])
+const PACKAGES = {
+  core: new Set(['zod']),
+  openapi: new Set(['zod', '@dotpress/core']),
+}
 const FORBIDDEN_DEPENDENCIES =
   /^(express|hono|fastify|@hono\/|@fastify\/|@types\/(express|node)$)/
 
-const root = new URL('../packages/core/', import.meta.url)
-const errors = []
+let failed = false
 
-const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
+for (const [name, allowedImports] of Object.entries(PACKAGES)) {
+  const root = new URL(`../packages/${name}/`, import.meta.url)
+  const errors = []
 
-if (Object.keys(pkg.dependencies ?? {}).length > 0) {
-  errors.push(`dependencies must be empty: ${Object.keys(pkg.dependencies)}`)
-}
+  const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
 
-for (const name of Object.keys(pkg.peerDependencies ?? {})) {
-  if (!ALLOWED_IMPORTS.has(name)) {
-    errors.push(`unexpected peer dependency "${name}"`)
+  if (Object.keys(pkg.dependencies ?? {}).length > 0) {
+    errors.push(`dependencies must be empty: ${Object.keys(pkg.dependencies)}`)
   }
-}
 
-for (const field of ['dependencies', 'peerDependencies', 'devDependencies']) {
-  for (const name of Object.keys(pkg[field] ?? {})) {
-    if (FORBIDDEN_DEPENDENCIES.test(name)) {
-      errors.push(`forbidden ${field} entry "${name}"`)
+  for (const dependency of Object.keys(pkg.peerDependencies ?? {})) {
+    if (!allowedImports.has(dependency)) {
+      errors.push(`unexpected peer dependency "${dependency}"`)
     }
   }
-}
 
-for (const file of ['dist/index.js', 'dist/index.d.ts']) {
-  const source = await readFile(new URL(file, root), 'utf8')
-  const specifiers = [
-    ...source.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g),
-  ].map((match) => match[1])
-
-  for (const specifier of new Set(specifiers)) {
-    if (!ALLOWED_IMPORTS.has(specifier)) {
-      errors.push(`${file} imports "${specifier}"`)
+  for (const field of ['dependencies', 'peerDependencies', 'devDependencies']) {
+    for (const dependency of Object.keys(pkg[field] ?? {})) {
+      if (FORBIDDEN_DEPENDENCIES.test(dependency)) {
+        errors.push(`forbidden ${field} entry "${dependency}"`)
+      }
     }
+  }
+
+  for (const file of ['dist/index.js', 'dist/index.d.ts']) {
+    const source = await readFile(new URL(file, root), 'utf8')
+    const specifiers = [
+      ...source.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g),
+    ].map((match) => match[1])
+
+    for (const specifier of new Set(specifiers)) {
+      if (!allowedImports.has(specifier)) {
+        errors.push(`${file} imports "${specifier}"`)
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    failed = true
+    console.error(`@dotpress/${name} is not runtime-agnostic:`)
+    for (const error of errors) console.error(`  - ${error}`)
+  } else {
+    console.log(
+      `@dotpress/${name} only depends on ${[...allowedImports].join(', ')}.`
+    )
   }
 }
 
-if (errors.length > 0) {
-  console.error('@dotpress/core is not runtime-agnostic:')
-  for (const error of errors) console.error(`  - ${error}`)
-  process.exit(1)
-}
-
-console.log('@dotpress/core only depends on Zod.')
+if (failed) process.exit(1)

@@ -8,6 +8,15 @@ export {
 } from './conformance.js'
 
 export {
+  createLambdaTarget,
+  fromLambdaResult,
+  toLambdaEvent,
+  type LambdaEventFormat,
+  type LambdaTargetOptions,
+  type LambdaTestHandler,
+} from './lambda.js'
+
+export {
   createMemoryLogger,
   type LogEntry,
   type MemoryLogger,

@@ -64,8 +64,10 @@ export interface HonoAdapterOptions<TApp extends HonoApplication> {
   bodyLimit?: number
   /**
    * Client IP address of a request (`ctx.req.ip`). Defaults to the address
-   * given by the runtime: the socket on Node.js. Proxy headers such as
-   * `X-Forwarded-For` are not read: behind a proxy, read them here.
+   * given by the runtime: the socket on Node.js, the source IP of API
+   * Gateway, the last `X-Forwarded-For` entry behind an Application Load
+   * Balancer (added by the load balancer). Proxy headers are not read
+   * otherwise: behind another proxy (CloudFront…), read them here.
    */
   getIp?: (c: Context) => string | undefined
 }
@@ -86,12 +88,36 @@ export interface HonoAdapter<
   close(): Promise<void>
 }
 
-/** Client address given by `@hono/node-server` (`c.env.incoming`). */
+/** Environment given by `@hono/node-server` and `@hono/aws-lambda`. */
+interface RuntimeEnv {
+  readonly incoming?: { readonly socket?: { readonly remoteAddress?: unknown } }
+  readonly requestContext?: {
+    readonly identity?: { readonly sourceIp?: unknown }
+    readonly http?: { readonly sourceIp?: unknown }
+    readonly elb?: unknown
+  }
+}
+
+/**
+ * Client address given by the runtime: the socket on Node.js, the source
+ * IP of API Gateway (REST and HTTP APIs, Function URLs), or the address
+ * appended to `X-Forwarded-For` by an Application Load Balancer.
+ */
 const runtimeIp = (c: Context): string | undefined => {
-  const env = c.env as
-    { incoming?: { socket?: { remoteAddress?: unknown } } } | undefined
-  const address = env?.incoming?.socket?.remoteAddress
-  return typeof address === 'string' ? address : undefined
+  const env = c.env as RuntimeEnv | undefined
+
+  const socket = env?.incoming?.socket?.remoteAddress
+  if (typeof socket === 'string') return socket
+
+  const context = env?.requestContext
+  const sourceIp = context?.identity?.sourceIp ?? context?.http?.sourceIp
+  if (typeof sourceIp === 'string') return sourceIp
+
+  if (context?.elb !== undefined) {
+    const forwarded = c.req.header('x-forwarded-for')?.split(',').at(-1)
+    return forwarded?.trim() || undefined
+  }
+  return undefined
 }
 
 /** Code and default message of client errors. */

@@ -1,8 +1,9 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  // The main entry is runtime-agnostic; `node` is the Node.js server.
-  entry: ['src/index.ts', 'src/node.ts'],
+  // The main entry is runtime-agnostic; `node` is the Node.js server and
+  // `lambda` the AWS Lambda handler.
+  entry: ['src/index.ts', 'src/node.ts', 'src/lambda.ts'],
   format: ['esm'],
   target: 'node22',
   platform: 'node',

@@ -25,6 +25,10 @@
     "./node": {
       "types": "./dist/node.d.ts",
       "default": "./dist/node.js"
+    },
+    "./lambda": {
+      "types": "./dist/lambda.d.ts",
+      "default": "./dist/lambda.js"
     }
   },
   "engines": {
@@ -39,10 +43,14 @@
   },
   "peerDependencies": {
     "@dotpress/core": "workspace:^",
+    "@hono/aws-lambda": "^1.0.0",
     "@hono/node-server": "^2.1.0",
     "hono": "^4.13.0"
   },
   "peerDependenciesMeta": {
+    "@hono/aws-lambda": {
+      "optional": true
+    },
     "@hono/node-server": {
       "optional": true
     }
@@ -50,6 +58,7 @@
   "devDependencies": {
     "@dotpress/core": "workspace:*",
     "@dotpress/testing": "workspace:*",
+    "@hono/aws-lambda": "^1.0.1",
     "@hono/node-server": "^2.1.6",
     "hono": "^4.13.17",
     "hono-5": "npm:hono@5.0.0-rc.1",

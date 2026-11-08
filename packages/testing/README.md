@@ -28,7 +28,25 @@ runConformanceSuite({
 })
 ```
 
-`setup()` is called once per test with the app options of the scenario. Adapters that do not listen on a port return `createFetchTarget(handle, close)`, where `handle` takes a Web `Request` and returns a `Response` (in-memory `fetch()`, simulated serverless events).
+`setup()` is called once per test with the app options of the scenario. Adapters that do not listen on a port return `createFetchTarget(handle, close)`, where `handle` takes a Web `Request` and returns a `Response` (in-memory `fetch()`).
+
+### AWS Lambda
+
+`createLambdaTarget(handler, { format, close })` sends each request to a Lambda handler as a simulated event, and converts the result back: `format` is `'v1'` (API Gateway REST API), `'v2'` (HTTP API, Function URLs) or `'alb'` (Application Load Balancer, with multi-value headers). A failed invocation gets a `502` response, like API Gateway. `toLambdaEvent()` and `fromLambdaResult()` are exported for handler tests.
+
+```ts
+runConformanceSuite({
+  name: 'my-adapter (AWS Lambda)',
+  // Responses sent once complete: skips the scenarios that need incremental
+  // streaming or client disconnects.
+  bufferedResponses: true,
+  setup: async (options) => {
+    let app
+    const handler = createLambdaHandler(async () => (app = await createApp({ ...options, adapter: myAdapter() })))
+    return createLambdaTarget(handler, { format: 'v2', close: async () => app?.close() })
+  },
+})
+```
 
 ## Memory logger
 

@@ -37,6 +37,12 @@ export interface ConformanceSuiteOptions {
    * starts it. Called once per test.
    */
   setup(options: ConformanceAppOptions): Promise<ConformanceTarget>
+  /**
+   * The adapter sends responses once complete (AWS Lambda without response
+   * streaming). The scenarios that need incremental streaming or client
+   * disconnects are skipped.
+   */
+  bufferedResponses?: boolean
 }
 
 /**
@@ -1187,6 +1193,8 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
     })
 
     describe('streaming', () => {
+      const incremental = options.bufferedResponses ? it.skip : it
+
       it('streams chunks', () =>
         withApp(
           (router) => {
@@ -1210,7 +1218,7 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
           }
         ))
 
-      it('flushes Server-Sent Events as they are produced', () => {
+      incremental('flushes Server-Sent Events as they are produced', () => {
         const released = deferred()
 
         return withApp(
@@ -1250,35 +1258,38 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
         )
       })
 
-      it('cancels the response stream when the client disconnects', () => {
-        const cancelled = deferred()
+      incremental(
+        'cancels the response stream when the client disconnects',
+        () => {
+          const cancelled = deferred()
 
-        return withApp(
-          (router) => {
-            router.defineRoute({
-              path: '/download',
-              handler: () =>
-                file(
-                  new ReadableStream<Uint8Array>({
-                    pull: (controller) =>
-                      controller.enqueue(new Uint8Array(64 * 1024)),
-                    cancel: () => cancelled.resolve(),
-                  })
-                ),
-            })
-          },
-          async ({ fetch }) => {
-            const res = await fetch('/download')
-            const reader = res.body!.getReader()
-            await reader.read()
-            await reader.cancel()
+          return withApp(
+            (router) => {
+              router.defineRoute({
+                path: '/download',
+                handler: () =>
+                  file(
+                    new ReadableStream<Uint8Array>({
+                      pull: (controller) =>
+                        controller.enqueue(new Uint8Array(64 * 1024)),
+                      cancel: () => cancelled.resolve(),
+                    })
+                  ),
+              })
+            },
+            async ({ fetch }) => {
+              const res = await fetch('/download')
+              const reader = res.body!.getReader()
+              await reader.read()
+              await reader.cancel()
 
-            await within(cancelled.promise, 'response stream cancel')
-          }
-        )
-      })
+              await within(cancelled.promise, 'response stream cancel')
+            }
+          )
+        }
+      )
 
-      it('aborts req.signal when the client disconnects', () => {
+      incremental('aborts req.signal when the client disconnects', () => {
         const started = deferred()
         const aborted = deferred()
 
@@ -1309,7 +1320,7 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
         )
       })
 
-      it('aborts the connection when a stream fails', () =>
+      incremental('aborts the connection when a stream fails', () =>
         withApp(
           (router) => {
             router.defineRoute({
@@ -1334,7 +1345,8 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
             // A cleanly ended response would hide the failure from the client.
             expect(outcome).toBe('aborted')
           }
-        ))
+        )
+      )
     })
   })
 }

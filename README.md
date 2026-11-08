@@ -10,7 +10,7 @@ A lightweight, decorator-free TypeScript framework for building end-to-end typed
 |---|---|---|
 | [`@dotpress/core`](packages/core) | Server-agnostic core: routing, validation, pipeline, responses | 2.0 alpha |
 | [`@dotpress/adapter-express`](packages/adapter-express) | Express 4 and 5 adapter | 2.0 alpha |
-| [`@dotpress/adapter-hono`](packages/adapter-hono) | Hono 4 adapter, on Node.js | 2.0 alpha |
+| [`@dotpress/adapter-hono`](packages/adapter-hono) | Hono 4 adapter, on Node.js and AWS Lambda | 2.0 alpha |
 | [`@dotpress/testing`](packages/testing) | Testing helpers and adapter conformance suite | 2.0 alpha |
 | [`@dotpress/auth`](packages/auth) | JWT authentication plugin | 2.0 alpha |
 | [`@dotpress/openapi`](packages/openapi) | OpenAPI 3.1 documents and Scalar API reference | 2.0 alpha |

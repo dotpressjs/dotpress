@@ -1,14 +1,19 @@
 import bcrypt from 'bcryptjs'
 import { decodeJwt } from 'jose'
+import { createTestApp } from '@dotpress/testing'
 import { describe, expect, it, vi } from 'vitest'
+import { authPlugin, createAuth } from '../src/index.js'
 import {
   ACCESS_COOKIE,
   cookieHeader,
   cookiesOf,
   createAuthApp,
+  createStore,
+  keys,
   login,
   postJson,
   REFRESH_COOKIE,
+  type AuthAppOptions,
 } from './support.js'
 
 const COOKIES = { enabled: true, accessTokenInCookie: true }
@@ -881,58 +886,140 @@ describe('auth routes', () => {
   })
 
   describe('options', () => {
-    it('requires cookies.refreshTokenPath with a custom prefix', async () => {
+    describe('refresh token cookie path', () => {
       const cookies = { enabled: true, accessTokenInCookie: true }
-      for (const prefix of ['/api/session', '/']) {
-        await expect(
-          createAuthApp({ settings: { cookies }, plugin: { prefix } })
-        ).rejects.toThrow(
-          `cookies.refreshTokenPath ("/auth") does not match the auth routes prefix ("${prefix}")`
+
+      /** Logs in with cookies at `loginPath`, and returns the cookies. */
+      const cookieLogin = async (
+        fetch: (path: string, init?: RequestInit) => Promise<Response>,
+        loginPath: string
+      ) => {
+        const res = await fetch(
+          loginPath,
+          postJson({ username: 'ada', password: 'secret', mode: 'cookie' })
         )
+        expect(res.status).toBe(200)
+        return cookiesOf(res)
       }
 
-      // Without cookies, without routes, or with the default prefix.
-      for (const options of [
-        { plugin: { prefix: '/api/session' } },
-        { settings: { cookies }, plugin: { prefix: '/api', routes: false } },
-        { settings: { cookies }, plugin: { prefix: '/auth/' } },
-      ]) {
-        await expect(createAuthApp(options)).resolves.toBeDefined()
-      }
-    })
+      it('is the path of the auth routes', async () => {
+        const { fetch, auth } = await createAuthApp({ settings: { cookies } })
 
-    it('refreshes cookie sessions under a custom prefix', async () => {
-      const { fetch } = await createAuthApp({
-        settings: {
-          cookies: {
-            enabled: true,
-            accessTokenInCookie: true,
-            refreshTokenPath: '/api/session',
+        const sent = await cookieLogin(fetch, '/auth/login')
+
+        expect(sent[REFRESH_COOKIE]?.raw).toContain('Path=/auth;')
+        expect(auth.settings.cookies.refreshTokenPath).toBe('/auth')
+      })
+
+      it('follows a custom prefix', async () => {
+        const { fetch } = await createAuthApp({
+          settings: { cookies },
+          plugin: { prefix: '/api/session/' },
+        })
+        const sent = await cookieLogin(fetch, '/api/session/login')
+        expect(sent[REFRESH_COOKIE]?.raw).toContain('Path=/api/session;')
+
+        const res = await fetch('/api/session/refresh', {
+          method: 'POST',
+          headers: {
+            cookie: cookieHeader({
+              [REFRESH_COOKIE]: sent[REFRESH_COOKIE]!.value,
+              [ACCESS_COOKIE]: sent[ACCESS_COOKIE]!.value,
+            }),
           },
-        },
-        plugin: { prefix: '/api/session' },
-      })
-      const loginRes = await fetch(
-        '/api/session/login',
-        postJson({ username: 'ada', password: 'secret', mode: 'cookie' })
-      )
-      const sent = cookiesOf(loginRes)
-      expect(sent[REFRESH_COOKIE]?.raw).toContain('Path=/api/session;')
+        })
 
-      const res = await fetch('/api/session/refresh', {
-        method: 'POST',
-        headers: {
-          cookie: cookieHeader({
-            [REFRESH_COOKIE]: sent[REFRESH_COOKIE]!.value,
-            [ACCESS_COOKIE]: sent[ACCESS_COOKIE]!.value,
-          }),
-        },
+        expect(res.status).toBe(200)
+        expect(cookiesOf(res)[REFRESH_COOKIE]?.raw).toContain(
+          'Path=/api/session;'
+        )
       })
 
-      expect(res.status).toBe(200)
-      expect(cookiesOf(res)[REFRESH_COOKIE]?.raw).toContain(
-        'Path=/api/session;'
-      )
+      it('gets the __Host- prefix with routes at the root', async () => {
+        const { fetch } = await createAuthApp({
+          settings: { cookies },
+          plugin: { prefix: '/' },
+        })
+
+        const sent = await cookieLogin(fetch, '/login')
+
+        expect(sent['__Host-dotpress_refresh_token']?.raw).toContain('Path=/;')
+      })
+
+      it('includes the base path of the app', async () => {
+        const { fetch } = await createAuthApp({
+          settings: { cookies },
+          app: { basePath: '/my-app/api' },
+        })
+
+        const sent = await cookieLogin(fetch, '/my-app/api/auth/login')
+
+        expect(sent[REFRESH_COOKIE]?.raw).toContain('Path=/my-app/api/auth;')
+      })
+
+      it('includes the public base path of the app', async () => {
+        const { fetch } = await createAuthApp({
+          settings: { cookies },
+          plugin: { prefix: '/session' },
+          app: { publicBasePath: '/my-app/api' },
+        })
+
+        // The proxy removes the prefix: the routes are not prefixed.
+        const sent = await cookieLogin(fetch, '/session/login')
+
+        expect(sent[REFRESH_COOKIE]?.raw).toContain('Path=/my-app/api/session;')
+      })
+
+      it('can be forced with cookies.refreshTokenPath', async () => {
+        const { fetch } = await createAuthApp({
+          settings: { cookies: { ...cookies, refreshTokenPath: '/' } },
+          app: { basePath: '/api' },
+        })
+
+        const sent = await cookieLogin(fetch, '/api/auth/login')
+
+        expect(sent['__Host-dotpress_refresh_token']?.raw).toContain('Path=/;')
+      })
+
+      it('stays /auth without the auth routes', async () => {
+        const { auth } = await createAuthApp({
+          settings: { cookies },
+          plugin: { prefix: '/session', routes: false },
+          app: { basePath: '/api' },
+        })
+
+        expect(auth.settings.cookies.refreshTokenPath).toBe('/auth')
+      })
+
+      it('cannot differ between two apps sharing an auth service', async () => {
+        const auth = createAuth({
+          keys,
+          dataProvider: createStore().provider,
+          issuer: 'https://api.example.com',
+          cookies,
+        })
+        const app = (options: AuthAppOptions['app']) =>
+          createTestApp({ ...options, plugins: [authPlugin(auth)] })
+
+        await app({ basePath: '/a' })
+        await expect(app({ basePath: '/a' })).resolves.toBeDefined()
+        await expect(app({ basePath: '/b' })).rejects.toThrow(
+          'This auth service already serves routes under "/a/auth": create one auth service per app to serve them under "/b/auth".'
+        )
+        expect(auth.settings.cookies.refreshTokenPath).toBe('/a/auth')
+      })
+
+      it('rejects an invalid routes path', async () => {
+        const auth = createAuth({
+          keys,
+          dataProvider: createStore().provider,
+          issuer: 'https://api.example.com',
+        })
+
+        await expect(auth.init({ routesPath: 'auth' })).rejects.toThrow(
+          'Invalid routesPath: expected a path starting with "/", received "auth".'
+        )
+      })
     })
 
     it('mounts the routes under a custom prefix', async () => {

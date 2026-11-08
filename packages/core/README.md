@@ -52,6 +52,30 @@ schema: (z) => ({
 })
 ```
 
+## Base path
+
+To serve the app under a sub-path, for instance `https://example.com/my-app/api/users` behind a reverse proxy shared by several apps, use one of these options, depending on what the proxy forwards:
+
+```ts
+// The proxy forwards the full path (nginx: proxy_pass http://app;)
+await createApp({ adapter, basePath: '/my-app/api' })
+
+// The proxy removes the prefix (nginx: proxy_pass http://app/;, Traefik: stripPrefix)
+await createApp({ adapter, publicBasePath: '/my-app/api' })
+```
+
+- **`basePath`** prefixes every route, including plugin routes: `GET /users` is served at `/my-app/api/users`, and requests outside of the base path get a `404`. `ctx.req.path` and `app.routes` hold the full paths.
+- **`publicBasePath`** does not change the routing. It only changes the paths seen by the browser: cookie paths set by plugins, documentation URLs, and the paths built with `publicPath()`.
+
+The two options cannot be combined. `ctx.publicPath()`, `app.publicPath()` and `api.publicPath()` (in plugins) give the browser path of a route path. Redirects are not prefixed automatically, since they may target a page outside of the API:
+
+```ts
+defineRoute({
+  path: '/old',
+  handler: (ctx) => redirect(ctx.publicPath('/new')), // Location: /my-app/api/new
+})
+```
+
 ## License
 
 MIT

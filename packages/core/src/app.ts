@@ -8,7 +8,7 @@ import type { Middleware, ResponseFilter } from './context.js'
 import type { NormalizedRequest } from './http.js'
 import { createConsoleLogger, type Logger } from './logger.js'
 import { createRouteMatcher } from './matcher.js'
-import { routeKey } from './path.js'
+import { joinPaths, normalizeBasePath, prefixPath, routeKey } from './path.js'
 import {
   compileRoute,
   createRuntime,
@@ -49,6 +49,22 @@ export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
    * router filters.
    */
   responseFilters?: ResponseFilter[]
+  /**
+   * Prefix of every route, including plugin routes, for an app served under
+   * a sub-path by a reverse proxy that forwards the full path (nginx
+   * `proxy_pass http://app;`). Requests outside of it get a 404.
+   *
+   * @example basePath: '/my-app/api' // GET /my-app/api/users
+   */
+  basePath?: string
+  /**
+   * Prefix removed by the reverse proxy before forwarding requests (nginx
+   * `proxy_pass http://app/;`, Traefik `stripPrefix`). Routes are not
+   * prefixed, but paths seen by the browser are (`publicPath()`: cookie
+   * paths, documentation URLs, redirects). Cannot be combined with
+   * `basePath`.
+   */
+  publicBasePath?: string
   /** Defaults to a `console` based logger. Pino loggers are supported. */
   logger?: Logger
   /**
@@ -68,8 +84,17 @@ type NativeOf<TAdapter> =
 export interface App<TNative = unknown> {
   readonly adapter: HttpAdapter<TNative>
   readonly logger: Logger
-  /** Mounted routes (introspection). */
+  /** Mounted routes (introspection), with the `basePath`. */
   readonly routes: readonly RouteInfo[]
+  /** Normalized `basePath` option. Empty when not configured. */
+  readonly basePath: string
+  /** Normalized `publicBasePath` option. Empty when not configured. */
+  readonly publicBasePath: string
+  /**
+   * Path seen by the browser for a route path, with the `basePath` or the
+   * `publicBasePath`.
+   */
+  publicPath(path: string): string
   /** Native server instance of the adapter. */
   native(): TNative
   /** Starts the server. Not available on serverless adapters. */
@@ -110,10 +135,41 @@ const createPluginRegistry = (): PluginRegistry => ({
 /**
  * Sets up the plugins. Registration methods only work during `setup()`.
  */
+interface BasePaths {
+  readonly basePath: string
+  readonly publicBasePath: string
+  readonly publicPath: (path: string) => string
+}
+
+const resolveBasePaths = (options: AppOptions): BasePaths => {
+  const basePath =
+    options.basePath === undefined
+      ? ''
+      : normalizeBasePath(options.basePath, 'basePath')
+  const publicBasePath =
+    options.publicBasePath === undefined
+      ? ''
+      : normalizeBasePath(options.publicBasePath, 'publicBasePath')
+
+  if (options.basePath !== undefined && options.publicBasePath !== undefined) {
+    throw new TypeError(
+      'basePath and publicBasePath cannot be combined: use basePath when the reverse proxy forwards the full path, publicBasePath when it removes the prefix.'
+    )
+  }
+
+  const prefix = basePath || publicBasePath
+  return {
+    basePath,
+    publicBasePath,
+    publicPath: (path) => prefixPath(prefix, path),
+  }
+}
+
 const setupPlugins = async (
   plugins: readonly Plugin[],
   logger: Logger,
-  getRoutes: () => readonly RouteInfo[]
+  getRoutes: () => readonly RouteInfo[],
+  paths: BasePaths
 ): Promise<PluginRegistry> => {
   const registry = createPluginRegistry()
   const sorted = sortPlugins(plugins)
@@ -141,6 +197,7 @@ const setupPlugins = async (
     const api: PluginAPI = {
       name: plugin.name,
       logger: logger.child({ plugin: plugin.name }),
+      ...paths,
       addRoute: register(
         'addRoute',
         router.defineRoute
@@ -237,7 +294,8 @@ const composeErrorHooks = (
 
 const compileRouters = (
   routers: readonly Router[],
-  config: PipelineConfig
+  config: PipelineConfig,
+  basePath: string
 ): CompiledRoute[] => {
   const compiled: CompiledRoute[] = []
   const seen = new Map<string, string>()
@@ -245,7 +303,10 @@ const compileRouters = (
   for (const router of routers) {
     const filters = router.getResponseFilters()
 
-    for (const route of router.getRoutes()) {
+    for (const record of router.getRoutes()) {
+      const route = basePath
+        ? { ...record, path: joinPaths(basePath, record.path) }
+        : record
       const key = routeKey(route.method, route.path)
       const existing = seen.get(key)
 
@@ -275,6 +336,7 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     throw new TypeError('createApp() requires an HTTP adapter.')
   }
 
+  const paths = resolveBasePaths(options)
   const logger = options.logger ?? createConsoleLogger()
 
   const compiled: { routes?: readonly RouteInfo[] } = {}
@@ -287,10 +349,16 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     return compiled.routes
   }
 
-  const registry = await setupPlugins(options.plugins ?? [], logger, getRoutes)
+  const registry = await setupPlugins(
+    options.plugins ?? [],
+    logger,
+    getRoutes,
+    paths
+  )
 
   const config: PipelineConfig = Object.freeze({
     logger,
+    publicPath: paths.publicPath,
     exposeErrors: options.exposeErrors ?? false,
     generateRequestId: options.generateRequestId ?? (() => crypto.randomUUID()),
     onError: composeErrorHooks(
@@ -313,7 +381,7 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
   })
 
   const routers = [...(options.routers ?? [globalRouter]), ...registry.routers]
-  const routes = compileRouters(routers, config)
+  const routes = compileRouters(routers, config, paths.basePath)
   const routeInfos = Object.freeze(routes.map((route) => route.definition))
   compiled.routes = routeInfos
 
@@ -334,6 +402,7 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     adapter: typedAdapter,
     logger,
     routes: routeInfos,
+    ...paths,
     native: () => typedAdapter.native(),
     listen: async (port: number, host?: string) => {
       if (!adapter.listen) {

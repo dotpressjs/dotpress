@@ -48,38 +48,39 @@ The request body is never read, so an app route can receive an `accessToken` fie
 
 ## Routes
 
-| Route | Description |
-| --- | --- |
-| `POST /auth/login` | `{ username, password, clientId?, mode? }` → token pair. `mode: 'cookie'` sets the cookies instead (see below). |
-| `POST /auth/refresh` | Rotates a token pair, sent in the body or as cookies. |
-| `GET /auth/me` | Authenticated user. |
-| `POST /auth/restore` | Restores a cookie session (requires `cookies.accessTokenInCookie`). |
-| `POST /auth/logout` | `{ refreshToken?, scope? }` → revokes the current session (`scope: 'all'`: every session of the user) and clears the cookies. See [Logout](#logout). |
+| Route                | Description                                                                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /auth/login`   | `{ username, password, clientId?, mode? }` → token pair. `mode: 'cookie'` sets the cookies instead (see below).                                      |
+| `POST /auth/refresh` | Rotates a token pair, sent in the body or as cookies.                                                                                                |
+| `GET /auth/me`       | Authenticated user.                                                                                                                                  |
+| `POST /auth/restore` | Restores a cookie session (requires `cookies.accessTokenInCookie`).                                                                                  |
+| `POST /auth/logout`  | `{ refreshToken?, scope? }` → revokes the current session (`scope: 'all'`: every session of the user) and clears the cookies. See [Logout](#logout). |
 
 In cookie mode, tokens set as cookies are never returned in the response body, so that the JavaScript of the page cannot read them:
 
-| Configuration | Cookies | Body |
-| --- | --- | --- |
-| Body mode | — | `accessToken`, `refreshToken` |
-| `cookies: { enabled: true }` | refresh token | `accessToken` (send it in the `Authorization` header) |
-| `cookies: { enabled: true, accessTokenInCookie: true }` | refresh token, access token | no token |
+| Configuration                                           | Cookies                     | Body                                                  |
+| ------------------------------------------------------- | --------------------------- | ----------------------------------------------------- |
+| Body mode                                               | —                           | `accessToken`, `refreshToken`                         |
+| `cookies: { enabled: true }`                            | refresh token               | `accessToken` (send it in the `Authorization` header) |
+| `cookies: { enabled: true, accessTokenInCookie: true }` | refresh token, access token | no token                                              |
 
 Every route still returns `userId`, `expiresIn` and `expiresAt` (access token expiration), plus `sessionExpiresAt` when the session has an absolute timeout (see [Sessions](#sessions)).
 
 ### Cookie names and paths
 
-| Cookie | Default name | Path | Lifetime |
-| --- | --- | --- | --- |
-| Access token | `__Host-dotpress_access_token` | `cookies.path` (`/`) | refresh token lifetime |
-| Refresh token | `__Secure-dotpress_refresh_token` | `cookies.refreshTokenPath` (`/auth`) | refresh token lifetime |
+| Cookie        | Default name                      | Path                              | Lifetime               |
+| ------------- | --------------------------------- | --------------------------------- | ---------------------- |
+| Access token  | `__Host-dotpress_access_token`    | `cookies.path` (`/`)              | refresh token lifetime |
+| Refresh token | `__Secure-dotpress_refresh_token` | path of the auth routes (`/auth`) | refresh token lifetime |
 
-The refresh token cookie is only sent to the auth routes. **`refreshTokenPath` is the browser path of the auth routes**: set it when the plugin has another prefix (`authPlugin()` fails at startup otherwise), or when a proxy serves the API under a path:
+The refresh token cookie is only sent to the auth routes. `authPlugin()` sets its path to the browser path of its routes: the plugin `prefix`, after the `basePath` or `publicBasePath` of the app (see the `@dotpress/core` README):
 
 ```ts
-cookies: { enabled: true, refreshTokenPath: '/api/auth' } // browser URL: https://example.com/api/auth/refresh
+await createApp({ adapter, basePath: '/my-app/api', plugins: [authPlugin(auth)] })
+// Refresh token cookie path: /my-app/api/auth
 ```
 
-With a wrong path, the browser does not send the cookie, and refreshes fail with `401 NO_TOKENS_PROVIDED`.
+`cookies.refreshTokenPath` forces another path. With a wrong path, the browser does not send the cookie, and refreshes fail with `401 NO_TOKENS_PROVIDED`. An auth service serves a single path: create one per app if several apps serve the auth routes under different paths. Without the plugin, the default path is `/auth`.
 
 The default names get the strongest prefix their attributes allow, like Auth.js: `__Host-` (secure, without `domain`, path `/`) prevents a subdomain or an insecure page from overwriting the cookie; `__Secure-` (secure) prevents an insecure page from overwriting it. Without `secure`, the names have no prefix. Custom names are kept as is, and checked at startup: a `__Host-` or `__Secure-` name without the required attributes would be silently rejected by browsers.
 
@@ -123,24 +124,24 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 
 ## Settings
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `keys` | — | RSA key pair: `secretKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM), plus optional `kid` and `additionalPublicKeys`. Tokens are signed with RS256. See [Keys and rotation](#keys-and-rotation). |
-| `dataProvider` | — | Storage of users and refresh tokens. |
-| `accessTokenTTL` | `900` | Access token lifetime, in seconds (15 minutes). See [Revocation](#revocation). |
-| `session` | `{ idleTimeout: 14 days }` | Session lifetimes, in seconds: `idleTimeout` (inactivity) and `absoluteTimeout` (none by default). See [Sessions](#sessions). |
-| `issuer` | — | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair. |
-| `audience` | `issuer` | `aud` claim (the API that accepts the tokens), checked on every request. |
-| `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: client applications (see [Clients](#clients)). |
-| `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (`[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`, access token cookie), `refreshTokenPath` (`/auth`), `accessTokenName`, `refreshTokenName` (see [Cookie names and paths](#cookie-names-and-paths)), `accessTokenInCookie` (`false`). |
-| `onLoginSuccess` / `onLoginFailed` | — | Login events (user, `clientId`, IP address). |
-| `loginThrottle` | enabled, in memory | Brute force protection: `{ store?, limits? }`, or `false`. See [Brute force protection](#brute-force-protection). |
-| `beforeLogin` | — | Called before checking the password: return an error to reject the attempt. |
-| `passwordHashRounds` | `12` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. See [Passwords](#passwords). |
-| `usernameClaim` | `false` | Writes the `username` claim in the access tokens (personal data, often an email address). |
-| `getUserRoles` | `user.roles` / `user.role` | Roles checked by `requireRole()`. |
-| `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it. |
-| `onRefreshTokenReuse` | — | Called with `{ userId, familyId, jwtId }` when a session is revoked because a used refresh token was reused. |
+| Setting                            | Default                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `keys`                             | —                          | RSA key pair: `secretKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM), plus optional `kid` and `additionalPublicKeys`. Tokens are signed with RS256. See [Keys and rotation](#keys-and-rotation).                                                                                                                                                                                                                                                                                  |
+| `dataProvider`                     | —                          | Storage of users and refresh tokens.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `accessTokenTTL`                   | `900`                      | Access token lifetime, in seconds (15 minutes). See [Revocation](#revocation).                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `session`                          | `{ idleTimeout: 14 days }` | Session lifetimes, in seconds: `idleTimeout` (inactivity) and `absoluteTimeout` (none by default). See [Sessions](#sessions).                                                                                                                                                                                                                                                                                                                                                  |
+| `issuer`                           | —                          | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair.                                                                                                                                                                                                                                                                                                     |
+| `audience`                         | `issuer`                   | `aud` claim (the API that accepts the tokens), checked on every request.                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `clients`                          | —                          | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: client applications (see [Clients](#clients)).                                                                                                                                                                                                                                                                                                                                                        |
+| `cookies`                          | disabled                   | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (`[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`, access token cookie), `refreshTokenPath` (path of the auth routes), `accessTokenName`, `refreshTokenName` (see [Cookie names and paths](#cookie-names-and-paths)), `accessTokenInCookie` (`false`). |
+| `onLoginSuccess` / `onLoginFailed` | —                          | Login events (user, `clientId`, IP address).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `loginThrottle`                    | enabled, in memory         | Brute force protection: `{ store?, limits? }`, or `false`. See [Brute force protection](#brute-force-protection).                                                                                                                                                                                                                                                                                                                                                              |
+| `beforeLogin`                      | —                          | Called before checking the password: return an error to reject the attempt.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `passwordHashRounds`               | `12`                       | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. See [Passwords](#passwords).                                                                                                                                                                                                                                                                                                                                                                     |
+| `usernameClaim`                    | `false`                    | Writes the `username` claim in the access tokens (personal data, often an email address).                                                                                                                                                                                                                                                                                                                                                                                      |
+| `getUserRoles`                     | `user.roles` / `user.role` | Roles checked by `requireRole()`.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `refreshTokenReuseInterval`        | `10`                       | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it.                                                                                                                                                                                                                                                                                                 |
+| `onRefreshTokenReuse`              | —                          | Called with `{ userId, familyId, jwtId }` when a session is revoked because a used refresh token was reused.                                                                                                                                                                                                                                                                                                                                                                   |
 
 ## Keys and rotation
 
@@ -164,11 +165,11 @@ Tokens carry a `kid` header: the RFC 7638 thumbprint of the public key, or `keys
 
 To rotate keys without logging users out, accept other public keys with `additionalPublicKeys`:
 
-| Step | Configuration |
-| --- | --- |
+| Step                                          | Configuration                                             |
+| --------------------------------------------- | --------------------------------------------------------- |
 | 1. Announce the new key (rolling deployments) | old pair active, new public key in `additionalPublicKeys` |
-| 2. Switch | new pair active, old public key in `additionalPublicKeys` |
-| 3. After `session.idleTimeout` | remove the old public key |
+| 2. Switch                                     | new pair active, old public key in `additionalPublicKeys` |
+| 3. After `session.idleTimeout`                | remove the old public key                                 |
 
 ```ts
 keys: {
@@ -186,10 +187,10 @@ Keep the old public key for the inactivity timeout of the sessions (14 days by d
 
 Login attempts are counted per username, whether the account exists or not (a `429` does not reveal it), before the password is checked:
 
-| Counter | Default | Against |
-| --- | --- | --- |
-| username + IP address | 5 per minute | brute force from one client, without letting others block the account |
-| username | 100 per hour (NIST 800-63B) | distributed brute force on an account |
+| Counter               | Default                     | Against                                                               |
+| --------------------- | --------------------------- | --------------------------------------------------------------------- |
+| username + IP address | 5 per minute                | brute force from one client, without letting others block the account |
+| username              | 100 per hour (NIST 800-63B) | distributed brute force on an account                                 |
 
 Over a limit, the login answers `429 TOO_MANY_LOGIN_ATTEMPTS` with a `Retry-After` header, and `onLoginFailed` gets `errorType: 'too_many_attempts'`. A successful login clears the counter of the client. Usernames are normalized (letter case, spaces), and the counter keys are hashed.
 
@@ -314,7 +315,10 @@ import { isPasswordTooLong } from '@dotpress/auth'
 
 schema: (z) => ({
   body: z.object({
-    password: z.string().min(12).refine((password) => !isPasswordTooLong(password), 'Password too long'),
+    password: z
+      .string()
+      .min(12)
+      .refine((password) => !isPasswordTooLong(password), 'Password too long'),
   }),
 })
 ```
@@ -325,10 +329,10 @@ schema: (z) => ({
 
 A session starts at login and is extended by each refresh. It ends after one of two timeouts, in seconds:
 
-| Setting | Default | The session ends… |
-| --- | --- | --- |
-| `session.idleTimeout` | 14 days | when it is not refreshed during this delay (lifetime of each refresh token) |
-| `session.absoluteTimeout` | none | this delay after login, even when it is active |
+| Setting                   | Default | The session ends…                                                           |
+| ------------------------- | ------- | --------------------------------------------------------------------------- |
+| `session.idleTimeout`     | 14 days | when it is not refreshed during this delay (lifetime of each refresh token) |
+| `session.absoluteTimeout` | none    | this delay after login, even when it is active                              |
 
 Without absolute timeout, an active session never ends, like on most consumer apps. Examples:
 
@@ -369,10 +373,10 @@ The access tokens of a revoked session stay valid until they expire, unless the 
 
 Access tokens are verified without a database lookup of the token itself, so revoking a session does not invalidate the access tokens already issued:
 
-| Event | Refresh | Access tokens already issued |
-| --- | --- | --- |
-| Account deleted or disabled (`findUserById` returns `undefined`) | rejected, the session is revoked | rejected at once |
-| Logout, `scope: 'all'`, refresh token reuse, `revokeTokens()` | rejected | valid until they expire (`accessTokenTTL`, 15 minutes), or rejected at once with `isSessionRevoked` |
+| Event                                                            | Refresh                          | Access tokens already issued                                                                        |
+| ---------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Account deleted or disabled (`findUserById` returns `undefined`) | rejected, the session is revoked | rejected at once                                                                                    |
+| Logout, `scope: 'all'`, refresh token reuse, `revokeTokens()`    | rejected                         | valid until they expire (`accessTokenTTL`, 15 minutes), or rejected at once with `isSessionRevoked` |
 
 **`findUserById` must return `undefined` for a deleted, disabled or banned account**: it is called on every authenticated request and every refresh.
 
@@ -384,10 +388,7 @@ The revocation state is already stored: a revoked session has revoked refresh to
 
 ```ts
 isSessionRevoked: async (sessionId) => {
-  const { rowCount } = await pool.query(
-    'SELECT 1 FROM refresh_tokens WHERE family_id = $1 AND revoked_at IS NOT NULL LIMIT 1',
-    [sessionId]
-  )
+  const { rowCount } = await pool.query('SELECT 1 FROM refresh_tokens WHERE family_id = $1 AND revoked_at IS NOT NULL LIMIT 1', [sessionId])
   return rowCount > 0
 }
 ```
@@ -400,8 +401,7 @@ For faster lookups, record the revoked sessions in Redis when revoking. They onl
 
 ```ts
 const ACCESS_TOKEN_TTL = 900 // same as accessTokenTTL
-const markRevoked = (familyIds: string[]) =>
-  Promise.all(familyIds.map((id) => redis.set(`dotpress:revoked-session:${id}`, '1', { EX: ACCESS_TOKEN_TTL })))
+const markRevoked = (familyIds: string[]) => Promise.all(familyIds.map((id) => redis.set(`dotpress:revoked-session:${id}`, '1', { EX: ACCESS_TOKEN_TTL })))
 
 const dataProvider: DataProvider = {
   // …

@@ -28,6 +28,14 @@ export interface RequestContext {
   logger: Logger
   /** Native request object of the adapter (escape hatch). */
   raw: unknown
+  /**
+   * Path seen by the browser for a route path, with the `basePath` or
+   * `publicBasePath` of the app. Use it to build `Location` headers and
+   * links.
+   *
+   * @example redirect(ctx.publicPath('/login')) // '/my-app/api/login'
+   */
+  publicPath(path: string): string
 }
 
 /**

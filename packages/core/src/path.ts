@@ -62,6 +62,44 @@ export const joinPaths = (prefix: string, path: string): string => {
 }
 
 /**
+ * Validates and normalizes a base path option (`basePath`,
+ * `publicBasePath`). Returns an empty string for `/`, which means no
+ * prefix.
+ */
+export const normalizeBasePath = (value: unknown, option: string): string => {
+  if (typeof value !== 'string' || !value.startsWith('/')) {
+    throw new TypeError(
+      `Invalid ${option}: expected a path starting with "/", received ${JSON.stringify(value)}.`
+    )
+  }
+
+  const path = normalizePath(value)
+
+  if (getPathParamNames(path).length > 0) {
+    throw new TypeError(
+      `Invalid ${option} "${value}": a base path cannot contain parameters.`
+    )
+  }
+
+  return path === '/' ? '' : path
+}
+
+/**
+ * Prefixes a path with a normalized base path. The path may contain a query
+ * string or a fragment.
+ */
+export const prefixPath = (basePath: string, path: string): string => {
+  if (typeof path !== 'string' || !path.startsWith('/')) {
+    throw new TypeError(
+      `publicPath() expects a path starting with "/", received ${JSON.stringify(path)}.`
+    )
+  }
+
+  if (basePath === '') return path
+  return path === '/' ? basePath : `${basePath}${path}`
+}
+
+/**
  * Names of the parameters declared in a path.
  */
 export const getPathParamNames = (path: string): string[] =>

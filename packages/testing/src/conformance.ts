@@ -316,6 +316,33 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
           { middlewares: [track('global')] }
         )
       })
+
+      it('serves the routes under the base path only', () =>
+        withApp(
+          (router) => {
+            router.defineRoute({
+              path: '/users/:id',
+              handler: ({ req }) => ({ id: req.params.id, path: req.path }),
+            })
+          },
+          async ({ fetch }) => {
+            const res = await fetch('/my-app/api/users/42')
+            expect(res.status).toBe(200)
+            expect(await res.json()).toEqual({
+              id: '42',
+              path: '/my-app/api/users/42',
+            })
+
+            for (const path of ['/users/42', '/my-app/users/42']) {
+              const outside = await fetch(path)
+              expect(outside.status, path).toBe(404)
+              expect(await outside.json()).toMatchObject({
+                error: 'NOT_FOUND',
+              })
+            }
+          },
+          { basePath: '/my-app/api' }
+        ))
     })
 
     describe('request', () => {

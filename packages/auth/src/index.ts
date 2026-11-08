@@ -33,6 +33,7 @@ export {
 
 export type {
   AdditionalPublicKey,
+  AuthInitOptions,
   AuthSession,
   BeforeLoginEvent,
   AuthSettings,

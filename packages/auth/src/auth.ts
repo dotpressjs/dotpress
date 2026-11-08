@@ -16,6 +16,7 @@ import {
 import { sha256, toHex } from './crypto.js'
 import { memoryRateLimitStore } from './rate-limit.js'
 import type {
+  AuthInitOptions,
   AuthSession,
   AuthSettings,
   AuthUser,
@@ -66,8 +67,11 @@ export class AuthError extends Error {
 
 export interface Auth {
   readonly settings: ResolvedAuthSettings
-  /** Imports the keys. Fails with an explicit message on invalid keys. */
-  init(): Promise<void>
+  /**
+   * Imports the keys. Fails with an explicit message on invalid keys.
+   * `authPlugin()` calls it at startup, with the browser path of its routes.
+   */
+  init(options?: AuthInitOptions): Promise<void>
   generateAccessToken(subject: TokenSubject): Promise<CreatedAccessToken>
   generateRefreshToken(): Promise<CreatedRefreshToken>
   /** Generates and stores a token pair, starting a session. */
@@ -768,6 +772,32 @@ export const createAuth = (input: AuthSettings): Auth => {
   const generateAccessToken = async (subject: TokenSubject) =>
     signAccessToken(sessionClaims(subject))
 
+  let routesPath: string | undefined
+
+  /**
+   * Sets the path of the refresh token cookie to the browser path of the
+   * auth routes, unless `cookies.refreshTokenPath` is set.
+   */
+  const bindRoutesPath = (path: string) => {
+    if (typeof path !== 'string' || !path.startsWith('/')) {
+      throw new TypeError(
+        `Invalid routesPath: expected a path starting with "/", received ${JSON.stringify(path)}.`
+      )
+    }
+    if (routesPath !== undefined && routesPath !== path) {
+      throw new Error(
+        `This auth service already serves routes under "${routesPath}": create one auth service per app to serve them under "${path}".`
+      )
+    }
+    routesPath = path
+    if (input.cookies?.refreshTokenPath === undefined) {
+      settings.cookies = resolveCookies({
+        ...input.cookies,
+        refreshTokenPath: path,
+      })
+    }
+  }
+
   const cookieOptions = () => {
     const { httpOnly, secure, sameSite, path, domain } = settings.cookies
     return { httpOnly, secure, sameSite, path, domain }
@@ -776,7 +806,8 @@ export const createAuth = (input: AuthSettings): Auth => {
   return {
     settings,
 
-    init: async () => {
+    init: async (options = {}) => {
+      if (options.routesPath !== undefined) bindRoutesPath(options.routesPath)
       // The dummy hash is computed now: otherwise, the first login of an
       // unknown user would take longer.
       await Promise.all([getKeys(), getDummyHash()])

@@ -71,7 +71,8 @@ export type ResponseHook = (
 export type LifecycleHook = () => void | Promise<void>
 
 /** Context keys provided by the core, which plugins cannot decorate. */
-export type BaseContextKey = 'req' | 'res' | 'requestId' | 'logger' | 'raw'
+export type BaseContextKey =
+  'req' | 'res' | 'requestId' | 'logger' | 'raw' | 'publicPath'
 
 export type DecoratableContextKey = Exclude<
   keyof RequestContext,
@@ -106,6 +107,23 @@ export interface PluginAPI {
   readonly name: string
   /** Logger bound to the plugin (`plugin` field). */
   readonly logger: Logger
+  /**
+   * Prefix of every route (`basePath` option), normalized. Empty when the
+   * app has no base path.
+   */
+  readonly basePath: string
+  /**
+   * Prefix removed by the reverse proxy (`publicBasePath` option),
+   * normalized. Empty when not configured.
+   */
+  readonly publicBasePath: string
+  /**
+   * Path seen by the browser for a route path, for instance for a cookie
+   * `Path` or a documentation URL.
+   *
+   * @example api.publicPath('/auth') // '/my-app/api/auth'
+   */
+  publicPath(path: string): string
   addRoute: RouteGroup['defineRoute']
   addRouteGroup: RouteGroup['createGroup']
   /**
@@ -146,6 +164,7 @@ const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set<BaseContextKey>([
   'requestId',
   'logger',
   'raw',
+  'publicPath',
 ])
 
 export const isBaseContextKey = (key: string) => BASE_CONTEXT_KEYS.has(key)

@@ -53,6 +53,8 @@ export type ErrorHook = (
 
 export interface PipelineConfig {
   readonly logger: Logger
+  /** `ctx.publicPath()`. */
+  readonly publicPath: (path: string) => string
   readonly exposeErrors: boolean
   readonly generateRequestId: (request: NormalizedRequest) => string
   readonly onError: ErrorHook | undefined
@@ -515,6 +517,7 @@ export const compileRoute = (
         requestId,
         logger,
         raw: request.raw,
+        publicPath: config.publicPath,
       } satisfies Pick<
         RequestContext,
         BaseContextKey

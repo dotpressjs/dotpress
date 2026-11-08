@@ -1,4 +1,4 @@
-import { createRouter, type Router } from '@dotpress/core'
+import { createRouter, type AppOptions, type Router } from '@dotpress/core'
 import { createTestApp } from '@dotpress/testing'
 import bcrypt from 'bcryptjs'
 import { exportPKCS8, exportSPKI, generateKeyPair } from 'jose'
@@ -140,6 +140,8 @@ export interface AuthAppOptions {
   /** Adds `isSessionRevoked()` to the data provider. */
   sessionRevocation?: boolean
   plugin?: AuthPluginOptions
+  /** `basePath` and `publicBasePath` of the app. */
+  app?: Pick<AppOptions, 'basePath' | 'publicBasePath'>
   routes?: (router: Router) => void
 }
 
@@ -157,6 +159,7 @@ export const createAuthApp = async (options: AuthAppOptions = {}) => {
   options.routes?.(router)
 
   const app = await createTestApp({
+    ...options.app,
     routers: [router],
     plugins: [authPlugin(auth, options.plugin)],
   })

@@ -89,9 +89,9 @@ export interface CookieSettings {
   path?: string
   /**
    * Path of the refresh token cookie: the browser path of the auth routes,
-   * the only ones that need it. Defaults to `/auth`. Set it when the routes
-   * have another prefix, or are served under a path by a proxy (for
-   * example `/api/auth`).
+   * the only ones that need it. With `authPlugin()`, defaults to the path
+   * of its routes, including the `basePath` or `publicBasePath` of the app
+   * (for example `/my-app/api/auth`). Defaults to `/auth` otherwise.
    */
   refreshTokenPath?: string
   /**
@@ -395,6 +395,15 @@ export interface AuthSettings {
    * array, or to its `role` string.
    */
   getUserRoles?: (user: AuthUser) => readonly string[]
+}
+
+/** Options of `auth.init()`. */
+export interface AuthInitOptions {
+  /**
+   * Browser path of the auth routes, used as the default path of the
+   * refresh token cookie. An auth service serves a single path.
+   */
+  routesPath?: string
 }
 
 export interface ResolvedAuthSettings extends Required<

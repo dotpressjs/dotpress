@@ -512,6 +512,10 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
   })
 }
 
+/** Group prefix as the router stores it: `/auth/` gives `/auth`. */
+const normalizePrefix = (prefix: string) =>
+  `/${prefix.split('/').filter(Boolean).join('/')}`
+
 /**
  * Plugs an authentication service into an app:
  *
@@ -522,28 +526,19 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
  */
 export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
   const prefix = options.prefix ?? '/auth'
-  const { cookies } = auth.settings
-
-  // The refresh token cookie is only sent under its path: with another
-  // prefix, refreshes would silently fail.
-  if (
-    cookies.enabled &&
-    options.routes !== false &&
-    cookies.refreshTokenPath === '/auth' &&
-    prefix.replace(/\/+$/, '') !== '/auth'
-  ) {
-    throw new TypeError(
-      `cookies.refreshTokenPath ("/auth") does not match the auth routes prefix ("${prefix}"): set it to the browser path of the auth routes.`
-    )
-  }
 
   return definePlugin({
     name: 'auth',
     auth,
     securitySchemes: AUTH_SECURITY_SCHEMES,
     async setup(api) {
-      // Fails at startup on invalid keys.
-      await auth.init()
+      // Fails at startup on invalid keys. The refresh token cookie is only
+      // sent to the auth routes: its path is their browser path.
+      await auth.init(
+        options.routes === false
+          ? {}
+          : { routesPath: api.publicPath(normalizePrefix(prefix)) }
+      )
 
       api.decorateContext('user', () => undefined)
       api.decorateContext('auth', () => undefined)

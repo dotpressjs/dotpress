@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs'
 import { decodeJwt } from 'jose'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -50,6 +51,8 @@ describe('auth routes', () => {
     it.each([
       [{ username: 'grace', password: 'secret' }, 'invalid_username'],
       [{ username: 'ada', password: 'wrong' }, 'invalid_password'],
+      // Account without password (SSO): it exists, the password is wrong.
+      [{ username: 'margaret', password: '' }, 'invalid_password'],
     ])('rejects invalid credentials (%o)', async (credentials, errorType) => {
       const onLoginFailed = vi.fn(async () => {})
       const { fetch } = await createAuthApp({ settings: { onLoginFailed } })
@@ -68,6 +71,34 @@ describe('auth routes', () => {
         client: '',
         ipAddress: '',
       })
+    })
+
+    it('answers unknown users in the time of a wrong password', async () => {
+      // Higher cost than the other tests, so that the bcrypt time dominates
+      // the measure (around 15 ms per login).
+      const rounds = 8
+      const { fetch, store } = await createAuthApp({
+        settings: { passwordHashRounds: rounds },
+      })
+      store.users.get('u1')!.passwordHash = bcrypt.hashSync('secret', rounds)
+
+      const median = async (username: string) => {
+        const durations: number[] = []
+        for (let index = 0; index < 5; index++) {
+          const start = performance.now()
+          await login(fetch, { username, password: 'wrong' })
+          durations.push(performance.now() - start)
+        }
+        return durations.sort((a, b) => a - b)[2]!
+      }
+
+      const wrongPassword = await median('ada')
+      const unknownUser = await median('grace')
+      const withoutPassword = await median('margaret')
+
+      // Without dummy hash: about 0.3 ms against 15 ms.
+      expect(unknownUser).toBeGreaterThan(wrongPassword / 2)
+      expect(withoutPassword).toBeGreaterThan(wrongPassword / 2)
     })
 
     it('validates the request body', async () => {

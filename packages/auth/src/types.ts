@@ -110,7 +110,12 @@ export interface RefreshTokenData {
 
 export interface UserIdentifiers {
   userId: string
-  passwordHash: string
+  /**
+   * bcrypt hash of the password. `null` (or an empty string) for accounts
+   * without password (SSO, pending invitation): their login fails like a
+   * wrong password, in the same time.
+   */
+  passwordHash: string | null
   role?: string
 }
 
@@ -150,6 +155,13 @@ export interface AuthSettings {
   aud?: AudienceSettings
   onLoginFailed?: (event: LoginFailedEvent) => Promise<void>
   onLoginSuccess?: (event: LoginSuccessEvent) => Promise<void>
+  /**
+   * bcrypt cost of `hashPassword()`, and of the dummy hash compared when
+   * the user is unknown or has no password, so that every login takes the
+   * same time. Set it to the cost of the hashes stored in the database.
+   * Defaults to 10.
+   */
+  passwordHashRounds?: number
   /**
    * Delay, in seconds after its first use, during which a refresh token can
    * be presented again without being treated as stolen: concurrent

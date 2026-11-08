@@ -8,7 +8,7 @@ import {
   generatePasswordHash,
   type AuthSettings,
 } from '../src/index.js'
-import { createStore, keys } from './support.js'
+import { createStore, keys, TEST_HASH_ROUNDS } from './support.js'
 
 const authWith = (settings: Partial<AuthSettings> = {}) => {
   const store = createStore()
@@ -16,6 +16,7 @@ const authWith = (settings: Partial<AuthSettings> = {}) => {
     keys,
     dataProvider: store.provider,
     issuer: 'https://api.example.com',
+    passwordHashRounds: TEST_HASH_ROUNDS,
     ...settings,
   })
   return { auth, store }
@@ -456,6 +457,58 @@ describe('createAuth()', () => {
       await expect(auth.verifyPassword('secret', hash)).resolves.toBe(true)
       await expect(auth.verifyPassword('wrong', hash)).resolves.toBe(false)
       await expect(auth.hashPassword('secret', 4)).resolves.toMatch(/^\$2/)
+    })
+
+    it('hashes with passwordHashRounds by default', async () => {
+      const { auth } = authWith({ passwordHashRounds: 5 })
+      await expect(auth.hashPassword('secret')).resolves.toMatch(
+        /^\$2[aby]\$05\$/
+      )
+    })
+
+    it.each([3, 32, 10.5, Number.NaN])(
+      'rejects an invalid passwordHashRounds (%s)',
+      (passwordHashRounds) => {
+        expect(() => authWith({ passwordHashRounds })).toThrow(
+          'Invalid passwordHashRounds'
+        )
+      }
+    )
+
+    it.each([null, undefined, '', 'not-a-bcrypt-hash'])(
+      'rejects passwords without valid hash (%o), against a dummy hash',
+      async (passwordHash) => {
+        const { auth } = authWith()
+        await expect(auth.verifyPassword('secret', passwordHash)).resolves.toBe(
+          false
+        )
+      }
+    )
+
+    it('takes as long without valid hash as with a wrong password', async () => {
+      // Higher cost than the other tests, so that the bcrypt time dominates
+      // the measure (around 15 ms).
+      const rounds = 8
+      const { auth } = authWith({ passwordHashRounds: rounds })
+      const hash = await generatePasswordHash('secret', rounds)
+      await auth.init()
+
+      const median = async (check: () => Promise<boolean>) => {
+        const durations: number[] = []
+        for (let index = 0; index < 5; index++) {
+          const start = performance.now()
+          await check()
+          durations.push(performance.now() - start)
+        }
+        return durations.sort((a, b) => a - b)[2]!
+      }
+
+      const wrongPassword = await median(() =>
+        auth.verifyPassword('wrong', hash)
+      )
+      const withoutHash = await median(() => auth.verifyPassword('wrong', null))
+
+      expect(withoutHash).toBeGreaterThan(wrongPassword / 2)
     })
   })
 })

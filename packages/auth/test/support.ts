@@ -27,25 +27,38 @@ export const keys = await (async () => {
   }
 })()
 
+/** bcrypt cost of the test users, and of the dummy hash. */
+export const TEST_HASH_ROUNDS = 4
+
 interface StoredUser {
   id: string
   username: string
-  passwordHash: string
+  passwordHash: string | null
   role: string
   roles: string[]
 }
 
-/** In-memory data provider with two users: ada (admin) and linus (user). */
+/**
+ * In-memory data provider with three users: ada (admin), linus (user), and
+ * margaret (user without password, like an SSO account).
+ */
 export const createStore = () => {
+  // Low cost factor: fast tests (see TEST_HASH_ROUNDS).
+  const passwordHash = bcrypt.hashSync('secret', TEST_HASH_ROUNDS)
   const users = new Map<string, StoredUser>(
     [
       { id: 'u1', username: 'ada', role: 'admin', roles: ['admin'] },
       { id: 'u2', username: 'linus', role: 'user', roles: ['user'] },
-    ].map((user) => [
-      user.id,
-      // Low cost factor: fast tests.
-      { ...user, passwordHash: bcrypt.hashSync('secret', 4) },
-    ])
+    ]
+      .map((user): StoredUser => ({ ...user, passwordHash }))
+      .concat({
+        id: 'u3',
+        username: 'margaret',
+        role: 'user',
+        roles: ['user'],
+        passwordHash: null,
+      })
+      .map((user) => [user.id, user])
   )
   const refreshTokens = new Map<string, RefreshTokenData>()
 
@@ -118,6 +131,7 @@ export const createAuthApp = async (options: AuthAppOptions = {}) => {
     keys,
     dataProvider: store.provider,
     issuer: 'https://api.example.com',
+    passwordHashRounds: TEST_HASH_ROUNDS,
     ...options.settings,
   })
 

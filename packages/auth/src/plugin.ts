@@ -165,11 +165,17 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       }
 
       const user = await dataProvider.findUserIdentifiers(username)
+      // The password is checked even for unknown users, against a dummy
+      // hash: both failures take the same time.
+      const passwordValid = await auth.verifyPassword(
+        password,
+        user?.passwordHash
+      )
       if (!user) {
         return loginFailed({ ...event, errorType: 'invalid_username' })
       }
 
-      if (!(await auth.verifyPassword(password, user.passwordHash))) {
+      if (!passwordValid) {
         return loginFailed({ ...event, errorType: 'invalid_password' })
       }
 

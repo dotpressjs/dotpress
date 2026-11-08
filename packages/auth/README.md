@@ -93,6 +93,7 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `domain`, `path` (`/`), `accessTokenName`, `refreshTokenName`, `accessTokenInCookie` (`false`). |
 | `aud` | — | `{ required?, isUserRoleAllowed(role, aud) }`: audience checked at login. |
 | `onLoginSuccess` / `onLoginFailed` | — | Login events (user, client, IP address). |
+| `passwordHashRounds` | `10` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. Set it to the cost of the hashes stored in your database. |
 | `getUserRoles` | `user.roles` / `user.role` | Roles checked by `requireRole()`. |
 | `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it. |
 | `onRefreshTokenReuse` | — | Called with `{ userId, familyId, jwtId }` when a session is revoked because a used refresh token was reused. |
@@ -116,11 +117,18 @@ const dataProvider: DataProvider = {
   revokeTokens: (userId) => db.refreshToken.updateMany({ userId }, { revokedAt: new Date() }),
   revokeTokenFamily: (familyId) => db.refreshToken.updateMany({ familyId }, { revokedAt: new Date() }),
   findUserById: (userId) => db.user.findPublicProfile(userId),
-  findUserIdentifiers: (username) => db.user.findCredentials(username), // { userId, passwordHash, role? }
+  findUserIdentifiers: (username) => db.user.findCredentials(username), // { userId, passwordHash (null without password), role? }
 }
 ```
 
 Refresh tokens are random 128-byte values; only their SHA-256 hash is stored.
+
+## Account enumeration
+
+A login fails with the same `401 INVALID_LOGIN` response, in the same time, whether the username is unknown, the account has no password (`passwordHash: null`, for SSO accounts), or the password is wrong: unknown users are checked against a dummy bcrypt hash, computed at startup with `passwordHashRounds`. Two things keep it effective:
+
+- `passwordHashRounds` must match the cost of the hashes stored in your database;
+- `onLoginFailed` must do the same work whatever the `errorType` (for example, do not update the user row only on `invalid_password`).
 
 ## Refresh token rotation
 

@@ -76,8 +76,18 @@ export interface Auth {
     expiresInSeconds?: number
   ): void
   clearAuthCookies(res: DotpressResponse): void
+  /** Hashes a password with bcrypt. Defaults to `passwordHashRounds`. */
   hashPassword(password: string, saltRounds?: number): Promise<string>
-  verifyPassword(password: string, passwordHash: string): Promise<boolean>
+  /**
+   * Verifies a password against its bcrypt hash. Without valid hash
+   * (unknown user, account without password), it compares the password
+   * with a dummy hash and returns `false`: the answer takes the same time,
+   * and does not reveal whether the account exists.
+   */
+  verifyPassword(
+    password: string,
+    passwordHash: string | null | undefined
+  ): Promise<boolean>
 }
 
 const DEFAULT_COOKIE_SETTINGS: ResolvedCookieSettings = {
@@ -109,6 +119,15 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
   if (!settings.dataProvider) {
     throw new TypeError('createAuth() requires a dataProvider.')
   }
+  const rounds = settings.passwordHashRounds
+  if (
+    rounds !== undefined &&
+    (!Number.isInteger(rounds) || rounds < 4 || rounds > 31)
+  ) {
+    throw new RangeError(
+      'Invalid passwordHashRounds: expected an integer between 4 and 31.'
+    )
+  }
   const reuseInterval = settings.refreshTokenReuseInterval
   if (
     reuseInterval !== undefined &&
@@ -129,6 +148,7 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     aud: settings.aud,
     onLoginFailed: settings.onLoginFailed,
     onLoginSuccess: settings.onLoginSuccess,
+    passwordHashRounds: settings.passwordHashRounds ?? 10,
     refreshTokenReuseInterval: settings.refreshTokenReuseInterval ?? 10,
     onRefreshTokenReuse: settings.onRefreshTokenReuse,
     getUserRoles: settings.getUserRoles ?? defaultUserRoles,
@@ -179,6 +199,9 @@ const sha256 = async (value: string) =>
     )
   )
 
+/** bcrypt hash format: `$2a$`, `$2b$` or `$2y$`, cost, salt and hash. */
+const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/
+
 const addDaysFromNow = (days: number): Date => {
   const date = new Date()
   date.setDate(date.getDate() + days)
@@ -221,6 +244,16 @@ export const createAuth = (input: AuthSettings): Auth => {
       throw error
     })
     return keys
+  }
+
+  let dummyHash: Promise<string> | undefined
+  /** Hash of a random password, with the configured cost. */
+  const getDummyHash = () => {
+    dummyHash ??= bcrypt.hash(
+      toHex(crypto.getRandomValues(new Uint8Array(16))),
+      settings.passwordHashRounds
+    )
+    return dummyHash
   }
 
   const signAccessToken = async (claims: {
@@ -322,7 +355,9 @@ export const createAuth = (input: AuthSettings): Auth => {
     settings,
 
     init: async () => {
-      await getKeys()
+      // The dummy hash is computed now: otherwise, the first login of an
+      // unknown user would take longer.
+      await Promise.all([getKeys(), getDummyHash()])
     },
 
     generateAccessToken,
@@ -457,11 +492,16 @@ export const createAuth = (input: AuthSettings): Auth => {
       }
     },
 
-    hashPassword: (password, saltRounds = 10) =>
+    hashPassword: (password, saltRounds = settings.passwordHashRounds) =>
       bcrypt.hash(password, saltRounds),
 
-    verifyPassword: (password, passwordHash) =>
-      bcrypt.compare(password, passwordHash),
+    async verifyPassword(password, passwordHash) {
+      if (typeof passwordHash === 'string' && BCRYPT_HASH.test(passwordHash)) {
+        return bcrypt.compare(password, passwordHash)
+      }
+      await bcrypt.compare(password, await getDummyHash())
+      return false
+    },
   }
 }
 

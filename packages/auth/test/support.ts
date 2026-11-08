@@ -110,6 +110,10 @@ export const createStore = (options: { sessionRevocation?: boolean } = {}) => {
           (token) => token.familyId === sessionId && token.revokedAt
         ),
     }),
+    updatePasswordHash: async (userId, hash) => {
+      const user = users.get(userId)
+      if (user) user.passwordHash = hash
+    },
     findUserById: async (userId) => {
       const user = users.get(userId)
       return user && { id: user.id, username: user.username, roles: user.roles }

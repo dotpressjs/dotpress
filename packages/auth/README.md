@@ -119,7 +119,7 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 })
 ```
 
-`requireAuth` answers `401`; `requireRole()` answers `401` without user and `403` without one of the roles; `requireClient()` answers `401` without user and `403` when the token was issued for another client (see [Clients](#clients)). In the handlers of guarded routes, `ctx.user` and `ctx.auth` are typed as defined. Roles come from the user `roles` array (or `role` string), or from the `getUserRoles` setting.
+`requireAuth` answers `401` with a `WWW-Authenticate: Bearer` header (RFC 6750), plus `error="invalid_token"` when the `Authorization` header carried an expired, revoked or invalid token; every `401` of the app gets this header, unless it already has one. `requireRole()` answers `401` without user and `403` without one of the roles; `requireClient()` answers `401` without user and `403` when the token was issued for another client (see [Clients](#clients)). In the handlers of guarded routes, `ctx.user` and `ctx.auth` are typed as defined. Roles come from the user `roles` array (or `role` string), or from the `getUserRoles` setting.
 
 ## Settings
 
@@ -136,7 +136,8 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `onLoginSuccess` / `onLoginFailed` | — | Login events (user, `clientId`, IP address). |
 | `loginThrottle` | enabled, in memory | Brute force protection: `{ store?, limits? }`, or `false`. See [Brute force protection](#brute-force-protection). |
 | `beforeLogin` | — | Called before checking the password: return an error to reject the attempt. |
-| `passwordHashRounds` | `10` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. Set it to the cost of the hashes stored in your database. |
+| `passwordHashRounds` | `12` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. See [Passwords](#passwords). |
+| `usernameClaim` | `false` | Writes the `username` claim in the access tokens (personal data, often an email address). |
 | `getUserRoles` | `user.roles` / `user.role` | Roles checked by `requireRole()`. |
 | `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it. |
 | `onRefreshTokenReuse` | — | Called with `{ userId, familyId, jwtId }` when a session is revoked because a used refresh token was reused. |
@@ -244,7 +245,9 @@ createAuth({
 
 ## Access tokens
 
-Access tokens follow [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): `typ: at+jwt` header, RS256 signature, and the `iss`, `aud`, `sub`, `jti`, `iat`, `exp`, `auth_time` and `username` claims, plus `sid` (session, exposed as `ctx.auth.sessionId`) when the token was issued with a refresh token, and `client_id` when it was issued for a client. The type, issuer, audience and client are checked on every request.
+Access tokens follow [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): `typ: at+jwt` header, RS256 signature, and the `iss`, `aud`, `sub`, `jti`, `iat`, `exp` and `auth_time` claims, plus `sid` (session, exposed as `ctx.auth.sessionId`) when the token was issued with a refresh token, and `client_id` when it was issued for a client. The type, issuer, audience and client are checked on every request.
+
+The username is not written in the token by default: it is often an email address, readable by anyone holding the token (it is only base64 encoded), in logs and in the browser. `sub` identifies the user, and `ctx.user` holds the profile. `usernameClaim: true` writes it (`ctx.auth.username`).
 
 ## Clients
 
@@ -283,6 +286,7 @@ const dataProvider: DataProvider = {
   findUserById: (userId) => db.user.findActivePublicProfile(userId), // undefined for deleted or disabled accounts
   findUserIdentifiers: (username) => db.user.findCredentials(username), // { userId, passwordHash (null without password), role? }
   isSessionRevoked: (sessionId) => …, // optional, see Revocation
+  updatePasswordHash: (userId, passwordHash) => db.user.update(userId, { passwordHash }), // optional, see Passwords
 }
 ```
 
@@ -292,8 +296,30 @@ Refresh tokens are random 128-byte values; only their SHA-256 hash is stored.
 
 A login fails with the same `401 INVALID_LOGIN` response, in the same time, whether the username is unknown, the account has no password (`passwordHash: null`, for SSO accounts), or the password is wrong: unknown users are checked against a dummy bcrypt hash, computed at startup with `passwordHashRounds`. Two things keep it effective:
 
-- `passwordHashRounds` must match the cost of the hashes stored in your database;
+- `passwordHashRounds` must match the cost of the hashes stored in your database (see [Passwords](#passwords));
 - `onLoginFailed` must do the same work whatever the `errorType` (for example, do not update the user row only on `invalid_password`).
+
+## Passwords
+
+Passwords are hashed with bcrypt, with a cost of 12 by default (`passwordHashRounds`), like Rails and Laravel: about 200 ms per login on a recent laptop with bcryptjs (50 ms with a cost of 10). Measure it on your servers.
+
+**Hash upgrade.** Implement the optional `updatePasswordHash(userId, passwordHash)` method of the data provider: at each successful login, a hash with another cost than `passwordHashRounds` is replaced, computed from the password just verified. Raising the cost then migrates the users as they log in. An error of the method is logged, and does not fail the login.
+
+> While hashes with the previous cost remain, their accounts answer faster than unknown usernames, which reveals that they exist (see [Account enumeration](#account-enumeration)). Either accept it during the migration, or keep `passwordHashRounds` at the cost of your hashes (`10` for hashes created by Dotpress V1).
+
+**72-byte limit.** bcrypt reads the first 72 bytes (UTF-8) of a password, and ignores the rest. `hashPassword()` and `generatePasswordHash()` throw a `RangeError` for longer passwords instead of truncating them. Check the length in the sign-up and password change schemas, so that users get a validation error:
+
+```ts
+import { isPasswordTooLong } from '@dotpress/auth'
+
+schema: (z) => ({
+  body: z.object({
+    password: z.string().min(12).refine((password) => !isPasswordTooLong(password), 'Password too long'),
+  }),
+})
+```
+
+72 bytes are 72 ASCII characters, but fewer with accents or emojis (`é` takes 2 bytes). Logins are not limited: passwords created before the check keep working, as they are compared with the same truncation.
 
 ## Sessions
 

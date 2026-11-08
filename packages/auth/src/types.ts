@@ -21,7 +21,8 @@ export interface AuthUser {}
  */
 export interface AuthSession {
   readonly userId: string
-  readonly username: string
+  /** `username` claim, with the `usernameClaim` setting only. */
+  readonly username: string | undefined
   /** Token identifier (`jti`), shared with its refresh token. */
   readonly tokenId: string
   /**
@@ -268,6 +269,13 @@ export interface DataProvider {
    * It costs one lookup per request: see the README for implementations.
    */
   isSessionRevoked?(sessionId: string): Promise<boolean>
+  /**
+   * Optional. Stores a new hash of the password of a user, computed at
+   * login when the stored hash has another cost than `passwordHashRounds`
+   * (for example after raising it). Errors are logged, and do not fail
+   * the login.
+   */
+  updatePasswordHash?(userId: string, passwordHash: string): Promise<void>
 }
 
 /**
@@ -359,10 +367,16 @@ export interface AuthSettings {
   /**
    * bcrypt cost of `hashPassword()`, and of the dummy hash compared when
    * the user is unknown or has no password, so that every login takes the
-   * same time. Set it to the cost of the hashes stored in the database.
-   * Defaults to 10.
+   * same time. Hashes with another cost are upgraded at login when
+   * `DataProvider.updatePasswordHash()` is defined. Defaults to 12.
    */
   passwordHashRounds?: number
+  /**
+   * Writes the `username` claim in the access tokens. Defaults to `false`:
+   * a username is often an email address, readable by anyone holding the
+   * token (it is only base64 encoded); `sub` identifies the user.
+   */
+  usernameClaim?: boolean
   /**
    * Delay, in seconds after its first use, during which a refresh token can
    * be presented again without being treated as stolen: concurrent
@@ -414,7 +428,8 @@ export interface TokenPair {
 
 export interface TokenSubject {
   userId: string
-  username: string
+  /** Written in the token with the `usernameClaim` setting only. */
+  username?: string
   /** `client_id` claim. Must be allowed by the `clients` setting. */
   clientId?: string
 }

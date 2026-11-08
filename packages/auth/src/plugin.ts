@@ -50,6 +50,8 @@ const LOCAL_IPS = new Set([
 const clientIp = (req: DotpressRequest) =>
   req.ip && !LOCAL_IPS.has(req.ip) ? req.ip : ''
 
+const BEARER = /^bearer +(\S+) *$/i
+
 const bodyField = (body: unknown, key: string): string | undefined => {
   if (typeof body !== 'object' || body === null) return undefined
   const value = (body as Record<string, unknown>)[key]
@@ -65,10 +67,9 @@ const findAccessToken = (
   req: DotpressRequest,
   cookies: ResolvedCookieSettings
 ): { token: string; source: 'header' | 'cookie' } | undefined => {
-  const header = req.header('authorization')
-  if (header?.startsWith('Bearer ')) {
-    return { token: header.slice('Bearer '.length), source: 'header' }
-  }
+  // Authentication schemes are case-insensitive (RFC 7235).
+  const bearer = BEARER.exec(req.header('authorization') ?? '')
+  if (bearer) return { token: bearer[1]!, source: 'header' }
 
   if (cookies.enabled && cookies.accessTokenInCookie) {
     const cookie = req.cookies[cookies.accessTokenName]
@@ -229,7 +230,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         sessionExpiresAt: z.string().optional(),
       }),
     }),
-    handler: async ({ req, res }) => {
+    handler: async ({ req, res, logger }) => {
       const { username, password, clientId, mode } = req.body
       const event = {
         username,
@@ -311,6 +312,25 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       }
 
       await settings.onLoginSuccess?.({ ...event, userId: user.userId })
+
+      // Upgrades a hash with another cost (passwordHashRounds raised).
+      if (
+        dataProvider.updatePasswordHash &&
+        user.passwordHash &&
+        auth.passwordNeedsRehash(user.passwordHash)
+      ) {
+        try {
+          await dataProvider.updatePasswordHash(
+            user.userId,
+            await auth.rehashPassword(password)
+          )
+        } catch (error) {
+          logger.warn(
+            error instanceof Error ? error : { error },
+            'Cannot update the password hash'
+          )
+        }
+      }
 
       const inCookies = mode === 'cookie' && cookies.enabled
       if (inCookies) auth.setAuthCookies(res, tokens)
@@ -528,6 +548,9 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       api.decorateContext('user', () => undefined)
       api.decorateContext('auth', () => undefined)
 
+      // Requests whose bearer token was rejected (expired, revoked…).
+      const rejectedTokens = new WeakSet<object>()
+
       const authenticate: Middleware = async (ctx) => {
         const { cookies } = auth.settings
         const found = findAccessToken(ctx.req, cookies)
@@ -552,11 +575,15 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
           const user = await auth.settings.dataProvider.findUserById(
             session.userId
           )
-          if (!user) return
+          if (!user) {
+            if (found.source === 'header') rejectedTokens.add(ctx)
+            return
+          }
 
           ctx.user = user
           ctx.auth = { ...session, roles: auth.getUserRoles(user) }
         } catch (error) {
+          if (found.source === 'header') rejectedTokens.add(ctx)
           ctx.logger.warn(
             error instanceof Error ? error : { error },
             'Invalid access token'
@@ -565,6 +592,26 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       }
 
       api.addGlobalMiddleware(authenticate)
+
+      // Challenge of the 401 responses (RFC 7235, RFC 6750), unless one was
+      // set by the app or another plugin.
+      api.hooks.onResponse(({ response, ctx }) => {
+        if (response.status !== 401) return
+        const has = Object.keys(response.headers).some(
+          (name) => name.toLowerCase() === 'www-authenticate'
+        )
+        if (has) return
+        return {
+          ...response,
+          headers: {
+            ...response.headers,
+            'www-authenticate':
+              ctx && rejectedTokens.has(ctx)
+                ? 'Bearer error="invalid_token"'
+                : 'Bearer',
+          },
+        }
+      })
 
       if (options.jwks) {
         api.addRoute({

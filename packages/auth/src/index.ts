@@ -4,6 +4,8 @@ export {
   AuthError,
   createAuth,
   generatePasswordHash,
+  isPasswordTooLong,
+  MAX_PASSWORD_BYTES,
   type Auth,
   type AuthErrorCode,
 } from './auth.js'

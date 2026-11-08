@@ -1,4 +1,4 @@
-import { createRouter } from '@dotpress/core'
+import { createRouter, unauthorizedError } from '@dotpress/core'
 import { createTestApp } from '@dotpress/testing'
 import jwt from 'jsonwebtoken'
 import { describe, expect, expectTypeOf, it } from 'vitest'
@@ -58,6 +58,28 @@ describe('authPlugin()', () => {
           },
         })
       ).toEqual({ user: 'u1', roles: ['admin'] })
+    })
+
+    it('accepts the bearer scheme in any letter case', async () => {
+      const { fetch } = await createAuthApp({ routes: whoAmI })
+      const { body: tokens } = await login(fetch)
+      const whoami = async (authorization: string) =>
+        (
+          await fetch('/whoami', { method: 'POST', headers: { authorization } })
+        ).json()
+
+      for (const scheme of ['bearer', 'BEARER', 'Bearer ']) {
+        expect(await whoami(`${scheme} ${tokens.accessToken}`)).toMatchObject({
+          user: 'u1',
+        })
+      }
+      for (const header of [
+        `Bearer${tokens.accessToken}`,
+        `Bearer ${tokens.accessToken} extra`,
+        `Basic ${tokens.accessToken}`,
+      ]) {
+        expect(await whoami(header)).toEqual({ user: null })
+      }
     })
 
     it('never reads the access token from the body', async () => {
@@ -127,6 +149,70 @@ describe('authPlugin()', () => {
           (entry) => entry.args[1] === 'Invalid access token'
         )
       ).toHaveLength(2)
+    })
+  })
+
+  describe('WWW-Authenticate', () => {
+    it('challenges the 401 responses (RFC 6750)', async () => {
+      const { fetch, auth } = await createAuthApp()
+      const { body: tokens } = await login(fetch)
+      const { accessToken: orphan } = await auth.generateAccessToken({
+        userId: 'u404',
+      })
+      const me = (headers: Record<string, string> = {}) =>
+        fetch('/auth/me', { headers })
+
+      const anonymous = await me()
+      expect(anonymous.status).toBe(401)
+      expect(anonymous.headers.get('www-authenticate')).toBe('Bearer')
+      for (const token of ['garbage', orphan]) {
+        expect(
+          (await me({ authorization: `Bearer ${token}` })).headers.get(
+            'www-authenticate'
+          )
+        ).toBe('Bearer error="invalid_token"')
+      }
+      const ok = await me({ authorization: `Bearer ${tokens.accessToken}` })
+      expect(ok.status).toBe(200)
+      expect(ok.headers.get('www-authenticate')).toBeNull()
+
+      const failedLogin = await fetch(
+        '/auth/login',
+        postJson({ username: 'ada', password: 'wrong' })
+      )
+      expect(failedLogin.headers.get('www-authenticate')).toBe('Bearer')
+    })
+
+    it('does not report invalid_token for cookies', async () => {
+      const { fetch } = await createAuthApp({
+        settings: { cookies: { enabled: true, accessTokenInCookie: true } },
+      })
+
+      const res = await fetch('/auth/me', {
+        headers: { cookie: cookieHeader({ [ACCESS_COOKIE]: 'garbage' }) },
+      })
+
+      expect(res.status).toBe(401)
+      expect(res.headers.get('www-authenticate')).toBe('Bearer')
+    })
+
+    it('keeps a challenge set by the app', async () => {
+      const { fetch } = await createAuthApp({
+        routes: (router) => {
+          router.defineRoute({
+            path: '/partners',
+            handler: ({ res }) => {
+              res.setHeader('www-authenticate', 'ApiKey')
+              return unauthorizedError()
+            },
+          })
+        },
+      })
+
+      const res = await fetch('/partners')
+
+      expect(res.status).toBe(401)
+      expect(res.headers.get('www-authenticate')).toBe('ApiKey')
     })
   })
 

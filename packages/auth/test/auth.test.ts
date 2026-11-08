@@ -6,6 +6,8 @@ import {
   AuthError,
   createAuth,
   generatePasswordHash,
+  isPasswordTooLong,
+  MAX_PASSWORD_BYTES,
   type AuthSettings,
   type TokenPair,
 } from '../src/index.js'
@@ -161,6 +163,7 @@ describe('createAuth()', () => {
       const { auth } = authWith({
         accessTokenTTL: 900,
         clients: { allowed: ['backoffice'] },
+        usernameClaim: true,
       })
       const before = Math.floor(Date.now() / 1000)
 
@@ -188,6 +191,31 @@ describe('createAuth()', () => {
       expect(claims.exp! - claims.iat!).toBe(900)
     })
 
+    it('omits the username claim by default (personal data)', async () => {
+      const { auth } = authWith()
+      const pair = await auth.generateTokensForUser({
+        userId: 'u1',
+        username: 'ada@example.com',
+      })
+
+      expect(decodeJwt(pair.accessToken)).not.toHaveProperty('username')
+      expect(
+        (await auth.verifyAccessToken(pair.accessToken)).username
+      ).toBeUndefined()
+      const rotated = await auth.refreshTokens(pair)
+      expect(decodeJwt(rotated.accessToken)).not.toHaveProperty('username')
+    })
+
+    it('does not write an empty username claim', async () => {
+      const { auth } = authWith({ usernameClaim: true })
+      const pair = await auth.generateTokensForUser({ userId: 'u1' })
+
+      expect(decodeJwt(pair.accessToken)).not.toHaveProperty('username')
+      // Session opened without the claim, refreshed with it enabled.
+      const rotated = await auth.refreshTokens(pair)
+      expect(decodeJwt(rotated.accessToken)).not.toHaveProperty('username')
+    })
+
     it('verifies tokens and rejects tampered or expired ones', async () => {
       const { auth } = authWith()
       const { accessToken } = await auth.generateAccessToken({
@@ -197,7 +225,7 @@ describe('createAuth()', () => {
 
       await expect(auth.verifyAccessToken(accessToken)).resolves.toMatchObject({
         userId: 'u1',
-        username: 'ada',
+        username: undefined,
         clientId: undefined,
       })
 
@@ -363,7 +391,6 @@ describe('createAuth()', () => {
 
       expect(jwt.verify(accessToken, keys.publicKey)).toMatchObject({
         sub: 'u1',
-        username: 'ada',
       })
     })
   })
@@ -379,7 +406,10 @@ describe('createAuth()', () => {
     })
 
     it('rotates a token pair, keeping the original claims', async () => {
-      const { auth, store } = authWith({ clients: { allowed: ['backoffice'] } })
+      const { auth, store } = authWith({
+        clients: { allowed: ['backoffice'] },
+        usernameClaim: true,
+      })
       const pair = await auth.generateTokensForUser({
         userId: 'u1',
         username: 'ada',
@@ -1118,6 +1148,51 @@ describe('createAuth()', () => {
       await expect(auth.verifyPassword('secret', hash)).resolves.toBe(true)
       await expect(auth.verifyPassword('wrong', hash)).resolves.toBe(false)
       await expect(auth.hashPassword('secret', 4)).resolves.toMatch(/^\$2/)
+    })
+
+    it('uses a cost of 12 by default', async () => {
+      const store = createStore()
+      const auth = createAuth({
+        keys,
+        dataProvider: store.provider,
+        issuer: 'https://api.example.com',
+      })
+
+      expect(auth.settings.passwordHashRounds).toBe(12)
+      expect(await generatePasswordHash('secret')).toMatch(/^\$2[aby]\$12\$/)
+    })
+
+    it('rejects passwords longer than 72 bytes instead of truncating them', async () => {
+      const { auth } = authWith()
+      const ascii = 'a'.repeat(MAX_PASSWORD_BYTES)
+      // 37 characters, 74 bytes in UTF-8.
+      const accented = 'é'.repeat(37)
+
+      expect(MAX_PASSWORD_BYTES).toBe(72)
+      expect(isPasswordTooLong(ascii)).toBe(false)
+      expect(isPasswordTooLong(`${ascii}a`)).toBe(true)
+      expect(isPasswordTooLong(accented)).toBe(true)
+      await expect(auth.hashPassword(ascii)).resolves.toMatch(/^\$2/)
+      for (const password of [`${ascii}a`, accented]) {
+        await expect(auth.hashPassword(password)).rejects.toThrow(RangeError)
+        await expect(generatePasswordHash(password, 4)).rejects.toThrow(
+          'Password too long'
+        )
+      }
+    })
+
+    it('detects hashes with another cost, and rehashes verified passwords', async () => {
+      const { auth } = authWith({ passwordHashRounds: 5 })
+      const long = 'a'.repeat(80)
+      const hash = await auth.rehashPassword(long)
+
+      expect(hash).toMatch(/^\$2[aby]\$05\$/)
+      await expect(auth.verifyPassword(long, hash)).resolves.toBe(true)
+      expect(auth.passwordNeedsRehash(hash)).toBe(false)
+      expect(auth.passwordNeedsRehash(await generatePasswordHash('x', 4))).toBe(
+        true
+      )
+      expect(auth.passwordNeedsRehash('not-a-bcrypt-hash')).toBe(false)
     })
 
     it('hashes with passwordHashRounds by default', async () => {

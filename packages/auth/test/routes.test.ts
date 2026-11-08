@@ -38,7 +38,8 @@ describe('auth routes', () => {
         890 * 1000
       )
       const claims = decodeJwt(body.accessToken)
-      expect(claims).toMatchObject({ sub: 'u1', username: 'ada' })
+      expect(claims).toMatchObject({ sub: 'u1' })
+      expect(claims).not.toHaveProperty('username')
       // Without clients setting, the clientId is not written in the token.
       expect(claims).not.toHaveProperty('client_id')
       expect(res.headers.getSetCookie()).toEqual([])
@@ -518,6 +519,54 @@ describe('auth routes', () => {
       const { body } = await login(fetch)
 
       expect(body).not.toHaveProperty('sessionExpiresAt')
+    })
+  })
+
+  describe('password hash upgrade', () => {
+    it('rehashes the password at login when the cost changed', async () => {
+      const { fetch, store, auth } = await createAuthApp({
+        settings: { passwordHashRounds: 5 },
+      })
+      const updatePasswordHash = vi.spyOn(store.provider, 'updatePasswordHash')
+
+      expect((await login(fetch)).res.status).toBe(200)
+      const upgraded = store.users.get('u1')!.passwordHash!
+      expect(updatePasswordHash).toHaveBeenCalledWith('u1', upgraded)
+      expect(upgraded).toMatch(/^\$2[aby]\$05\$/)
+      await expect(auth.verifyPassword('secret', upgraded)).resolves.toBe(true)
+
+      updatePasswordHash.mockClear()
+      expect((await login(fetch)).res.status).toBe(200)
+      expect(updatePasswordHash).not.toHaveBeenCalled()
+    })
+
+    it('does not rehash with the same cost, or after a failed login', async () => {
+      const { fetch, store } = await createAuthApp()
+      const updatePasswordHash = vi.spyOn(store.provider, 'updatePasswordHash')
+
+      await login(fetch)
+      await login(fetch, { username: 'linus', password: 'wrong' })
+
+      expect(updatePasswordHash).not.toHaveBeenCalled()
+    })
+
+    it('logs in when the hash update fails, or is not supported', async () => {
+      const { fetch, store, logger } = await createAuthApp({
+        settings: { passwordHashRounds: 5 },
+      })
+      vi.spyOn(store.provider, 'updatePasswordHash').mockRejectedValue(
+        new Error('Read-only database')
+      )
+
+      expect((await login(fetch)).res.status).toBe(200)
+      expect(
+        logger.entries.some(
+          (entry) => entry.args[1] === 'Cannot update the password hash'
+        )
+      ).toBe(true)
+
+      delete store.provider.updatePasswordHash
+      expect((await login(fetch)).res.status).toBe(200)
     })
   })
 

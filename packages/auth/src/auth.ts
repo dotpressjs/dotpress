@@ -136,8 +136,20 @@ export interface Auth {
     expiresInSeconds?: number
   ): void
   clearAuthCookies(res: DotpressResponse): void
-  /** Hashes a password with bcrypt. Defaults to `passwordHashRounds`. */
+  /**
+   * Hashes a password with bcrypt. Defaults to `passwordHashRounds`.
+   * Throws a `RangeError` for passwords longer than 72 bytes (see
+   * `isPasswordTooLong()`).
+   */
   hashPassword(password: string, saltRounds?: number): Promise<string>
+  /** Whether a bcrypt hash has another cost than `passwordHashRounds`. */
+  passwordNeedsRehash(passwordHash: string): boolean
+  /**
+   * Hashes a verified password with `passwordHashRounds`, to upgrade its
+   * stored hash. Unlike `hashPassword()`, it accepts passwords longer than
+   * 72 bytes, created before the check.
+   */
+  rehashPassword(password: string): Promise<string>
   /**
    * Verifies a password against its bcrypt hash. Without valid hash
    * (unknown user, account without password), it compares the password
@@ -322,7 +334,8 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     onLoginSuccess: settings.onLoginSuccess,
     loginThrottle: resolveLoginThrottle(settings.loginThrottle),
     beforeLogin: settings.beforeLogin,
-    passwordHashRounds: settings.passwordHashRounds ?? 10,
+    passwordHashRounds: settings.passwordHashRounds ?? 12,
+    usernameClaim: settings.usernameClaim ?? false,
     refreshTokenReuseInterval: settings.refreshTokenReuseInterval ?? 10,
     onRefreshTokenReuse: settings.onRefreshTokenReuse,
     getUserRoles: settings.getUserRoles ?? defaultUserRoles,
@@ -539,7 +552,7 @@ const toSession = (
   }
   return {
     userId: claims.sub,
-    username: typeof claims.username === 'string' ? claims.username : '',
+    username: typeof claims.username === 'string' ? claims.username : undefined,
     tokenId: typeof claims.jti === 'string' ? claims.jti : '',
     sessionId: typeof claims.sid === 'string' ? claims.sid : undefined,
     clientId:
@@ -608,7 +621,7 @@ export const createAuth = (input: AuthSettings): Auth => {
 
   const signAccessToken = async (claims: {
     sub: string
-    username: string
+    username?: string
     auth_time: number
     client_id?: string
     sid?: string
@@ -623,7 +636,9 @@ export const createAuth = (input: AuthSettings): Auth => {
     )
 
     const token = await new SignJWT({
-      username: claims.username,
+      // Personal data: written on demand only.
+      ...(settings.usernameClaim &&
+        claims.username && { username: claims.username }),
       auth_time: claims.auth_time,
       ...(claims.sid !== undefined && { sid: claims.sid }),
       ...(claims.client_id !== undefined && { client_id: claims.client_id }),
@@ -653,7 +668,7 @@ export const createAuth = (input: AuthSettings): Auth => {
   const issueTokens = async (
     claims: {
       sub: string
-      username: string
+      username?: string
       auth_time: number
       client_id?: string
     },
@@ -864,7 +879,8 @@ export const createAuth = (input: AuthSettings): Auth => {
       const issued = await issueTokens(
         {
           sub: userId,
-          username: typeof claims.username === 'string' ? claims.username : '',
+          username:
+            typeof claims.username === 'string' ? claims.username : undefined,
           auth_time: authTime,
           client_id: clientId,
         },
@@ -1010,7 +1026,16 @@ export const createAuth = (input: AuthSettings): Auth => {
     },
 
     hashPassword: (password, saltRounds = settings.passwordHashRounds) =>
-      bcrypt.hash(password, saltRounds),
+      generatePasswordHash(password, saltRounds),
+
+    passwordNeedsRehash: (passwordHash) =>
+      BCRYPT_HASH.test(passwordHash) &&
+      bcrypt.getRounds(passwordHash) !== settings.passwordHashRounds,
+
+    // No length check: the password was verified, and a longer V1 password
+    // is truncated the same way.
+    rehashPassword: (password) =>
+      bcrypt.hash(password, settings.passwordHashRounds),
 
     async verifyPassword(password, passwordHash) {
       if (typeof passwordHash === 'string' && BCRYPT_HASH.test(passwordHash)) {
@@ -1022,10 +1047,33 @@ export const createAuth = (input: AuthSettings): Auth => {
   }
 }
 
+/** Longest password bcrypt reads, in UTF-8 bytes. */
+export const MAX_PASSWORD_BYTES = 72
+
 /**
- * Hashes a password with bcrypt.
+ * Whether a password exceeds the 72 bytes (UTF-8) read by bcrypt. Check
+ * it in the sign-up and password change schemas: `hashPassword()` rejects
+ * these passwords instead of silently truncating them.
+ *
+ * @example
+ * password: z.string().min(12).refine((p) => !isPasswordTooLong(p), 'Password too long')
  */
-export const generatePasswordHash = (
+export const isPasswordTooLong = (password: string): boolean =>
+  bcrypt.truncates(password)
+
+/**
+ * Hashes a password with bcrypt (cost 12 by default). Throws a
+ * `RangeError` for passwords longer than 72 bytes (see
+ * `isPasswordTooLong()`).
+ */
+export const generatePasswordHash = async (
   password: string,
-  saltRounds = 10
-): Promise<string> => bcrypt.hash(password, saltRounds)
+  saltRounds = 12
+): Promise<string> => {
+  if (isPasswordTooLong(password)) {
+    throw new RangeError(
+      `Password too long: bcrypt reads ${MAX_PASSWORD_BYTES} bytes at most (UTF-8). Check it with isPasswordTooLong().`
+    )
+  }
+  return bcrypt.hash(password, saltRounds)
+}

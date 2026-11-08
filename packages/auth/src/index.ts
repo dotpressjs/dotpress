@@ -1,47 +1,43 @@
-import type { Plugin } from 'dotpress'
-import bcrypt from 'bcryptjs'
-import cookieParser from 'cookie-parser'
-import { AuthSettings, DataProvider, KeyPairSettings } from './types/types.js'
-import { setSettings } from './lib/settings.js'
-import { registerHandlers } from './lib/handlers.js'
-import { attachAuthenticatedUser } from './lib/middleware.js'
-import {
-  generateAccessToken,
-  generateTokensForUser,
-  generateRefreshToken,
-} from './lib/tokens.js'
-import { setAuthCookies } from './lib/cookies.js'
-
-type Settings = Partial<AuthSettings> & {
-  keys: KeyPairSettings
-  dataProvider: DataProvider
-}
-
-export const configurePlugin = (settings: Settings): Plugin => {
-  setSettings(settings)
-
-  return (plugin) => {
-    plugin.useBeforeRoutes((app) => {
-      if (settings.cookies?.enabled) {
-        app.use(cookieParser())
-      }
-      app.use(attachAuthenticatedUser)
-    })
-
-    registerHandlers(plugin)
-  }
-}
-
-export const generatePasswordHash = (
-  password: string,
-  salt = 10
-): Promise<string> => {
-  return bcrypt.hash(password, salt)
-}
+import './context.js'
 
 export {
-  generateAccessToken,
-  generateRefreshToken,
-  generateTokensForUser,
-  setAuthCookies,
-}
+  AuthError,
+  createAuth,
+  generatePasswordHash,
+  type Auth,
+  type AuthErrorCode,
+} from './auth.js'
+
+export {
+  requireAuth,
+  requireRole,
+  type AuthenticatedContext,
+} from './middlewares.js'
+
+export {
+  AUTH_SECURITY_SCHEMES,
+  authPlugin,
+  extractAccessToken,
+  type AuthPluginOptions,
+} from './plugin.js'
+
+export type {
+  AudienceSettings,
+  AuthSession,
+  AuthSettings,
+  AuthUser,
+  CookieSettings,
+  CreatedAccessToken,
+  CreatedRefreshToken,
+  DataProvider,
+  KeyPairSettings,
+  LoginFailedEvent,
+  LoginSuccessEvent,
+  RefreshTokenData,
+  ResolvedAuthSettings,
+  ResolvedCookieSettings,
+  StoreRefreshTokenDto,
+  TokenPair,
+  TokenSubject,
+  UserIdentifiers,
+} from './types.js'

@@ -287,6 +287,37 @@ describe('expressAdapter()', () => {
       })
     })
 
+    it('only trusts proxy headers for req.ip with the trust proxy setting', async () => {
+      const ipRouter = () =>
+        routerWith((router) => {
+          router.defineRoute({
+            path: '/ip',
+            handler: ({ req }) => ({ ip: req.ip }),
+          })
+        })
+      const forwarded = { headers: { 'x-forwarded-for': '203.0.113.9' } }
+
+      const direct = await start(expressAdapter(), {
+        logger: createMemoryLogger(),
+        routers: [ipRouter()],
+      })
+      expect(await (await direct.fetch('/ip', forwarded)).json()).not.toEqual({
+        ip: '203.0.113.9',
+      })
+
+      const proxied = await start(
+        expressAdapter({
+          beforeRoutes: (app) => {
+            app.set('trust proxy', 'loopback')
+          },
+        }),
+        { logger: createMemoryLogger(), routers: [ipRouter()] }
+      )
+      expect(await (await proxied.fetch('/ip', forwarded)).json()).toEqual({
+        ip: '203.0.113.9',
+      })
+    })
+
     it('applies the bodyLimit option', async () => {
       const { fetch } = await start(expressAdapter({ bodyLimit: 10 }), {
         logger: createMemoryLogger(),

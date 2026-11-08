@@ -26,6 +26,8 @@ export interface InjectOptions {
   formData?: FormData
   /** Simulates client disconnections. */
   signal?: AbortSignal
+  /** Client IP address. */
+  ip?: string
 }
 
 export interface InjectResponse {
@@ -86,6 +88,7 @@ export const memoryAdapter = (): MemoryAdapter => {
       headers,
       body: options.body,
       signal: options.signal,
+      ip: options.ip,
       raw: { injected: options },
     }
 

@@ -3,11 +3,3 @@ packages:
 
 allowBuilds:
   esbuild: true
-
-# The published V1 `dotpress` package (used by the V1 @dotpress/auth code)
-# references Express 4 types without depending on them. Without this, it
-# would resolve the hoisted Express 5 types of the adapter.
-packageExtensions:
-  dotpress@1:
-    dependencies:
-      '@types/express': ^4.17.25

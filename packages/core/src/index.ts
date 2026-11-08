@@ -16,15 +16,18 @@ export type {
   RouteInfo,
 } from './adapter.js'
 
-export type {
-  HandlerContext,
-  HandlerResult,
-  Middleware,
-  MiddlewareResult,
-  RequestContext,
-  ResponseFilter,
-  RouteHandler,
-  RouteRequest,
+export {
+  defineMiddleware,
+  type HandlerContext,
+  type HandlerResult,
+  type Middleware,
+  type MiddlewareList,
+  type MiddlewareResult,
+  type ProvidedContext,
+  type RequestContext,
+  type ResponseFilter,
+  type RouteHandler,
+  type RouteRequest,
 } from './context.js'
 
 export {
@@ -89,6 +92,21 @@ export {
 export type { EmptyObject, PathParams } from './path.js'
 
 export type { ErrorHook } from './pipeline.js'
+
+export {
+  declareContextKey,
+  definePlugin,
+  type BaseContextKey,
+  type ContextFactory,
+  type DecoratableContextKey,
+  type LifecycleHook,
+  type Plugin,
+  type PluginAPI,
+  type PluginHooks,
+  type RequestHook,
+  type ResponseEvent,
+  type ResponseHook,
+} from './plugins.js'
 
 export type { DotpressRequest } from './request.js'
 

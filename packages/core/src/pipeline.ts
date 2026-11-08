@@ -17,6 +17,13 @@ import type {
 } from './http.js'
 import type { Logger } from './logger.js'
 import type { RouteMatcher } from './matcher.js'
+import {
+  getDeclaredContextKeys,
+  type BaseContextKey,
+  type RequestHook,
+  type ResponseEvent,
+  type ResponseHook,
+} from './plugins.js'
 import { getPathParamNames } from './path.js'
 import { createRequest, type MutableRequest } from './request.js'
 import {
@@ -51,6 +58,78 @@ export interface PipelineConfig {
   readonly onError: ErrorHook | undefined
   readonly middlewares: readonly Middleware[]
   readonly responseFilters: readonly ResponseFilter[]
+  /** Context keys provided by plugins (`decorateContext()`). */
+  readonly contextFactories: ReadonlyMap<
+    string,
+    (ctx: RequestContext) => unknown
+  >
+  readonly requestHooks: readonly RequestHook[]
+  readonly responseHooks: readonly ResponseHook[]
+}
+
+/**
+ * Defines the context keys provided by plugins, and guards declared keys of
+ * plugins that are not installed.
+ */
+const decorateContext = (ctx: RequestContext, config: PipelineConfig) => {
+  for (const [key, factory] of config.contextFactories) {
+    let state: { value: unknown } | undefined
+    Object.defineProperty(ctx, key, {
+      configurable: true,
+      enumerable: true,
+      get: () => (state ??= { value: factory(ctx) }).value,
+      set: (value: unknown) => {
+        state = { value }
+      },
+    })
+  }
+
+  for (const [key, pluginName] of getDeclaredContextKeys()) {
+    if (config.contextFactories.has(key)) continue
+    Object.defineProperty(ctx, key, {
+      configurable: true,
+      enumerable: false,
+      get: () => {
+        throw new Error(
+          `"ctx.${key}" is used, but the "${pluginName}" plugin is not installed in createApp().`
+        )
+      },
+      // Middlewares may still set the key themselves.
+      set: (value: unknown) => {
+        Object.defineProperty(ctx, key, {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value,
+        })
+      },
+    })
+  }
+}
+
+/**
+ * Runs the response hooks. A failing hook is logged and ignored.
+ */
+const applyResponseHooks = async (
+  config: PipelineConfig,
+  logger: Logger,
+  event: ResponseEvent
+): Promise<NormalizedResponse> => {
+  let response = event.response
+
+  for (const hook of config.responseHooks) {
+    try {
+      const replacement = await hook({ ...event, response })
+      if (replacement) response = replacement
+    } catch (error) {
+      logger.error(
+        error instanceof Error ? error : { error },
+        'onResponse hook failed'
+      )
+    }
+  }
+
+  return response
 }
 
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8'
@@ -219,7 +298,11 @@ export const compileRoute = (
   config: PipelineConfig
 ): CompiledRoute => {
   const schema = resolveSchema(route)
-  const middlewares = [...config.middlewares, ...route.middlewares]
+  const middlewares: readonly (Middleware | RequestHook)[] = [
+    ...config.requestHooks,
+    ...config.middlewares,
+    ...route.middlewares,
+  ]
   const filters = [...config.responseFilters, ...routerFilters]
   const { handle: handleError, report: reportError } =
     createErrorHandler(config)
@@ -413,43 +496,43 @@ export const compileRoute = (
     return toJsonResponse(ctx, state, result, {})
   }
 
-  const execute = async (
-    request: NormalizedRequest
+  const run = async (
+    request: NormalizedRequest,
+    requestId: string,
+    logger: Logger,
+    setContext: (ctx: RequestContext) => void
   ): Promise<NormalizedResponse> => {
-    let requestId: string
-    let logger = config.logger
-
-    try {
-      requestId = config.generateRequestId(request)
-      logger = config.logger.child({ requestId })
-    } catch (error) {
-      requestId = crypto.randomUUID()
-      return withRequestId(
-        await handleError(error, logger, undefined),
-        requestId
-      )
-    }
-
     let ctx: RequestContext | undefined
     const state = createResponseState()
 
     try {
       const req = createRequest(request, { rawBody: route.rawBody })
-      ctx = {
+      // Keys added through module augmentation are provided by plugins
+      // (`decorateContext()`) or set by middlewares.
+      const created = {
         req,
         res: state,
         requestId,
         logger,
         raw: request.raw,
-      }
+      } satisfies Pick<
+        RequestContext,
+        BaseContextKey
+      > as unknown as RequestContext
+      ctx = created
+      decorateContext(created, config)
+      setContext(created)
 
       for (const middleware of middlewares) {
-        const output = await middleware(ctx)
+        const output = await middleware(created)
 
         if (output === undefined) continue
 
         if (isHttpError(output) || isResponseResult(output)) {
-          return withRequestId(await toResponse(ctx, state, output), requestId)
+          return withRequestId(
+            await toResponse(created, state, output),
+            requestId
+          )
         }
 
         throw new TypeError(
@@ -466,10 +549,10 @@ export const compileRoute = (
       }
 
       const result = await route.handler(
-        ctx as Parameters<RouteRecord['handler']>[0]
+        created as Parameters<RouteRecord['handler']>[0]
       )
 
-      return withRequestId(await toResponse(ctx, state, result), requestId)
+      return withRequestId(await toResponse(created, state, result), requestId)
     } catch (error) {
       const headers = isHttpError(error) ? state.toHeaders() : undefined
       return withRequestId(
@@ -477,6 +560,39 @@ export const compileRoute = (
         requestId
       )
     }
+  }
+
+  const execute = async (
+    request: NormalizedRequest
+  ): Promise<NormalizedResponse> => {
+    const startedAt = performance.now()
+    let requestId: string
+    let logger = config.logger
+    let ctx: RequestContext | undefined
+    let response: NormalizedResponse
+
+    try {
+      requestId = config.generateRequestId(request)
+      logger = config.logger.child({ requestId })
+      response = await run(request, requestId, logger, (created) => {
+        ctx = created
+      })
+    } catch (error) {
+      requestId = crypto.randomUUID()
+      response = withRequestId(
+        await handleError(error, logger, undefined),
+        requestId
+      )
+    }
+
+    return applyResponseHooks(config, logger, {
+      request,
+      response,
+      requestId,
+      ctx,
+      route: definition,
+      duration: performance.now() - startedAt,
+    })
   }
 
   return Object.freeze({
@@ -505,9 +621,28 @@ export const createRuntime = (
     }
   }
 
+  const finish = (
+    request: NormalizedRequest | undefined,
+    requestId: string,
+    response: NormalizedResponse,
+    startedAt: number
+  ) =>
+    request
+      ? applyResponseHooks(config, config.logger.child({ requestId }), {
+          request,
+          response,
+          requestId,
+          ctx: undefined,
+          route: undefined,
+          duration: performance.now() - startedAt,
+        })
+      : response
+
   return Object.freeze({
     logger: config.logger,
     handleNotFound: async (request: NormalizedRequest) => {
+      const startedAt = performance.now()
+      const requestId = requestIdFor(request)
       const allowed = matcher.allowedMethods(request.path)
       const response =
         allowed.length > 0
@@ -516,14 +651,22 @@ export const createRuntime = (
             })
           : errorToResponse(routeNotFoundError())
 
-      return withRequestId(response, requestIdFor(request))
+      return finish(
+        request,
+        requestId,
+        withRequestId(response, requestId),
+        startedAt
+      )
     },
     handleError: async (error: unknown, request?: NormalizedRequest) => {
+      const startedAt = performance.now()
       const requestId = requestIdFor(request)
       const logger = config.logger.child({ requestId })
-      return withRequestId(
-        await handleError(error, logger, undefined),
-        requestId
+      return finish(
+        request,
+        requestId,
+        withRequestId(await handleError(error, logger, undefined), requestId),
+        startedAt
       )
     },
   })

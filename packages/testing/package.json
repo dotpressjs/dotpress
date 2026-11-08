@@ -28,8 +28,10 @@
   },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "test:watch": "vitest watch"
   },
   "peerDependencies": {
     "@dotpress/core": "workspace:^",

@@ -7,7 +7,10 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 import globals from 'globals'
 
 // Packages that must stay runtime-agnostic: Web-standard APIs only.
-const RUNTIME_AGNOSTIC_SOURCES = ['packages/core/src/**/*.ts']
+const RUNTIME_AGNOSTIC_SOURCES = [
+  'packages/core/src/**/*.ts',
+  'packages/auth/src/**/*.ts',
+]
 
 export default defineConfig(
   {
@@ -50,7 +53,7 @@ export default defineConfig(
                 '@fastify/*',
               ],
               message:
-                'The core must not depend on an HTTP server. Use an adapter package.',
+                'Runtime-agnostic packages must not depend on an HTTP server. Use an adapter package.',
             },
           ],
         },

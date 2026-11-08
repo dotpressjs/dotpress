@@ -4,6 +4,10 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import {
   createRouter,
+  defineMiddleware,
+  definePlugin,
+  forbiddenError,
+  unauthorizedError,
   json,
   notFoundError,
   redirect,
@@ -147,6 +151,64 @@ describe('type inference', () => {
     })
   })
 
+  it('types the context properties guaranteed by middlewares', () => {
+    const requireAccount = defineMiddleware<{ account: { id: string } }>(
+      (ctx) => (ctx.account ? undefined : unauthorizedError())
+    )
+    const requireOrg = defineMiddleware<{ org: { slug: string } }>((ctx) =>
+      ctx.org ? undefined : forbiddenError()
+    )
+
+    router.defineRoute({
+      path: '/route',
+      middlewares: [requireAccount, (ctx) => void ctx.requestId, requireOrg],
+      handler: (ctx) => {
+        expectTypeOf(ctx.account).toEqualTypeOf<{ id: string }>()
+        expectTypeOf(ctx.org).toEqualTypeOf<{ slug: string }>()
+      },
+    })
+
+    const accounts = router.createGroup('/accounts', [requireAccount])
+    accounts.defineRoute({
+      path: '/me',
+      handler: (ctx) => {
+        expectTypeOf(ctx.account).toEqualTypeOf<{ id: string }>()
+        expectTypeOf(ctx.org).toEqualTypeOf<{ slug: string } | undefined>()
+      },
+    })
+    accounts.createGroup('/:accountId/orgs', [requireOrg]).defineRoute({
+      path: '/current',
+      handler: (ctx) => {
+        expectTypeOf(ctx.account).toEqualTypeOf<{ id: string }>()
+        expectTypeOf(ctx.org).toEqualTypeOf<{ slug: string }>()
+        expectTypeOf(ctx.req.params).toEqualTypeOf<{ accountId: string }>()
+      },
+    })
+
+    router.defineRoute({
+      path: '/inline',
+      middlewares: [(ctx) => void ctx.requestId],
+      schema: (z) => ({ query: z.object({ page: z.coerce.number() }) }),
+      handler: (ctx) => {
+        expectTypeOf(ctx.account).toEqualTypeOf<{ id: string } | undefined>()
+        expectTypeOf(ctx.req.query.page).toEqualTypeOf<number>()
+      },
+    })
+  })
+
+  it('types decorated context keys', () => {
+    definePlugin({
+      name: 'tenant',
+      setup(api) {
+        api.decorateContext('tenantId', (ctx) => ctx.req.header('x-tenant'))
+        // @ts-expect-error the factory must return the declared type
+        api.decorateContext('tenantId', () => 42)
+        // @ts-expect-error unknown context key
+        api.decorateContext('unknownKey', () => null)
+      },
+    })
+  })
+
   it('exposes context augmentations', () => {
     router.defineRoute({
       path: '/me',
@@ -161,5 +223,7 @@ describe('type inference', () => {
 declare module '../src/index.js' {
   interface RequestContext {
     tenantId?: string
+    account?: { id: string }
+    org?: { slug: string }
   }
 }

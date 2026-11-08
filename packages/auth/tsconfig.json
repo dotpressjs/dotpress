@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The auth plugin only relies on Web-standard APIs (jose, Web Crypto).
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
   "include": ["src"]
 }

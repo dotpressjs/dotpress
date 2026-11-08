@@ -69,6 +69,11 @@ export interface NormalizedRequest {
   query: QueryValues
   /** Request headers, with lowercase names. */
   headers: IncomingHeaders
+  /**
+   * Client IP address, as determined by the HTTP server (proxy headers are
+   * only used when the server is configured to trust them).
+   */
+  ip?: string
   /** Parsed request body (`undefined` when there is none). */
   body: unknown
   /** Uploaded files (`multipart/form-data` bodies). */

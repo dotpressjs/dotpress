@@ -378,6 +378,21 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
           }
         ))
 
+      it('exposes the client IP address', () =>
+        withApp(
+          (router) => {
+            router.defineRoute({
+              path: '/ip',
+              handler: ({ req }) => ({ ip: req.ip }),
+            })
+          },
+          async ({ fetch }) => {
+            const { ip } = (await (await fetch('/ip')).json()) as { ip: string }
+            // Loopback address, in IPv4, IPv4-mapped IPv6 or IPv6 form.
+            expect(ip).toMatch(/^((::ffff:)?127\.0\.0\.1|::1)$/)
+          }
+        ))
+
       it('parses JSON bodies', () =>
         withApp(
           (router) => {

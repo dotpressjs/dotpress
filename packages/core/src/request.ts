@@ -34,6 +34,12 @@ export interface DotpressRequest<
   readonly headers: Readonly<Record<string, string | undefined>>
   readonly cookies: Readonly<Record<string, string>>
   /**
+   * Client IP address, as determined by the HTTP server. Proxy headers
+   * (`X-Forwarded-For`) are only used when the server trusts them, for
+   * instance with the Express `trust proxy` setting.
+   */
+  readonly ip: string | undefined
+  /**
    * Raw bytes of the body, for instance to verify a webhook signature.
    * Only defined on routes declared with `rawBody: true` (empty when the
    * request has no body).
@@ -109,6 +115,7 @@ export const createRequest = (
     files: { ...input.files },
     headers,
     cookies: parseCookieHeader(headers.cookie),
+    ip: input.ip,
     signal: input.signal ?? NEVER_ABORTED,
     rawBody: options.rawBody ? resolveRawBody(input) : undefined,
     header: (name) => headers[name.toLowerCase()],

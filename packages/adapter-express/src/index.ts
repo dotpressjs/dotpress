@@ -71,6 +71,8 @@ export interface ExpressAdapter<
 interface ExpressRequest extends IncomingMessage {
   originalUrl?: string
   protocol?: string
+  /** Client address, honoring the `trust proxy` setting. */
+  ip?: string
   body?: unknown
   /** Set by body-parser and similar middlewares once the body is read. */
   _body?: boolean
@@ -407,6 +409,7 @@ export function expressAdapter<TApp extends ExpressApplication>(
       headers: req.headers,
       body: undefined,
       signal,
+      ip: req.ip ?? req.socket.remoteAddress,
       raw: req,
     }
   }

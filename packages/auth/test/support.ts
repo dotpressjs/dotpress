@@ -1,0 +1,160 @@
+import { createRouter, type Router } from '@dotpress/core'
+import { createTestApp } from '@dotpress/testing'
+import bcrypt from 'bcryptjs'
+import { exportPKCS8, exportSPKI, generateKeyPair } from 'jose'
+import {
+  authPlugin,
+  createAuth,
+  type AuthPluginOptions,
+  type AuthSettings,
+  type DataProvider,
+  type RefreshTokenData,
+} from '../src/index.js'
+
+declare module '../src/index.js' {
+  interface AuthUser {
+    id: string
+    username: string
+    roles: string[]
+  }
+}
+
+export const keys = await (async () => {
+  const pair = await generateKeyPair('RS256', { extractable: true })
+  return {
+    secretKey: await exportPKCS8(pair.privateKey),
+    publicKey: await exportSPKI(pair.publicKey),
+  }
+})()
+
+interface StoredUser {
+  id: string
+  username: string
+  passwordHash: string
+  role: string
+  roles: string[]
+}
+
+/** In-memory data provider with two users: ada (admin) and linus (user). */
+export const createStore = () => {
+  const users = new Map<string, StoredUser>(
+    [
+      { id: 'u1', username: 'ada', role: 'admin', roles: ['admin'] },
+      { id: 'u2', username: 'linus', role: 'user', roles: ['user'] },
+    ].map((user) => [
+      user.id,
+      // Low cost factor: fast tests.
+      { ...user, passwordHash: bcrypt.hashSync('secret', 4) },
+    ])
+  )
+  const refreshTokens = new Map<string, RefreshTokenData>()
+
+  const provider: DataProvider = {
+    storeRefreshToken: async ({ tokenHash, userId, jwtId, expiresAt }) => {
+      refreshTokens.set(tokenHash, {
+        userId,
+        jwtId,
+        expiresAt,
+        isUsed: false,
+        revokedAt: null,
+      })
+    },
+    findRefreshToken: async (tokenHash) => refreshTokens.get(tokenHash),
+    markRefreshTokenAsUsed: async (tokenHash) => {
+      const token = refreshTokens.get(tokenHash)
+      if (token) token.isUsed = true
+    },
+    revokeTokens: async (userId) => {
+      for (const token of refreshTokens.values()) {
+        if (token.userId === userId) token.revokedAt = new Date()
+      }
+    },
+    findUserById: async (userId) => {
+      const user = users.get(userId)
+      return user && { id: user.id, username: user.username, roles: user.roles }
+    },
+    findUserIdentifiers: async (username) => {
+      const user = [...users.values()].find(
+        (item) => item.username === username
+      )
+      return (
+        user && {
+          userId: user.id,
+          passwordHash: user.passwordHash,
+          role: user.role,
+        }
+      )
+    },
+  }
+
+  return { provider, users, refreshTokens }
+}
+
+export interface AuthAppOptions {
+  settings?: Partial<AuthSettings>
+  plugin?: AuthPluginOptions
+  routes?: (router: Router) => void
+}
+
+export const createAuthApp = async (options: AuthAppOptions = {}) => {
+  const store = createStore()
+  const auth = createAuth({
+    keys,
+    dataProvider: store.provider,
+    issuer: 'https://api.example.com',
+    ...options.settings,
+  })
+
+  const router = createRouter()
+  options.routes?.(router)
+
+  const app = await createTestApp({
+    routers: [router],
+    plugins: [authPlugin(auth, options.plugin)],
+  })
+
+  return { ...app, auth, store }
+}
+
+export const postJson = (
+  body: unknown,
+  headers: Record<string, string> = {}
+) => ({
+  method: 'POST',
+  headers: { 'content-type': 'application/json', ...headers },
+  body: JSON.stringify(body),
+})
+
+/** Cookies set by a response, by name. */
+export const cookiesOf = (res: Response) =>
+  Object.fromEntries(
+    res.headers.getSetCookie().map((cookie) => {
+      const [pair = ''] = cookie.split(';')
+      const index = pair.indexOf('=')
+      return [
+        pair.slice(0, index),
+        { value: pair.slice(index + 1), raw: cookie },
+      ]
+    })
+  )
+
+export const cookieHeader = (cookies: Record<string, string>) =>
+  Object.entries(cookies)
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ')
+
+export interface LoginResponse {
+  userId: string
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  expiresAt: string
+}
+
+export const login = async (
+  fetch: (path: string, init?: RequestInit) => Promise<Response>,
+  body: Record<string, unknown> = { username: 'ada', password: 'secret' }
+) => {
+  const res = await fetch('/auth/login', postJson(body))
+  return { res, body: (await res.json()) as LoginResponse }
+}

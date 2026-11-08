@@ -38,10 +38,63 @@ export type MiddlewareResult = void | undefined | HttpError | ResponseResult
 
 /**
  * Middlewares run before request validation: `ctx.req` holds raw values.
+ *
+ * `TProvides` lists the context properties a middleware guarantees to the
+ * handlers of the routes and groups using it (see `defineMiddleware()`).
  */
-export type Middleware = (
-  ctx: RequestContext
-) => MiddlewareResult | Promise<MiddlewareResult>
+export interface Middleware<TProvides = unknown> {
+  (ctx: RequestContext): MiddlewareResult | Promise<MiddlewareResult>
+  /** Type-only marker, never set at runtime. */
+  readonly '~provides'?: TProvides
+}
+
+/**
+ * Declares a middleware that guarantees context properties to handlers.
+ *
+ * @example
+ * const requireTenant = defineMiddleware<{ tenant: Tenant }>((ctx) =>
+ *   ctx.tenant ? undefined : forbiddenError()
+ * )
+ *
+ * defineRoute({
+ *   path: '/settings',
+ *   middlewares: [requireTenant],
+ *   handler: ({ tenant }) => tenant.settings, // Tenant, not Tenant | undefined
+ * })
+ */
+export const defineMiddleware = <TProvides = unknown>(
+  middleware: (
+    ctx: RequestContext
+  ) => MiddlewareResult | Promise<MiddlewareResult>
+): Middleware<TProvides> => middleware as Middleware<TProvides>
+
+type UnionToIntersection<U> = (
+  U extends unknown ? (value: U) => void : never
+) extends (value: infer I) => void
+  ? I
+  : never
+
+/**
+ * List of middlewares, typed with the context properties each one provides.
+ * Inferring the provided types per element keeps inline middlewares
+ * (`(ctx) => …`) and typed middlewares usable in the same list.
+ */
+export type MiddlewareList<TProvided extends readonly unknown[]> = {
+  readonly [K in keyof TProvided]: Middleware<TProvided[K]>
+}
+
+/**
+ * Context properties guaranteed by a list of middlewares (see
+ * `MiddlewareList`).
+ */
+export type ProvidedContext<TProvided extends readonly unknown[]> =
+  UnionToIntersection<
+    {
+      [K in keyof TProvided]: unknown extends TProvided[K]
+        ? never
+        : TProvided[K]
+    }[number]
+  >
 
 /**
  * Transforms successful JSON results before serialization.
@@ -66,12 +119,15 @@ export type RouteRequest<S, TPathParams, TRawBody = false> = DotpressRequest<
 /**
  * Context received by a route handler.
  */
-export type HandlerContext<S, TPathParams, TRawBody = false> = Omit<
-  RequestContext,
-  'req'
-> & {
-  req: RouteRequest<S, TPathParams, TRawBody>
-}
+export type HandlerContext<
+  S,
+  TPathParams,
+  TRawBody = false,
+  TProvided = unknown,
+> = Omit<RequestContext, 'req'> &
+  TProvided & {
+    req: RouteRequest<S, TPathParams, TRawBody>
+  }
 
 /**
  * Value a handler may return. With a `response` schema, plain values and
@@ -85,6 +141,11 @@ export type HandlerResult<S> = S extends { response: unknown }
     | undefined
   : unknown
 
-export type RouteHandler<S, TPathParams, TRawBody = false> = (
-  ctx: HandlerContext<S, TPathParams, TRawBody>
+export type RouteHandler<
+  S,
+  TPathParams,
+  TRawBody = false,
+  TProvided = unknown,
+> = (
+  ctx: HandlerContext<S, TPathParams, TRawBody, TProvided>
 ) => HandlerResult<S> | Promise<HandlerResult<S>>

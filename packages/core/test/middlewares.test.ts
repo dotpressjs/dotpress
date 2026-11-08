@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { redirect, unauthorizedError, type Middleware } from '../src/index.js'
+import {
+  defineMiddleware,
+  redirect,
+  unauthorizedError,
+  type Middleware,
+} from '../src/index.js'
 import { createTestApp } from './support/memory-adapter.js'
 
 declare module '../src/index.js' {
@@ -183,5 +188,28 @@ describe('middlewares', () => {
     expect(res.body).toMatchObject({
       data: { message: expect.stringContaining('A middleware must return') },
     })
+  })
+})
+
+describe('defineMiddleware()', () => {
+  it('returns the middleware unchanged', () => {
+    const middleware = () => undefined
+    expect(defineMiddleware(middleware)).toBe(middleware)
+  })
+})
+
+describe('req.ip', () => {
+  it('exposes the client IP address given by the adapter', async () => {
+    const { inject } = await createTestApp((router) => {
+      router.defineRoute({
+        path: '/ip',
+        handler: ({ req }) => ({ ip: req.ip }),
+      })
+    })
+
+    expect((await inject({ url: '/ip', ip: '203.0.113.7' })).body).toEqual({
+      ip: '203.0.113.7',
+    })
+    expect((await inject({ url: '/ip' })).body).toEqual({})
   })
 })

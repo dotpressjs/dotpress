@@ -1,4 +1,10 @@
-import type { Middleware, ResponseFilter, RouteHandler } from './context.js'
+import type {
+  Middleware,
+  MiddlewareList,
+  ProvidedContext,
+  ResponseFilter,
+  RouteHandler,
+} from './context.js'
 import { isHttpMethod, type HttpMethod } from './http.js'
 import {
   joinPaths,
@@ -35,13 +41,19 @@ export interface RouteConfig<
   S extends RouteSchema,
   TParentParams = EmptyObject,
   TRawBody extends boolean = false,
+  TProvided extends readonly unknown[] = unknown[],
+  TGroupContext = unknown,
 > {
   /** Defaults to `get`. */
   method?: HttpMethod
   path: P
   schema?: SchemaDefinition<S>
-  /** Route middlewares, run after global and group middlewares. */
-  middlewares?: Middleware[]
+  /**
+   * Route middlewares, run after global and group middlewares. Context
+   * properties they guarantee (`defineMiddleware()`) are typed in the
+   * handler.
+   */
+  middlewares?: MiddlewareList<TProvided>
   /**
    * Keeps the raw bytes of the request body in `req.rawBody`, in addition
    * to the parsed body. Use it to verify webhook signatures.
@@ -52,7 +64,12 @@ export interface RouteConfig<
    * Defaults to the adapter limit (1 MiB unless configured otherwise).
    */
   bodyLimit?: number
-  handler: RouteHandler<S, Simplify<TParentParams & PathParams<P>>, TRawBody>
+  handler: RouteHandler<
+    S,
+    Simplify<TParentParams & PathParams<P>>,
+    TRawBody,
+    TGroupContext & ProvidedContext<TProvided>
+  >
   meta?: RouteMeta
   /** Success status. Defaults to 200 (204 when nothing is returned). */
   status?: number
@@ -73,20 +90,28 @@ export interface RouteRecord {
   readonly bodyLimit: number | undefined
 }
 
-export interface RouteGroup<TParams = EmptyObject> {
+export interface RouteGroup<TParams = EmptyObject, TContext = unknown> {
   readonly prefix: string
   defineRoute<
     const P extends string,
     S extends RouteSchema = EmptyObject,
     TRawBody extends boolean = false,
+    const TProvided extends readonly unknown[] = unknown[],
   >(
-    route: RouteConfig<P, S, TParams, TRawBody>
+    route: RouteConfig<P, S, TParams, TRawBody, TProvided, TContext>
   ): void
-  /** Creates a nested group, inheriting the prefix and middlewares. */
-  createGroup<const P extends string>(
+  /**
+   * Creates a nested group, inheriting the prefix and middlewares. Context
+   * properties guaranteed by the group middlewares are typed in the
+   * handlers of its routes.
+   */
+  createGroup<
+    const P extends string,
+    const TProvided extends readonly unknown[] = unknown[],
+  >(
     prefix: P,
-    middlewares?: Middleware[]
-  ): RouteGroup<TParams & PathParams<P>>
+    middlewares?: MiddlewareList<TProvided>
+  ): RouteGroup<TParams & PathParams<P>, TContext & ProvidedContext<TProvided>>
 }
 
 export interface Router extends RouteGroup {
@@ -117,7 +142,7 @@ export const createRouter = (): Router => {
   const register = (
     prefix: string,
     groupMiddlewares: readonly Middleware[],
-    route: RouteConfig<string, RouteSchema, unknown, boolean>
+    route: RouteConfig<string, RouteSchema, unknown, boolean, unknown[]>
   ) => {
     const method = route.method ?? 'get'
 
@@ -167,12 +192,18 @@ export const createRouter = (): Router => {
       register(
         prefix,
         middlewares,
-        route as unknown as RouteConfig<string, RouteSchema, unknown, boolean>
+        route as unknown as RouteConfig<
+          string,
+          RouteSchema,
+          unknown,
+          boolean,
+          unknown[]
+        >
       ),
-    createGroup: (subPrefix, subMiddlewares = []) =>
+    createGroup: (subPrefix: string, subMiddlewares?: readonly Middleware[]) =>
       createGroup(joinPaths(prefix, normalizePath(subPrefix)), [
         ...middlewares,
-        ...subMiddlewares,
+        ...(subMiddlewares ?? []),
       ]),
   })
 
@@ -181,8 +212,8 @@ export const createRouter = (): Router => {
   return {
     prefix: '',
     defineRoute: root.defineRoute,
-    createGroup: (prefix, middlewares = []) =>
-      createGroup(normalizePath(prefix), middlewares),
+    createGroup: (prefix: string, middlewares?: readonly Middleware[]) =>
+      createGroup(normalizePath(prefix), middlewares ?? []),
     addResponseFilter: (filter) => {
       filters.push(filter)
     },

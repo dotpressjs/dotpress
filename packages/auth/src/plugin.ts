@@ -112,6 +112,22 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
     ).toISOString(),
   })
 
+  /**
+   * Tokens returned in the response body. Tokens set as cookies are never
+   * returned, so that the JavaScript of the page cannot read them: the
+   * refresh token always is a cookie in cookie mode, the access token only
+   * with `accessTokenInCookie`.
+   */
+  const bodyTokens = (
+    tokens: TokenPair,
+    inCookies: boolean
+  ): Partial<TokenPair> => {
+    if (!inCookies) return tokens
+    return cookies.accessTokenInCookie
+      ? {}
+      : { accessToken: tokens.accessToken }
+  }
+
   const loginFailed = async (event: LoginFailedEvent) => {
     await settings.onLoginFailed?.(event)
     return unauthorizedError('INVALID_LOGIN')
@@ -134,8 +150,8 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       }),
       response: z.object({
         userId: z.string(),
-        accessToken: z.string(),
-        refreshToken: z.string(),
+        accessToken: z.string().optional(),
+        refreshToken: z.string().optional(),
         expiresIn: z.number(),
         expiresAt: z.string(),
       }),
@@ -173,9 +189,14 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
 
       await settings.onLoginSuccess?.({ ...event, userId: user.userId })
 
-      if (mode === 'cookie') auth.setAuthCookies(res, tokens)
+      const inCookies = mode === 'cookie' && cookies.enabled
+      if (inCookies) auth.setAuthCookies(res, tokens)
 
-      return { userId: user.userId, ...tokens, ...expiration() }
+      return {
+        userId: user.userId,
+        ...bodyTokens(tokens, inCookies),
+        ...expiration(),
+      }
     },
   })
 
@@ -192,8 +213,8 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         .optional(),
       response: z.object({
         userId: z.string(),
-        accessToken: z.string(),
-        refreshToken: z.string(),
+        accessToken: z.string().optional(),
+        refreshToken: z.string().optional(),
         expiresIn: z.number(),
         expiresAt: z.string(),
       }),
@@ -203,9 +224,10 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       if (!extracted) return unauthorizedError('NO_TOKENS_PROVIDED')
 
       try {
-        const tokens = await auth.refreshTokens(extracted)
-        if (extracted.mode === 'cookie') auth.setAuthCookies(res, tokens)
-        return { ...tokens, ...expiration() }
+        const { userId, ...tokens } = await auth.refreshTokens(extracted)
+        const inCookies = extracted.mode === 'cookie' && cookies.enabled
+        if (inCookies) auth.setAuthCookies(res, tokens)
+        return { userId, ...bodyTokens(tokens, inCookies), ...expiration() }
       } catch (error) {
         return refreshErrorResponse(error, 'Can not refresh tokens.')
       }
@@ -226,8 +248,8 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
     schema: (z) => ({
       response: z.object({
         userId: z.string(),
-        accessToken: z.string(),
-        refreshToken: z.string(),
+        accessToken: z.string().optional(),
+        refreshToken: z.string().optional(),
         expiresIn: z.number(),
         expiresAt: z.string(),
         user: z.unknown(),
@@ -248,21 +270,23 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       try {
         const { userId } = await auth.verifyAccessToken(accessToken)
         const user = await dataProvider.findUserById(userId)
-        if (user) {
-          return { userId, accessToken, refreshToken, ...expiration(), user }
-        }
+        // The tokens stay in their cookies.
+        if (user) return { userId, ...expiration(), user }
       } catch {
         // Expired or invalid: try the refresh token.
       }
 
       try {
-        const tokens = await auth.refreshTokens({ accessToken, refreshToken })
+        const { userId, ...tokens } = await auth.refreshTokens({
+          accessToken,
+          refreshToken,
+        })
         auth.setAuthCookies(res, tokens)
 
-        const user = await dataProvider.findUserById(tokens.userId)
+        const user = await dataProvider.findUserById(userId)
         if (!user) return unauthorizedError('USER_NOT_FOUND')
 
-        return { ...tokens, ...expiration(), user }
+        return { userId, ...expiration(), user }
       } catch (error) {
         return refreshErrorResponse(error, 'Cannot restore session.')
       }

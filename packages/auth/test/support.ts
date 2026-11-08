@@ -143,6 +143,7 @@ export const cookieHeader = (cookies: Record<string, string>) =>
     .map(([name, value]) => `${name}=${value}`)
     .join('; ')
 
+/** Login response in body mode (both tokens are returned). */
 export interface LoginResponse {
   userId: string
   accessToken: string

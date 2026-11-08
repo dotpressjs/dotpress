@@ -114,7 +114,7 @@ describe('auth routes', () => {
       expect(decodeJwt(allowed.body.accessToken).aud).toBe('backoffice')
     })
 
-    it('sets the token cookies in cookie mode', async () => {
+    it('sets the token cookies in cookie mode, without returning them', async () => {
       const { fetch } = await createAuthApp({ settings: { cookies: COOKIES } })
 
       const { res, body } = await login(fetch, {
@@ -124,11 +124,50 @@ describe('auth routes', () => {
       })
       const cookies = cookiesOf(res)
 
-      expect(cookies.dotpress_refresh_token?.value).toBe(body.refreshToken)
+      // Tokens set as HttpOnly cookies must not be readable by JavaScript.
+      expect(body).toEqual({
+        userId: 'u1',
+        expiresIn: 3600,
+        expiresAt: expect.any(String),
+      })
+      const refreshToken = cookies.dotpress_refresh_token?.value
+      expect(refreshToken).toMatch(/^[0-9a-f]{256}$/)
       expect(cookies.dotpress_refresh_token?.raw).toBe(
-        `dotpress_refresh_token=${body.refreshToken}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Lax`
+        `dotpress_refresh_token=${refreshToken}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Lax`
       )
-      expect(cookies.dotpress_access_token?.value).toBe(body.accessToken)
+      expect(decodeJwt(cookies.dotpress_access_token!.value).sub).toBe('u1')
+    })
+
+    it('returns the access token only, when it is not a cookie', async () => {
+      const { fetch } = await createAuthApp({
+        settings: { cookies: { enabled: true } },
+      })
+
+      const { res, body } = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        mode: 'cookie',
+      })
+
+      expect(body.refreshToken).toBeUndefined()
+      expect(decodeJwt(body.accessToken).sub).toBe('u1')
+      expect(Object.keys(cookiesOf(res))).toEqual(['dotpress_refresh_token'])
+    })
+
+    it('returns the tokens when cookie mode is requested but disabled', async () => {
+      const { fetch } = await createAuthApp()
+
+      const { res, body } = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        mode: 'cookie',
+      })
+
+      expect(body).toMatchObject({
+        accessToken: expect.any(String),
+        refreshToken: expect.any(String),
+      })
+      expect(res.headers.getSetCookie()).toEqual([])
     })
   })
 
@@ -151,29 +190,65 @@ describe('auth routes', () => {
       })
     })
 
-    it('rotates tokens sent as cookies, and sets the new cookies', async () => {
+    it('rotates tokens sent as cookies, and only sets the new cookies', async () => {
       const { fetch } = await createAuthApp({ settings: { cookies: COOKIES } })
-      const { body: tokens } = await login(fetch, {
+      const { res: loginRes } = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        mode: 'cookie',
+      })
+      const sent = cookiesOf(loginRes)
+
+      const res = await fetch('/auth/refresh', {
+        method: 'POST',
+        headers: {
+          cookie: cookieHeader({
+            dotpress_refresh_token: sent.dotpress_refresh_token!.value,
+            dotpress_access_token: sent.dotpress_access_token!.value,
+          }),
+        },
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        userId: 'u1',
+        expiresIn: 3600,
+        expiresAt: expect.any(String),
+      })
+      const cookies = cookiesOf(res)
+      expect(cookies.dotpress_refresh_token?.value).toMatch(/^[0-9a-f]{256}$/)
+      expect(cookies.dotpress_refresh_token?.value).not.toBe(
+        sent.dotpress_refresh_token!.value
+      )
+      expect(cookies.dotpress_access_token?.value).toBeDefined()
+    })
+
+    it('returns the access token only in hybrid mode', async () => {
+      const { fetch } = await createAuthApp({
+        settings: { cookies: { enabled: true } },
+      })
+      const { res: loginRes, body } = await login(fetch, {
         username: 'ada',
         password: 'secret',
         mode: 'cookie',
       })
 
       const res = await fetch('/auth/refresh', {
-        method: 'POST',
+        ...postJson({ accessToken: body.accessToken }),
         headers: {
+          'content-type': 'application/json',
           cookie: cookieHeader({
-            dotpress_refresh_token: tokens.refreshToken,
-            dotpress_access_token: tokens.accessToken,
+            dotpress_refresh_token:
+              cookiesOf(loginRes).dotpress_refresh_token!.value,
           }),
         },
       })
+      const refreshed = (await res.json()) as Record<string, unknown>
 
       expect(res.status).toBe(200)
-      const cookies = cookiesOf(res)
-      expect(cookies.dotpress_refresh_token?.value).toBe(
-        ((await res.json()) as typeof tokens).refreshToken
-      )
+      expect(refreshed.refreshToken).toBeUndefined()
+      expect(refreshed.accessToken).toEqual(expect.any(String))
+      expect(Object.keys(cookiesOf(res))).toEqual(['dotpress_refresh_token'])
     })
 
     it('reports missing and expired tokens', async () => {
@@ -269,11 +344,11 @@ describe('auth routes', () => {
         dotpress_access_token: tokens.accessToken,
       })
 
-      expect(await res.json()).toMatchObject({
+      expect(await res.json()).toEqual({
         userId: 'u1',
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        user: { id: 'u1' },
+        expiresIn: 3600,
+        expiresAt: expect.any(String),
+        user: { id: 'u1', username: 'ada', roles: ['admin'] },
       })
       expect(res.headers.getSetCookie()).toEqual([])
     })
@@ -288,14 +363,21 @@ describe('auth routes', () => {
         dotpress_refresh_token: tokens.refreshToken,
         dotpress_access_token: tokens.accessToken,
       })
-      const restored = (await res.json()) as typeof tokens & { user: unknown }
+      const restored = (await res.json()) as Record<string, unknown>
+      const cookies = cookiesOf(res)
 
       expect(res.status).toBe(200)
-      expect(restored.refreshToken).not.toBe(tokens.refreshToken)
-      expect(restored.user).toMatchObject({ id: 'u1' })
-      expect(cookiesOf(res).dotpress_refresh_token?.value).toBe(
-        restored.refreshToken
+      expect(restored).toEqual({
+        userId: 'u1',
+        expiresIn: -10,
+        expiresAt: expect.any(String),
+        user: { id: 'u1', username: 'ada', roles: ['admin'] },
+      })
+      expect(cookies.dotpress_refresh_token?.value).toMatch(/^[0-9a-f]{256}$/)
+      expect(cookies.dotpress_refresh_token?.value).not.toBe(
+        tokens.refreshToken
       )
+      expect(cookies.dotpress_access_token?.value).toBeDefined()
     })
   })
 

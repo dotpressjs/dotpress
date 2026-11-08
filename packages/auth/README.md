@@ -48,11 +48,21 @@ The plugin reads the access token of every request (`Authorization: Bearer` head
 
 | Route | Description |
 | --- | --- |
-| `POST /auth/login` | `{ username, password, client?, aud?, mode? }` → token pair. `mode: 'cookie'` also sets the cookies. |
+| `POST /auth/login` | `{ username, password, client?, aud?, mode? }` → token pair. `mode: 'cookie'` sets the cookies instead (see below). |
 | `POST /auth/refresh` | Rotates a token pair, sent in the body or as cookies. |
 | `GET /auth/me` | Authenticated user. |
 | `POST /auth/restore` | Restores a cookie session (requires `cookies.accessTokenInCookie`). |
 | `POST /auth/logout` | Revokes the refresh tokens of the user and clears the cookies. |
+
+In cookie mode, tokens set as cookies are never returned in the response body, so that the JavaScript of the page cannot read them:
+
+| Configuration | Cookies | Body |
+| --- | --- | --- |
+| Body mode | — | `accessToken`, `refreshToken` |
+| `cookies: { enabled: true }` | refresh token | `accessToken` (send it in the `Authorization` header) |
+| `cookies: { enabled: true, accessTokenInCookie: true }` | refresh token, access token | no token |
+
+Every route still returns `userId`, `expiresIn` and `expiresAt`.
 
 `authPlugin(auth, { prefix: '/api/auth' })` changes the prefix; `{ routes: false }` keeps only the authentication middleware.
 

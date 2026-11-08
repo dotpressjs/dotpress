@@ -27,6 +27,8 @@ export default defineConfig(
   },
   {
     files: RUNTIME_AGNOSTIC_SOURCES,
+    // Node.js-only command of @dotpress/openapi.
+    ignores: ['packages/openapi/src/cli.ts', 'packages/openapi/src/bin.ts'],
     rules: {
       'no-restricted-imports': [
         'error',

@@ -17,6 +17,9 @@
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "dotpress-openapi": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -28,7 +31,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json && tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint src test",
     "test": "vitest run",
     "test:watch": "vitest watch"
@@ -51,6 +54,7 @@
     "scalar",
     "documentation",
     "zod",
-    "typescript"
+    "typescript",
+    "cli"
   ]
 }

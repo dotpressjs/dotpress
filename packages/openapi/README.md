@@ -88,6 +88,18 @@ The page loads a pinned version of Scalar from jsDelivr, checked with Subresourc
 
 Behind a reverse proxy, the URLs follow the `basePath` or `publicBasePath` of the app (see `@dotpress/core`).
 
+## Command line
+
+`dotpress-openapi` writes the document without starting the server, for instance to commit it or to generate clients in CI:
+
+```sh
+npx dotpress-openapi src/app.ts --export createApp --out openapi.json
+```
+
+The module exports the app (the result of `createApp()`), or a function creating it; `--export` chooses the export (`default` by default). The routes are mounted but no server is started, and the app is closed afterwards (`onClose` hooks). With `openapiPlugin()`, its document is used as is; otherwise, the document is generated with `--title` and `--api-version`, or the name and version of the `package.json` of the current directory. Without `--out`, the document is printed on the standard output. Warnings and errors go to the standard error, with a non-zero exit code on failure.
+
+TypeScript modules are loaded with the type stripping of Node.js (22.18 or later): erasable syntax only, and relative imports ending in `.ts`. Otherwise, point to the compiled module, or run the command with `NODE_OPTIONS="--import tsx"`.
+
 ## Without the plugin
 
 `generateOpenApi()` takes an app (or its routes) and returns the document, for instance to write it in CI:

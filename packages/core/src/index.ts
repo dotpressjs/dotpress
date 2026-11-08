@@ -7,6 +7,8 @@ export {
   type ParsedBody,
 } from './body.js'
 
+export { arrayOf } from './array-of.js'
+
 export type {
   CompiledRoute,
   DotpressRuntime,

@@ -4,6 +4,7 @@ import { defineConfig } from 'eslint/config'
 import eslint from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
+import globals from 'globals'
 
 // Packages that must stay runtime-agnostic: Web-standard APIs only.
 const RUNTIME_AGNOSTIC_SOURCES = ['packages/core/src/**/*.ts']
@@ -15,6 +16,11 @@ export default defineConfig(
   eslint.configs.recommended,
   tseslint.configs.recommended,
   eslintPluginPrettierRecommended,
+  {
+    // Repository scripts run on Node.js.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
   {
     files: RUNTIME_AGNOSTIC_SOURCES,
     rules: {

@@ -39,6 +39,19 @@ const app = await createApp({ adapter: /* an HTTP adapter */ })
 await app.listen(3000)
 ```
 
+## Repeated fields
+
+A query parameter, form field or file sent once gives a single value; sent several times, an array. `arrayOf()` always gives an array:
+
+```ts
+import { arrayOf } from '@dotpress/core'
+
+schema: (z) => ({
+  query: z.object({ tag: arrayOf(z.string()).default([]) }),
+  files: z.object({ photos: arrayOf(z.array(z.file()).max(5)) }),
+})
+```
+
 ## License
 
 MIT

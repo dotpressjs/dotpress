@@ -48,6 +48,8 @@ export type AuthErrorCode =
   | 'EXPIRED_REFRESH_TOKEN'
   /** A used refresh token was presented again: its session is revoked. */
   | 'REFRESH_TOKEN_REUSED'
+  /** Valid access token of a revoked session (`isSessionRevoked()`). */
+  | 'SESSION_REVOKED'
 
 /**
  * Error raised by the token helpers.
@@ -82,10 +84,17 @@ export interface Auth {
    * `REFRESH_TOKEN_REUSED` is thrown.
    *
    * Throws `EXPIRED_REFRESH_TOKEN` when the session reached its inactivity
-   * or absolute timeout.
+   * or absolute timeout, and `INVALID_REFRESH_TOKEN` when
+   * `findUserById()` no longer returns the user (the session is revoked).
    */
-  refreshTokens(tokens: TokenPair): Promise<IssuedTokens & { userId: string }>
-  /** Verifies a valid (not expired) access token. */
+  refreshTokens(
+    tokens: TokenPair
+  ): Promise<IssuedTokens & { userId: string; user: AuthUser }>
+  /**
+   * Verifies a valid (not expired) access token. With
+   * `DataProvider.isSessionRevoked()`, throws `SESSION_REVOKED` for the
+   * tokens of a revoked session.
+   */
   verifyAccessToken(accessToken: string): Promise<AuthSession>
   /**
    * Revokes the session of a refresh token (logout). The token may be
@@ -300,7 +309,7 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
   return {
     keys: settings.keys,
     dataProvider: settings.dataProvider,
-    accessTokenTTL: settings.accessTokenTTL ?? 3600,
+    accessTokenTTL: settings.accessTokenTTL ?? 900,
     session: {
       idleTimeout: settings.session?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT,
       absoluteTimeout: settings.session?.absoluteTimeout,
@@ -841,6 +850,17 @@ export const createAuth = (input: AuthSettings): Auth => {
         throw new AuthError('EXPIRED_REFRESH_TOKEN')
       }
 
+      // Deleted or disabled account: the session ends.
+      const user = await settings.dataProvider.findUserById(userId)
+      if (!user) {
+        if (stored.familyId) {
+          await settings.dataProvider.revokeTokenFamily(stored.familyId)
+        } else {
+          await settings.dataProvider.revokeTokens(userId)
+        }
+        throw new AuthError('INVALID_REFRESH_TOKEN')
+      }
+
       const issued = await issueTokens(
         {
           sub: userId,
@@ -861,7 +881,7 @@ export const createAuth = (input: AuthSettings): Auth => {
         )
       }
 
-      return { userId, ...issued }
+      return { userId, user, ...issued }
     },
 
     async verifyAccessToken(accessToken) {
@@ -881,6 +901,17 @@ export const createAuth = (input: AuthSettings): Auth => {
         const session = toSession(payload as Record<string, unknown>, [])
         if (!isClientAccepted(session.clientId)) {
           throw new AuthError('INVALID_ACCESS_TOKEN')
+        }
+        const { isSessionRevoked } = settings.dataProvider
+        if (
+          session.sessionId !== undefined &&
+          isSessionRevoked &&
+          (await isSessionRevoked.call(
+            settings.dataProvider,
+            session.sessionId
+          ))
+        ) {
+          throw new AuthError('SESSION_REVOKED')
         }
         return session
       } catch (error) {

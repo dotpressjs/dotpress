@@ -31,11 +31,11 @@ describe('auth routes', () => {
         userId: 'u1',
         accessToken: expect.any(String),
         refreshToken: expect.stringMatching(/^[0-9a-f]{256}$/),
-        expiresIn: 3600,
+        expiresIn: 900,
         expiresAt: expect.any(String),
       })
       expect(new Date(body.expiresAt).getTime() - Date.now()).toBeGreaterThan(
-        3590 * 1000
+        890 * 1000
       )
       const claims = decodeJwt(body.accessToken)
       expect(claims).toMatchObject({ sub: 'u1', username: 'ada' })
@@ -176,7 +176,7 @@ describe('auth routes', () => {
       // Tokens set as HttpOnly cookies must not be readable by JavaScript.
       expect(body).toEqual({
         userId: 'u1',
-        expiresIn: 3600,
+        expiresIn: 900,
         expiresAt: expect.any(String),
       })
       const refreshToken = cookies[REFRESH_COOKIE]?.value
@@ -235,7 +235,7 @@ describe('auth routes', () => {
       const refreshed = (await res.json()) as typeof tokens
 
       expect(res.status).toBe(200)
-      expect(refreshed).toMatchObject({ userId: 'u1', expiresIn: 3600 })
+      expect(refreshed).toMatchObject({ userId: 'u1', expiresIn: 900 })
       expect(refreshed.refreshToken).not.toBe(tokens.refreshToken)
 
       // Retry within the reuse interval (lost response): a new pair.
@@ -268,7 +268,7 @@ describe('auth routes', () => {
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({
         userId: 'u1',
-        expiresIn: 3600,
+        expiresIn: 900,
         expiresAt: expect.any(String),
       })
       const cookies = cookiesOf(res)
@@ -421,7 +421,7 @@ describe('auth routes', () => {
 
       expect(await res.json()).toEqual({
         userId: 'u1',
-        expiresIn: 3600,
+        expiresIn: 900,
         expiresAt: expect.any(String),
         user: { id: 'u1', username: 'ada', roles: ['admin'] },
       })
@@ -749,6 +749,85 @@ describe('auth routes', () => {
       })
 
       expect(res.status).toBe(400)
+    })
+  })
+
+  describe('revocation', () => {
+    const me = (
+      fetch: (path: string, init?: RequestInit) => Promise<Response>,
+      accessToken: string
+    ) =>
+      fetch('/auth/me', { headers: { authorization: `Bearer ${accessToken}` } })
+
+    it('rejects the access tokens of revoked sessions at once', async () => {
+      const { fetch } = await createAuthApp({ sessionRevocation: true })
+      const first = (await login(fetch)).body
+      const second = (await login(fetch)).body
+
+      await fetch(
+        '/auth/logout',
+        postJson({ refreshToken: first.refreshToken })
+      )
+
+      expect((await me(fetch, first.accessToken)).status).toBe(401)
+      expect((await me(fetch, second.accessToken)).status).toBe(200)
+
+      await fetch(
+        '/auth/logout',
+        postJson({ refreshToken: second.refreshToken, scope: 'all' })
+      )
+      expect((await me(fetch, second.accessToken)).status).toBe(401)
+    })
+
+    it('rejects the access tokens of a session revoked by reuse', async () => {
+      const { fetch } = await createAuthApp({
+        sessionRevocation: true,
+        settings: { refreshTokenReuseInterval: 0 },
+      })
+      const stolen = (await login(fetch)).body
+      const rotated = (await (
+        await fetch('/auth/refresh', postJson(stolen))
+      ).json()) as typeof stolen
+
+      expect((await fetch('/auth/refresh', postJson(stolen))).status).toBe(401)
+      expect((await me(fetch, rotated.accessToken)).status).toBe(401)
+    })
+
+    it('does not restore a revoked session', async () => {
+      const { fetch } = await createAuthApp({
+        sessionRevocation: true,
+        settings: { cookies: COOKIES },
+      })
+      const { body: tokens } = await login(fetch)
+      await fetch(
+        '/auth/logout',
+        postJson({ refreshToken: tokens.refreshToken })
+      )
+
+      const res = await fetch('/auth/restore', {
+        method: 'POST',
+        headers: {
+          cookie: cookieHeader({
+            [REFRESH_COOKIE]: tokens.refreshToken,
+            [ACCESS_COOKIE]: tokens.accessToken,
+          }),
+        },
+      })
+
+      expect(res.status).toBe(401)
+    })
+
+    it('ends the session of a deleted user at refresh', async () => {
+      const { fetch, store } = await createAuthApp()
+      const { body: tokens } = await login(fetch)
+      store.users.delete('u1')
+
+      const res = await fetch('/auth/refresh', postJson(tokens))
+
+      expect(res.status).toBe(401)
+      expect(await res.json()).toMatchObject({
+        message: 'INVALID_REFRESH_TOKEN',
+      })
     })
   })
 

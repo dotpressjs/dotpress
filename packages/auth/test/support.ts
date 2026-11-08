@@ -46,7 +46,7 @@ interface StoredUser {
  * In-memory data provider with three users: ada (admin), linus (user), and
  * margaret (user without password, like an SSO account).
  */
-export const createStore = () => {
+export const createStore = (options: { sessionRevocation?: boolean } = {}) => {
   // Low cost factor: fast tests (see TEST_HASH_ROUNDS).
   const passwordHash = bcrypt.hashSync('secret', TEST_HASH_ROUNDS)
   const users = new Map<string, StoredUser>(
@@ -102,6 +102,14 @@ export const createStore = () => {
         if (token.familyId === familyId) token.revokedAt = new Date()
       }
     },
+    // Like a query on the refresh token table: a revoked session has
+    // revoked tokens.
+    ...(options.sessionRevocation && {
+      isSessionRevoked: async (sessionId: string) =>
+        [...refreshTokens.values()].some(
+          (token) => token.familyId === sessionId && token.revokedAt
+        ),
+    }),
     findUserById: async (userId) => {
       const user = users.get(userId)
       return user && { id: user.id, username: user.username, roles: user.roles }
@@ -125,12 +133,14 @@ export const createStore = () => {
 
 export interface AuthAppOptions {
   settings?: Partial<AuthSettings>
+  /** Adds `isSessionRevoked()` to the data provider. */
+  sessionRevocation?: boolean
   plugin?: AuthPluginOptions
   routes?: (router: Router) => void
 }
 
 export const createAuthApp = async (options: AuthAppOptions = {}) => {
-  const store = createStore()
+  const store = createStore({ sessionRevocation: options.sessionRevocation })
   const auth = createAuth({
     keys,
     dataProvider: store.provider,

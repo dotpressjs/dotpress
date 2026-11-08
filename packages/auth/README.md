@@ -127,7 +127,7 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | --- | --- | --- |
 | `keys` | — | RSA key pair: `secretKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM), plus optional `kid` and `additionalPublicKeys`. Tokens are signed with RS256. See [Keys and rotation](#keys-and-rotation). |
 | `dataProvider` | — | Storage of users and refresh tokens. |
-| `accessTokenTTL` | `3600` | Access token lifetime, in seconds. |
+| `accessTokenTTL` | `900` | Access token lifetime, in seconds (15 minutes). See [Revocation](#revocation). |
 | `session` | `{ idleTimeout: 14 days }` | Session lifetimes, in seconds: `idleTimeout` (inactivity) and `absoluteTimeout` (none by default). See [Sessions](#sessions). |
 | `issuer` | — | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair. |
 | `audience` | `issuer` | `aud` claim (the API that accepts the tokens), checked on every request. |
@@ -280,8 +280,9 @@ const dataProvider: DataProvider = {
   markRefreshTokenAsUsed: (tokenHash, usedAt) => db.refreshToken.update({ tokenHash }, { isUsed: true, usedAt }),
   revokeTokens: (userId) => db.refreshToken.updateMany({ userId }, { revokedAt: new Date() }),
   revokeTokenFamily: (familyId) => db.refreshToken.updateMany({ familyId }, { revokedAt: new Date() }),
-  findUserById: (userId) => db.user.findPublicProfile(userId),
+  findUserById: (userId) => db.user.findActivePublicProfile(userId), // undefined for deleted or disabled accounts
   findUserIdentifiers: (username) => db.user.findCredentials(username), // { userId, passwordHash (null without password), role? }
+  isSessionRevoked: (sessionId) => …, // optional, see Revocation
 }
 ```
 
@@ -336,7 +337,62 @@ Outside the routes, `auth.revokeSession(refreshToken, { scope })` does the same,
 
 > **Revoke every session when the password changes or is reset**: call `dataProvider.revokeTokens(userId)`. A stolen session must not survive a password change.
 
-The access tokens of a revoked session stay valid until they expire (`accessTokenTTL`).
+The access tokens of a revoked session stay valid until they expire, unless the data provider implements `isSessionRevoked` (see [Revocation](#revocation)).
+
+## Revocation
+
+Access tokens are verified without a database lookup of the token itself, so revoking a session does not invalidate the access tokens already issued:
+
+| Event | Refresh | Access tokens already issued |
+| --- | --- | --- |
+| Account deleted or disabled (`findUserById` returns `undefined`) | rejected, the session is revoked | rejected at once |
+| Logout, `scope: 'all'`, refresh token reuse, `revokeTokens()` | rejected | valid until they expire (`accessTokenTTL`, 15 minutes), or rejected at once with `isSessionRevoked` |
+
+**`findUserById` must return `undefined` for a deleted, disabled or banned account**: it is called on every authenticated request and every refresh.
+
+### Immediate revocation
+
+Implement the optional `isSessionRevoked(sessionId)` method of the data provider: it is called on every authenticated request carrying a session (`sid` claim), and the tokens of a revoked session get `SESSION_REVOKED` (the request stays anonymous). It costs one lookup per request, besides `findUserById`, and needs a store shared by every instance of the API.
+
+The revocation state is already stored: a revoked session has revoked refresh tokens. With PostgreSQL, query the refresh token table:
+
+```ts
+isSessionRevoked: async (sessionId) => {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM refresh_tokens WHERE family_id = $1 AND revoked_at IS NOT NULL LIMIT 1',
+    [sessionId]
+  )
+  return rowCount > 0
+}
+```
+
+```sql
+CREATE INDEX refresh_tokens_family_id ON refresh_tokens (family_id);
+```
+
+For faster lookups, record the revoked sessions in Redis when revoking. They only need to be kept for `accessTokenTTL`: afterwards, every access token of the session has expired.
+
+```ts
+const ACCESS_TOKEN_TTL = 900 // same as accessTokenTTL
+const markRevoked = (familyIds: string[]) =>
+  Promise.all(familyIds.map((id) => redis.set(`dotpress:revoked-session:${id}`, '1', { EX: ACCESS_TOKEN_TTL })))
+
+const dataProvider: DataProvider = {
+  // …
+  revokeTokenFamily: async (familyId) => {
+    await db.refreshToken.updateMany({ familyId }, { revokedAt: new Date() })
+    await markRevoked([familyId])
+  },
+  revokeTokens: async (userId) => {
+    const familyIds = await db.refreshToken.findActiveFamilyIds(userId)
+    await db.refreshToken.updateMany({ userId }, { revokedAt: new Date() })
+    await markRevoked(familyIds)
+  },
+  isSessionRevoked: async (sessionId) => (await redis.exists(`dotpress:revoked-session:${sessionId}`)) === 1,
+}
+```
+
+An error thrown by `isSessionRevoked` fails closed: the request stays anonymous, and a warning is logged. Avoid caching the answer in the memory of each instance: a revocation would only be seen by the instance that made it, after the cache delay.
 
 ## Refresh token rotation
 

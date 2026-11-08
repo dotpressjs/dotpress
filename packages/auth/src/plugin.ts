@@ -425,14 +425,11 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       }
 
       try {
-        const { userId, ...tokens } = await auth.refreshTokens({
+        const { userId, user, ...tokens } = await auth.refreshTokens({
           accessToken,
           refreshToken,
         })
         auth.setAuthCookies(res, tokens)
-
-        const user = await dataProvider.findUserById(userId)
-        if (!user) return unauthorizedError('USER_NOT_FOUND')
 
         return { userId, ...issuedExpiration(tokens), user }
       } catch (error) {

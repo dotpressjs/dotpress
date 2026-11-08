@@ -57,7 +57,7 @@ describe('createAuth()', () => {
     const { auth } = authWith()
 
     expect(auth.settings).toMatchObject({
-      accessTokenTTL: 3600,
+      accessTokenTTL: 900,
       session: { idleTimeout: 14 * DAY, absoluteTimeout: undefined },
       issuer: 'https://api.example.com',
       // The API audience defaults to the issuer.
@@ -705,6 +705,7 @@ describe('createAuth()', () => {
 
     it('ends sessions at the absolute timeout, even when active', async () => {
       const { auth } = authWith({
+        accessTokenTTL: HOUR,
         session: { idleTimeout: 12 * HOUR, absoluteTimeout: DAY },
       })
       const start = now
@@ -842,6 +843,145 @@ describe('createAuth()', () => {
       [{ refreshTokenTTLInDays: 14 }, 'replaced by session.idleTimeout'],
     ])('rejects invalid session settings (%o)', (settings, message) => {
       expect(() => authWith(settings as Partial<AuthSettings>)).toThrow(message)
+    })
+  })
+
+  describe('revocation', () => {
+    const subject = { userId: 'u1', username: 'ada' }
+
+    it('ends the session of a deleted or disabled user at refresh', async () => {
+      const { auth, store } = authWith()
+      const first = await auth.generateTokensForUser(subject)
+      const second = await auth.generateTokensForUser(subject)
+      expect((await auth.refreshTokens(first)).user).toEqual({
+        id: 'u1',
+        username: 'ada',
+        roles: ['admin'],
+      })
+      const third = await auth.generateTokensForUser(subject)
+
+      store.users.delete('u1')
+
+      await expect(auth.refreshTokens(third)).rejects.toMatchObject({
+        code: 'INVALID_REFRESH_TOKEN',
+      })
+      const sid = decodeJwt(third.accessToken).sid
+      const tokens = [...store.refreshTokens.values()]
+      // Only this session is revoked; the others end at their refresh.
+      expect(
+        tokens.filter((token) => token.revokedAt).map((t) => t.familyId)
+      ).toEqual([sid])
+      store.users.set('u1', {
+        id: 'u1',
+        username: 'ada',
+        role: 'admin',
+        roles: ['admin'],
+        passwordHash: null,
+      })
+      await expect(auth.refreshTokens(third)).rejects.toMatchObject({
+        code: 'INVALID_REFRESH_TOKEN',
+      })
+      await expect(auth.refreshTokens(second)).resolves.toBeDefined()
+    })
+
+    it('revokes every session of a deleted user for tokens without family', async () => {
+      const { auth, store } = authWith()
+      const first = await auth.generateTokensForUser(subject)
+      await auth.generateTokensForUser(subject)
+      for (const token of store.refreshTokens.values()) token.familyId = null
+      store.users.delete('u1')
+
+      await expect(auth.refreshTokens(first)).rejects.toMatchObject({
+        code: 'INVALID_REFRESH_TOKEN',
+      })
+      expect(
+        [...store.refreshTokens.values()].every((token) => token.revokedAt)
+      ).toBe(true)
+    })
+
+    it('rejects the access tokens of revoked sessions with isSessionRevoked', async () => {
+      const store = createStore({ sessionRevocation: true })
+      const isSessionRevoked = vi.spyOn(store.provider, 'isSessionRevoked')
+      const auth = createAuth({
+        keys,
+        dataProvider: store.provider,
+        issuer: 'https://api.example.com',
+      })
+      const first = await auth.generateTokensForUser(subject)
+      const second = await auth.generateTokensForUser(subject)
+      const sid = decodeJwt(first.accessToken).sid
+
+      await expect(
+        auth.verifyAccessToken(first.accessToken)
+      ).resolves.toMatchObject({ sessionId: sid })
+      await auth.revokeSession(first.refreshToken)
+
+      await expect(
+        auth.verifyAccessToken(first.accessToken)
+      ).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+      await expect(
+        auth.verifyAccessToken(second.accessToken)
+      ).resolves.toBeDefined()
+      expect(isSessionRevoked).toHaveBeenLastCalledWith(
+        decodeJwt(second.accessToken).sid
+      )
+
+      // Tokens without session are not checked.
+      isSessionRevoked.mockClear()
+      const { accessToken } = await auth.generateAccessToken(subject)
+      await auth.verifyAccessToken(accessToken)
+      expect(isSessionRevoked).not.toHaveBeenCalled()
+    })
+
+    it('calls isSessionRevoked on the data provider', async () => {
+      const revoked = new Set<string>()
+      const provider = {
+        ...createStore().provider,
+        revoked,
+        async isSessionRevoked(this: { revoked: Set<string> }, sid: string) {
+          return this.revoked.has(sid)
+        },
+      }
+      const auth = createAuth({
+        keys,
+        dataProvider: provider,
+        issuer: 'https://api.example.com',
+      })
+      const { accessToken } = await auth.generateTokensForUser(subject)
+      revoked.add(String(decodeJwt(accessToken).sid))
+
+      await expect(auth.verifyAccessToken(accessToken)).rejects.toMatchObject({
+        code: 'SESSION_REVOKED',
+      })
+    })
+
+    it('fails closed when isSessionRevoked throws', async () => {
+      const provider = {
+        ...createStore().provider,
+        isSessionRevoked: async () => {
+          throw new Error('Database unavailable')
+        },
+      }
+      const auth = createAuth({
+        keys,
+        dataProvider: provider,
+        issuer: 'https://api.example.com',
+      })
+      const { accessToken } = await auth.generateTokensForUser(subject)
+
+      await expect(auth.verifyAccessToken(accessToken)).rejects.toMatchObject({
+        code: 'INVALID_ACCESS_TOKEN',
+      })
+    })
+
+    it('keeps the access tokens of revoked sessions until expiry without isSessionRevoked', async () => {
+      const { auth } = authWith()
+      const pair = await auth.generateTokensForUser(subject)
+      await auth.revokeSession(pair.refreshToken)
+
+      await expect(
+        auth.verifyAccessToken(pair.accessToken)
+      ).resolves.toBeDefined()
     })
   })
 

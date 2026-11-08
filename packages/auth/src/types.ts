@@ -252,8 +252,22 @@ export interface DataProvider {
   revokeTokens(userId: string): Promise<void>
   /** Revokes every refresh token of a session (`familyId`). */
   revokeTokenFamily(familyId: string): Promise<void>
+  /**
+   * User of a token, on every authenticated request and every refresh.
+   * Return `undefined` for a deleted, disabled or banned account: its
+   * requests are rejected at once, and its sessions end at their next
+   * refresh.
+   */
   findUserById(userId: string): Promise<AuthUser | undefined>
   findUserIdentifiers(username: string): Promise<UserIdentifiers | undefined>
+  /**
+   * Optional. Whether a session (`familyId`, the `sid` claim) was revoked.
+   * When defined, it is checked on every authenticated request, so that
+   * the access tokens of a revoked session (logout, refresh token reuse,
+   * password change) stop working at once, instead of at their expiry.
+   * It costs one lookup per request: see the README for implementations.
+   */
+  isSessionRevoked?(sessionId: string): Promise<boolean>
 }
 
 /**
@@ -305,7 +319,11 @@ export interface ResolvedSessionSettings {
 export interface AuthSettings {
   keys: KeyPairSettings
   dataProvider: DataProvider
-  /** Access token lifetime, in seconds. Defaults to 3600. */
+  /**
+   * Access token lifetime, in seconds. Defaults to 900 (15 minutes): the
+   * longest delay during which the token of a revoked session still
+   * works, without `DataProvider.isSessionRevoked()`.
+   */
   accessTokenTTL?: number
   /** Session lifetimes (inactivity and absolute timeouts). */
   session?: SessionSettings

@@ -52,6 +52,28 @@ schema: (z) => ({
 })
 ```
 
+## Route documentation
+
+Routes describe themselves for documentation generators (`@dotpress/openapi`): schemas, success `status`, and `meta`:
+
+```ts
+defineRoute({
+  path: '/members/:id',
+  middlewares: [requireAuth],
+  schema: (z) => ({ response: Member }),
+  meta: {
+    summary: 'Get a member',
+    tags: ['members'],
+    responses: { 404: 'Member not found' }, // other responses, by status
+  },
+  handler: ...,
+})
+```
+
+- **Security** comes from the middlewares: a middleware declared with `defineMiddleware(fn, { security: ['bearerAuth'] })` marks the routes using it, directly or through a group, as secured. `meta.security` overrides it (`[]` for a public route). `app.routes[i].security` holds the result.
+- **`meta.responses`** documents the other responses of a route: errors returned by the handler, or bodies that are not JSON (`{ description: 'CSV export', contentType: 'text/csv' }`). An entry is a description, or an object with a `description`, an optional `schema` and an optional `contentType`.
+- **`meta.hidden`** excludes a route from the documentation.
+
 ## Base path
 
 To serve the app under a sub-path, for instance `https://example.com/my-app/api/users` behind a reverse proxy shared by several apps, use one of these options, depending on what the proxy forwards:

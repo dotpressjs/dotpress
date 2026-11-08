@@ -172,7 +172,7 @@ const setupPlugins = async (
   paths: BasePaths
 ): Promise<PluginRegistry> => {
   const registry = createPluginRegistry()
-  const sorted = sortPlugins(plugins)
+  const sorted = Object.freeze(sortPlugins(plugins))
   const byName = new Map(sorted.map((plugin) => [plugin.name, plugin]))
 
   for (const plugin of sorted) {
@@ -257,6 +257,7 @@ const setupPlugins = async (
       getRoutes,
       getPlugin: <T extends Plugin = Plugin>(name: string) =>
         byName.get(name) as T | undefined,
+      getPlugins: () => sorted,
     }
 
     try {

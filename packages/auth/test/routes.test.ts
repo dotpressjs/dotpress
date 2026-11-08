@@ -1049,15 +1049,11 @@ describe('auth routes', () => {
       const { app } = await createAuthApp()
 
       expect(
-        app.routes.map((route) => [
-          route.method,
-          route.path,
-          route.meta.security ?? [],
-        ])
+        app.routes.map((route) => [route.method, route.path, route.security])
       ).toEqual([
         ['post', '/auth/login', []],
         ['post', '/auth/refresh', []],
-        ['get', '/auth/me', ['bearerAuth']],
+        ['get', '/auth/me', [['bearerAuth']]],
         ['post', '/auth/restore', []],
         ['post', '/auth/logout', []],
       ])

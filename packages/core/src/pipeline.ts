@@ -1,6 +1,11 @@
 import * as z from 'zod'
 import type { CompiledRoute, RouteInfo } from './adapter.js'
-import type { Middleware, RequestContext, ResponseFilter } from './context.js'
+import {
+  getMiddlewareSecurity,
+  type Middleware,
+  type RequestContext,
+  type ResponseFilter,
+} from './context.js'
 import {
   HttpError,
   isHttpError,
@@ -291,6 +296,45 @@ export const createErrorHandler = (config: PipelineConfig) => {
 }
 
 /**
+ * Security requirements of a route: `meta.security`, or the product of
+ * the schemes declared by its middlewares (each middleware accepts any of
+ * its schemes, and every middleware must pass).
+ */
+const resolveSecurity = (
+  explicit: readonly string[] | undefined,
+  middlewares: readonly Middleware[]
+): readonly (readonly string[])[] => {
+  if (explicit !== undefined) {
+    return Object.freeze(explicit.map((scheme) => Object.freeze([scheme])))
+  }
+
+  let requirements: string[][] | undefined
+  for (const middleware of middlewares) {
+    const schemes = getMiddlewareSecurity(middleware)
+    if (!schemes || schemes.length === 0) continue
+    requirements = (requirements ?? [[]]).flatMap((requirement) =>
+      schemes.map((scheme) =>
+        requirement.includes(scheme) ? requirement : [...requirement, scheme]
+      )
+    )
+  }
+
+  // Alternatives requiring more schemes than another are redundant:
+  // (apiKey or bearerAuth) and bearerAuth is bearerAuth.
+  const all = requirements ?? []
+  const kept = all.filter(
+    (requirement, index) =>
+      !all.some(
+        (other, otherIndex) =>
+          otherIndex !== index &&
+          other.every((scheme) => requirement.includes(scheme)) &&
+          (other.length < requirement.length || otherIndex < index)
+      )
+  )
+  return Object.freeze(kept.map((requirement) => Object.freeze(requirement)))
+}
+
+/**
  * Compiles a route into a `CompiledRoute`: resolves its schema once and
  * builds the request pipeline.
  */
@@ -315,6 +359,10 @@ export const compileRoute = (
     pathParams: Object.freeze(getPathParamNames(route.path)),
     schema: Object.freeze({ ...schema }),
     meta: Object.freeze({ ...route.meta }),
+    security: resolveSecurity(route.meta.security, [
+      ...config.middlewares,
+      ...route.middlewares,
+    ]),
     status: route.status,
     rawBody: route.rawBody,
     bodyLimit: route.bodyLimit,

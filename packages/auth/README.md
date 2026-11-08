@@ -122,6 +122,8 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 
 `requireAuth` answers `401` with a `WWW-Authenticate: Bearer` header (RFC 6750), plus `error="invalid_token"` when the `Authorization` header carried an expired, revoked or invalid token; every `401` of the app gets this header, unless it already has one. `requireRole()` answers `401` without user and `403` without one of the roles; `requireClient()` answers `401` without user and `403` when the token was issued for another client (see [Clients](#clients)). In the handlers of guarded routes, `ctx.user` and `ctx.auth` are typed as defined. Roles come from the user `roles` array (or `role` string), or from the `getUserRoles` setting.
 
+The guards declare the `bearerAuth` security scheme (`AUTH_SECURITY_SCHEMES`, exposed by the plugin as `securitySchemes`): documentation generators such as `@dotpress/openapi` mark the routes using them as secured, without `meta.security`.
+
 ## Settings
 
 | Setting                            | Default                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |

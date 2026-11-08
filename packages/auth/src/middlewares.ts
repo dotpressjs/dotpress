@@ -5,6 +5,9 @@ import {
 } from '@dotpress/core'
 import type { AuthSession, AuthUser } from './types.js'
 
+/** Documents the routes using the guards as secured by an access token. */
+const SECURED = { security: ['bearerAuth'] }
+
 /** Context guaranteed by `requireAuth`, `requireRole()` and `requireClient()`. */
 export interface AuthenticatedContext {
   user: AuthUser
@@ -15,8 +18,9 @@ export interface AuthenticatedContext {
  * Requires an authenticated user (`401 UNAUTHORIZED` otherwise). In the
  * handlers of the routes using it, `ctx.user` and `ctx.auth` are defined.
  */
-export const requireAuth = defineMiddleware<AuthenticatedContext>((ctx) =>
-  ctx.user && ctx.auth ? undefined : unauthorizedError()
+export const requireAuth = defineMiddleware<AuthenticatedContext>(
+  (ctx) => (ctx.user && ctx.auth ? undefined : unauthorizedError()),
+  SECURED
 )
 
 /**
@@ -35,7 +39,7 @@ export const requireRole = (...roles: [string, ...string[]]) => {
     return roles.some((role) => granted.includes(role))
       ? undefined
       : forbiddenError()
-  })
+  }, SECURED)
 }
 
 /**
@@ -56,5 +60,5 @@ export const requireClient = (...clientIds: [string, ...string[]]) => {
     return clientId !== undefined && clientIds.includes(clientId)
       ? undefined
       : forbiddenError()
-  })
+  }, SECURED)
 }

@@ -56,6 +56,17 @@ export interface Middleware<TProvides = unknown> {
   readonly '~provides'?: TProvides
 }
 
+const MIDDLEWARE_SECURITY = Symbol.for('dotpress.middleware.security')
+
+export interface MiddlewareOptions {
+  /**
+   * Security schemes the middleware accepts, any of them (for instance
+   * `['bearerAuth']`). Routes using the middleware are documented as
+   * secured by them, unless they set `meta.security`.
+   */
+  security?: readonly string[]
+}
+
 /**
  * Declares a middleware that guarantees context properties to handlers.
  *
@@ -69,12 +80,47 @@ export interface Middleware<TProvides = unknown> {
  *   middlewares: [requireTenant],
  *   handler: ({ tenant }) => tenant.settings, // Tenant, not Tenant | undefined
  * })
+ *
+ * // Documented as secured by the `bearerAuth` scheme (`@dotpress/openapi`).
+ * const requireUser = defineMiddleware((ctx) => ..., { security: ['bearerAuth'] })
  */
 export const defineMiddleware = <TProvides = unknown>(
   middleware: (
     ctx: RequestContext
-  ) => MiddlewareResult | Promise<MiddlewareResult>
-): Middleware<TProvides> => middleware as Middleware<TProvides>
+  ) => MiddlewareResult | Promise<MiddlewareResult>,
+  options?: MiddlewareOptions
+): Middleware<TProvides> => {
+  if (options?.security === undefined) {
+    return middleware as Middleware<TProvides>
+  }
+
+  const { security } = options
+  if (
+    !Array.isArray(security) ||
+    security.some((scheme) => typeof scheme !== 'string' || scheme === '')
+  ) {
+    throw new TypeError(
+      'Invalid middleware security: expected an array of security scheme names.'
+    )
+  }
+
+  // A copy, so that the same function can be declared with other options.
+  const declared = (ctx: RequestContext) => middleware(ctx)
+  Object.defineProperty(declared, MIDDLEWARE_SECURITY, {
+    value: Object.freeze([...security]),
+  })
+  return declared as Middleware<TProvides>
+}
+
+/** Security schemes declared with `defineMiddleware()`, if any. */
+export const getMiddlewareSecurity = (
+  middleware: unknown
+): readonly string[] | undefined =>
+  typeof middleware === 'function'
+    ? (middleware as { [MIDDLEWARE_SECURITY]?: readonly string[] })[
+        MIDDLEWARE_SECURITY
+      ]
+    : undefined
 
 type UnionToIntersection<U> = (
   U extends unknown ? (value: U) => void : never

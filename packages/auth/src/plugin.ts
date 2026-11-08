@@ -202,7 +202,6 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
   }
 
   const meta = { tags: ['auth'] }
-  const securedMeta = { ...meta, security: ['bearerAuth'] }
 
   group.defineRoute({
     method: 'post',
@@ -390,7 +389,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
 
   group.defineRoute({
     path: '/me',
-    meta: { ...securedMeta, summary: 'Authenticated user' },
+    meta: { ...meta, summary: 'Authenticated user' },
     middlewares: [requireAuth],
     handler: ({ user }) => user,
   })

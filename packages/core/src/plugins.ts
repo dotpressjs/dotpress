@@ -156,6 +156,8 @@ export interface PluginAPI {
   getRoutes(): readonly RouteInfo[]
   /** Another installed plugin, for instance to read its public settings. */
   getPlugin<T extends Plugin = Plugin>(name: string): T | undefined
+  /** Installed plugins, in setup order (dependencies first). */
+  getPlugins(): readonly Plugin[]
 }
 
 const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set<BaseContextKey>([

@@ -508,6 +508,36 @@ describe('authPlugin()', () => {
       expect(plugin.securitySchemes).toBe(AUTH_SECURITY_SCHEMES)
     })
 
+    it('documents the guarded routes as secured by bearerAuth', async () => {
+      const { app } = await createAuthApp({
+        routes: (router) => {
+          const route = (path: string, middlewares = [requireAuth]) =>
+            router.defineRoute({ path, middlewares, handler: () => ({}) })
+          route('/public', [])
+          route('/user')
+          route('/admin', [requireRole('admin')])
+          route('/mobile', [requireClient('mobile')])
+          route('/both', [requireAuth, requireRole('admin')])
+        },
+      })
+
+      const security = Object.fromEntries(
+        app.routes.map((route) => [route.path, route.security])
+      )
+      const secured = [['bearerAuth']]
+      expect(security).toMatchObject({
+        '/public': [],
+        '/user': secured,
+        '/admin': secured,
+        '/mobile': secured,
+        '/both': secured,
+        '/auth/me': secured,
+        '/auth/login': [],
+        '/auth/logout': [],
+      })
+      expect(Object.keys(AUTH_SECURITY_SCHEMES)).toEqual(['bearerAuth'])
+    })
+
     it('makes ctx.user fail explicitly when the plugin is not installed', async () => {
       const router = createRouter()
       router.defineRoute({ path: '/me', handler: ({ user }) => ({ user }) })

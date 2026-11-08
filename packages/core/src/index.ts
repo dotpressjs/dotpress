@@ -22,6 +22,7 @@ export {
   type HandlerResult,
   type Middleware,
   type MiddlewareList,
+  type MiddlewareOptions,
   type MiddlewareResult,
   type ProvidedContext,
   type RequestContext,
@@ -147,6 +148,7 @@ export {
   type RouteGroup,
   type RouteMeta,
   type RouteRecord,
+  type RouteResponse,
   type Router,
 } from './routes.js'
 

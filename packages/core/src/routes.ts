@@ -13,7 +13,7 @@ import {
   type PathParams,
   type Simplify,
 } from './path.js'
-import type { RouteSchema, SchemaDefinition } from './schema.js'
+import type { RouteSchema, Schema, SchemaDefinition } from './schema.js'
 
 /**
  * Documentation metadata of a route (used by `@dotpress/openapi`).
@@ -24,10 +24,36 @@ export interface RouteMeta {
   tags?: string[]
   operationId?: string
   deprecated?: boolean
-  /** Security schemes required by the route. */
+  /**
+   * Security schemes accepted by the route, any of them. Defaults to the
+   * schemes declared by its middlewares (`defineMiddleware()`); `[]` marks
+   * the route as public.
+   */
   security?: string[]
   /** Excludes the route from generated documentation. */
   hidden?: boolean
+  /**
+   * Other responses of the route, by status: errors returned by the
+   * handler, or responses that are not JSON (`file()`, `stream()`,
+   * `sse()`, `redirect()`). A description, or a description with a schema
+   * or a content type.
+   *
+   * @example
+   * responses: {
+   *   404: 'Member not found',
+   *   200: { description: 'CSV export', contentType: 'text/csv' },
+   * }
+   */
+  responses?: Record<number, string | RouteResponse>
+}
+
+/** Documented response of a route (`meta.responses`). */
+export interface RouteResponse {
+  description: string
+  /** Body schema. */
+  schema?: Schema
+  /** Defaults to `application/json`. */
+  contentType?: string
 }
 
 /**
@@ -123,12 +149,30 @@ export interface Router extends RouteGroup {
   clear(): void
 }
 
+const isStatus = (status: number) =>
+  Number.isInteger(status) && status >= 100 && status <= 599
+
 const assertStatus = (status: number | undefined, path: string) => {
-  if (
-    status !== undefined &&
-    (!Number.isInteger(status) || status < 100 || status > 599)
-  ) {
+  if (status !== undefined && !isStatus(status)) {
     throw new RangeError(`Invalid status ${status} for route "${path}".`)
+  }
+}
+
+const assertResponses = (responses: RouteMeta['responses'], path: string) => {
+  if (responses === undefined) return
+  for (const [key, response] of Object.entries(responses)) {
+    if (!isStatus(Number(key))) {
+      throw new RangeError(
+        `Invalid status "${key}" in meta.responses of route "${path}".`
+      )
+    }
+    const description =
+      typeof response === 'string' ? response : response?.description
+    if (typeof description !== 'string') {
+      throw new TypeError(
+        `meta.responses[${key}] of route "${path}" needs a description.`
+      )
+    }
   }
 }
 
@@ -156,6 +200,7 @@ export const createRouter = (): Router => {
 
     const path = joinPaths(prefix, route.path)
     assertStatus(route.status, path)
+    assertResponses(route.meta?.responses, path)
 
     if (route.rawBody !== undefined && typeof route.rawBody !== 'boolean') {
       throw new TypeError(`Invalid rawBody option for route "${path}".`)

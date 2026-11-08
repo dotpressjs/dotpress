@@ -18,6 +18,12 @@ export interface RouteInfo {
   /** Resolved schemas. */
   readonly schema: Readonly<RouteSchema>
   readonly meta: Readonly<RouteMeta>
+  /**
+   * Security requirements: alternatives, each listing the schemes
+   * required together. From `meta.security`, or else from the security
+   * declared by the middlewares of the route. Empty for public routes.
+   */
+  readonly security: readonly (readonly string[])[]
   readonly status: number | undefined
   /** Whether the route needs `NormalizedRequest.rawBody`. */
   readonly rawBody: boolean

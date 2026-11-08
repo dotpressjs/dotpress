@@ -794,6 +794,130 @@ describe('createAuth()', () => {
     })
   })
 
+  describe('logout', () => {
+    const subject = { userId: 'u1', username: 'ada' }
+    const hashOf = async (token: string) => {
+      const { createHash } = await import('node:crypto')
+      return createHash('sha256').update(token).digest('hex')
+    }
+    const twoSessions = async () => {
+      const context = authWith()
+      const first = await context.auth.generateTokensForUser(subject)
+      const second = await context.auth.generateTokensForUser(subject)
+      return { ...context, first, second }
+    }
+
+    it('identifies the session with a sid claim, kept across rotations', async () => {
+      const { auth, store, first, second } = await twoSessions()
+      const { sid } = decodeJwt(first.accessToken)
+
+      expect(sid).toEqual(expect.any(String))
+      expect(decodeJwt(second.accessToken).sid).not.toBe(sid)
+      expect(
+        store.refreshTokens.get(await hashOf(first.refreshToken))?.familyId
+      ).toBe(sid)
+
+      const rotated = await auth.refreshTokens(first)
+      expect(decodeJwt(rotated.accessToken).sid).toBe(sid)
+      expect(
+        (await auth.verifyAccessToken(rotated.accessToken)).sessionId
+      ).toBe(sid)
+    })
+
+    it('issues standalone access tokens without session', async () => {
+      const { auth } = authWith()
+      const { accessToken } = await auth.generateAccessToken(subject)
+
+      expect(decodeJwt(accessToken)).not.toHaveProperty('sid')
+      expect(
+        (await auth.verifyAccessToken(accessToken)).sessionId
+      ).toBeUndefined()
+    })
+
+    it('revokes the session of a refresh token only', async () => {
+      const { auth, first, second } = await twoSessions()
+
+      expect(await auth.revokeSession(first.refreshToken)).toEqual({
+        userId: 'u1',
+        sessionId: decodeJwt(first.accessToken).sid,
+      })
+      await expect(auth.refreshTokens(first)).rejects.toMatchObject({
+        code: 'INVALID_REFRESH_TOKEN',
+      })
+      await expect(auth.refreshTokens(second)).resolves.toBeDefined()
+    })
+
+    it('revokes the session of a used, revoked or expired token', async () => {
+      const { auth, store, first } = await twoSessions()
+      const rotated = await auth.refreshTokens(first)
+      const stored = store.refreshTokens.get(await hashOf(first.refreshToken))!
+      stored.expiresAt = new Date(Date.now() - 1000)
+      stored.revokedAt = new Date()
+
+      expect(await auth.revokeSession(first.refreshToken)).toBeDefined()
+      await expect(auth.refreshTokens(rotated)).rejects.toMatchObject({
+        code: 'INVALID_REFRESH_TOKEN',
+      })
+    })
+
+    it('revokes every session with scope all', async () => {
+      const { auth, first, second } = await twoSessions()
+
+      expect(
+        await auth.revokeSession(first.refreshToken, { scope: 'all' })
+      ).toEqual({ userId: 'u1', sessionId: decodeJwt(first.accessToken).sid })
+      for (const pair of [first, second]) {
+        await expect(auth.refreshTokens(pair)).rejects.toMatchObject({
+          code: 'INVALID_REFRESH_TOKEN',
+        })
+      }
+    })
+
+    it.each([
+      ['used', { isUsed: true, usedAt: new Date() }],
+      ['revoked', { revokedAt: new Date() }],
+      ['expired', { expiresAt: new Date(Date.now() - 1000) }],
+    ])(
+      'requires an active token for scope all (%s)',
+      async (_label, change) => {
+        const { auth, store, first, second } = await twoSessions()
+        Object.assign(
+          store.refreshTokens.get(await hashOf(first.refreshToken))!,
+          change
+        )
+
+        expect(
+          await auth.revokeSession(first.refreshToken, { scope: 'all' })
+        ).toBeUndefined()
+        await expect(auth.refreshTokens(second)).resolves.toBeDefined()
+      }
+    )
+
+    it('ignores unknown tokens', async () => {
+      const { auth, store } = await twoSessions()
+
+      for (const scope of ['current', 'all'] as const) {
+        expect(await auth.revokeSession('unknown', { scope })).toBeUndefined()
+      }
+      expect(
+        [...store.refreshTokens.values()].some((token) => token.revokedAt)
+      ).toBe(false)
+    })
+
+    it('revokes every session for tokens stored without family', async () => {
+      const { auth, store, first, second } = await twoSessions()
+      store.refreshTokens.get(await hashOf(first.refreshToken))!.familyId = null
+
+      expect(await auth.revokeSession(first.refreshToken)).toEqual({
+        userId: 'u1',
+        sessionId: undefined,
+      })
+      await expect(auth.refreshTokens(second)).rejects.toMatchObject({
+        code: 'INVALID_REFRESH_TOKEN',
+      })
+    })
+  })
+
   describe('passwords', () => {
     it('hashes and verifies passwords with bcrypt', async () => {
       const { auth } = authWith()

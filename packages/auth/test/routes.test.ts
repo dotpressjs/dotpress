@@ -519,27 +519,232 @@ describe('auth routes', () => {
   })
 
   describe('POST /auth/logout', () => {
-    it('revokes the tokens and clears the cookies', async () => {
+    const twoSessions = async (settings = {}) => {
+      const app = await createAuthApp({ settings })
+      const first = (await login(app.fetch)).body
+      const second = (await login(app.fetch)).body
+      const refreshStatus = async (tokens: typeof first) =>
+        (
+          await app.fetch(
+            '/auth/refresh',
+            postJson({
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken,
+            })
+          )
+        ).status
+      return {
+        ...app,
+        first,
+        second,
+        refreshStatus,
+        logout: (body?: Record<string, unknown>, headers = {}) =>
+          logout(app.fetch, body, headers),
+      }
+    }
+    // Hoisted: used by twoSessions().
+    function logout(
+      fetch: (path: string, init?: RequestInit) => Promise<Response>,
+      body?: Record<string, unknown>,
+      headers: Record<string, string> = {}
+    ) {
+      return fetch('/auth/logout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        ...(body && { body: JSON.stringify(body) }),
+      })
+    }
+
+    it('revokes the current session with the refresh token', async () => {
+      const { fetch, first, second, refreshStatus } = await twoSessions()
+
+      const res = await logout(fetch, { refreshToken: first.refreshToken })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ success: true })
+      expect(await refreshStatus(first)).toBe(401)
+      expect(await refreshStatus(second)).toBe(200)
+    })
+
+    it('revokes the current session with the access token only', async () => {
+      const { fetch, first, second, refreshStatus } = await twoSessions()
+
+      const res = await logout(fetch, undefined, {
+        authorization: `Bearer ${first.accessToken}`,
+      })
+
+      expect(res.status).toBe(200)
+      expect(await refreshStatus(first)).toBe(401)
+      expect(await refreshStatus(second)).toBe(200)
+    })
+
+    it('revokes every session with scope all', async () => {
+      for (const proof of ['refresh token', 'access token']) {
+        const { fetch, first, second, refreshStatus } = await twoSessions()
+
+        const res =
+          proof === 'refresh token'
+            ? await logout(fetch, {
+                refreshToken: first.refreshToken,
+                scope: 'all',
+              })
+            : await logout(
+                fetch,
+                { scope: 'all' },
+                { authorization: `Bearer ${first.accessToken}` }
+              )
+
+        expect(res.status).toBe(200)
+        expect(await refreshStatus(first)).toBe(401)
+        expect(await refreshStatus(second)).toBe(401)
+      }
+    })
+
+    it('falls back to the access token for unknown or used refresh tokens', async () => {
+      const current = await twoSessions()
+      await current.logout(
+        { refreshToken: 'unknown' },
+        { authorization: `Bearer ${current.first.accessToken}` }
+      )
+      expect(await current.refreshStatus(current.first)).toBe(401)
+      expect(await current.refreshStatus(current.second)).toBe(200)
+
+      const all = await twoSessions()
+      const rotated = (await all.fetch('/auth/refresh', postJson(all.first))).ok
+      expect(rotated).toBe(true)
+      const res = await all.logout(
+        { refreshToken: all.first.refreshToken, scope: 'all' },
+        { authorization: `Bearer ${all.first.accessToken}` }
+      )
+      expect(res.status).toBe(200)
+      expect(await all.refreshStatus(all.second)).toBe(401)
+    })
+
+    it('reads the refresh token cookie before the body', async () => {
       const { fetch, store } = await createAuthApp({
         settings: { cookies: COOKIES },
       })
-      const { body: tokens } = await login(fetch)
+      const { res: loginRes } = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        mode: 'cookie',
+      })
+      const other = (await login(fetch)).body
 
-      expect((await fetch('/auth/logout', { method: 'POST' })).status).toBe(401)
+      await logout(
+        fetch,
+        { refreshToken: other.refreshToken },
+        {
+          cookie: cookieHeader({
+            dotpress_refresh_token:
+              cookiesOf(loginRes).dotpress_refresh_token!.value,
+          }),
+        }
+      )
 
-      const res = await fetch('/auth/logout', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${tokens.accessToken}` },
+      const revoked = [...store.refreshTokens.values()].filter(
+        (token) => token.revokedAt
+      )
+      expect(revoked).toHaveLength(1)
+      expect(revoked[0]!.familyId).not.toBe(decodeJwt(other.accessToken).sid)
+    })
+
+    it('does not require a valid access token in cookie mode', async () => {
+      const { fetch, store } = await createAuthApp({
+        settings: { cookies: COOKIES, accessTokenTTL: -10 },
+      })
+      const { res: loginRes } = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        mode: 'cookie',
+      })
+      const other = (await login(fetch)).body
+      const refreshToken = cookiesOf(loginRes).dotpress_refresh_token!.value
+
+      const res = await logout(fetch, undefined, {
+        cookie: cookieHeader({ dotpress_refresh_token: refreshToken }),
       })
 
-      expect(await res.json()).toEqual({ success: true })
-      expect(
-        [...store.refreshTokens.values()].every((token) => token.revokedAt)
-      ).toBe(true)
+      expect(res.status).toBe(200)
       expect(cookiesOf(res).dotpress_refresh_token?.raw).toContain('Max-Age=0')
+      expect(cookiesOf(res).dotpress_access_token?.raw).toContain('Max-Age=0')
+      const revoked = [...store.refreshTokens.values()].filter(
+        (token) => token.revokedAt
+      )
+      expect(revoked).toHaveLength(1)
+      expect(revoked[0]!.familyId).not.toBe(decodeJwt(other.accessToken).sid)
+    })
 
-      const refresh = await fetch('/auth/refresh', postJson(tokens))
-      expect(refresh.status).toBe(401)
+    it('rejects the refresh token cookie of cross-origin requests', async () => {
+      const { fetch, store } = await createAuthApp({
+        settings: { cookies: COOKIES },
+      })
+      const { res: loginRes } = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        mode: 'cookie',
+      })
+
+      const res = await logout(fetch, undefined, {
+        origin: 'https://evil.com',
+        'sec-fetch-site': 'cross-site',
+        cookie: cookieHeader({
+          dotpress_refresh_token:
+            cookiesOf(loginRes).dotpress_refresh_token!.value,
+        }),
+      })
+
+      expect(res.status).toBe(403)
+      expect(
+        [...store.refreshTokens.values()].some((token) => token.revokedAt)
+      ).toBe(false)
+    })
+
+    it('logs out without a valid token, and clears the cookies', async () => {
+      const { fetch, store } = await createAuthApp({
+        settings: { cookies: COOKIES },
+      })
+      await login(fetch)
+
+      for (const body of [undefined, { refreshToken: 'unknown' }]) {
+        const res = await logout(fetch, body, {
+          authorization: 'Bearer not.a.token',
+        })
+        expect(res.status).toBe(200)
+        expect(cookiesOf(res).dotpress_refresh_token?.raw).toContain(
+          'Max-Age=0'
+        )
+      }
+      expect(
+        [...store.refreshTokens.values()].some((token) => token.revokedAt)
+      ).toBe(false)
+    })
+
+    it('requires a proof to revoke every session', async () => {
+      const { fetch, first, second, refreshStatus } = await twoSessions()
+      const rotated = (await fetch('/auth/refresh', postJson(first))).ok
+      expect(rotated).toBe(true)
+
+      for (const body of [
+        { scope: 'all' },
+        { scope: 'all', refreshToken: 'unknown' },
+        // Used by the rotation above.
+        { scope: 'all', refreshToken: first.refreshToken },
+      ]) {
+        expect((await logout(fetch, body)).status).toBe(401)
+      }
+      expect(await refreshStatus(second)).toBe(200)
+    })
+
+    it('rejects an unknown scope', async () => {
+      const { fetch, first } = await twoSessions()
+
+      const res = await logout(fetch, {
+        refreshToken: first.refreshToken,
+        scope: 'others',
+      })
+
+      expect(res.status).toBe(400)
     })
   })
 
@@ -581,7 +786,7 @@ describe('auth routes', () => {
         ['post', '/auth/refresh', []],
         ['get', '/auth/me', ['bearerAuth']],
         ['post', '/auth/restore', []],
-        ['post', '/auth/logout', ['bearerAuth']],
+        ['post', '/auth/logout', []],
       ])
     })
   })

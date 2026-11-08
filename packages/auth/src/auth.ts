@@ -23,12 +23,14 @@ import type {
   CreatedRefreshToken,
   IssuedTokens,
   LoginThrottleSettings,
+  LogoutScope,
   RateLimit,
   RefreshTokenData,
   ResolvedAuthSettings,
   ResolvedCookieSettings,
   ResolvedLoginThrottleSettings,
   ResolvedSessionSettings,
+  RevokedSession,
   SessionSettings,
   TokenPair,
   TokenSubject,
@@ -84,6 +86,22 @@ export interface Auth {
   refreshTokens(tokens: TokenPair): Promise<IssuedTokens & { userId: string }>
   /** Verifies a valid (not expired) access token. */
   verifyAccessToken(accessToken: string): Promise<AuthSession>
+  /**
+   * Revokes the session of a refresh token (logout). The token may be
+   * used, revoked or expired: it still designates its session. Tokens
+   * stored without family (before V2) revoke every session of the user.
+   *
+   * With `scope: 'all'`, revokes every session of the user, on every
+   * device. The token must then be active (neither used, revoked nor
+   * expired).
+   *
+   * Returns `undefined`, without revoking anything, for an unknown token,
+   * or an inactive token with `scope: 'all'`.
+   */
+  revokeSession(
+    refreshToken: string,
+    options?: { scope?: LogoutScope }
+  ): Promise<RevokedSession | undefined>
   /**
    * End of a session, when an absolute timeout applies to it (computed
    * from the `auth_time` claim).
@@ -447,6 +465,7 @@ const toSession = (
     userId: claims.sub,
     username: typeof claims.username === 'string' ? claims.username : '',
     tokenId: typeof claims.jti === 'string' ? claims.jti : '',
+    sessionId: typeof claims.sid === 'string' ? claims.sid : undefined,
     clientId:
       typeof claims.client_id === 'string' ? claims.client_id : undefined,
     roles,
@@ -516,6 +535,7 @@ export const createAuth = (input: AuthSettings): Auth => {
     username: string
     auth_time: number
     client_id?: string
+    sid?: string
   }): Promise<CreatedAccessToken> => {
     const { privateKey, kid } = await getKeys()
     const jwtId = crypto.randomUUID()
@@ -529,6 +549,7 @@ export const createAuth = (input: AuthSettings): Auth => {
     const token = await new SignJWT({
       username: claims.username,
       auth_time: claims.auth_time,
+      ...(claims.sid !== undefined && { sid: claims.sid }),
       ...(claims.client_id !== undefined && { client_id: claims.client_id }),
     })
       .setProtectedHeader({ alg: ALGORITHM, typ: ACCESS_TOKEN_TYPE, kid })
@@ -562,7 +583,8 @@ export const createAuth = (input: AuthSettings): Auth => {
     },
     familyId: string
   ): Promise<IssuedTokens> => {
-    const access = await signAccessToken(claims)
+    // The session identifier (`sid`) is the token family.
+    const access = await signAccessToken({ ...claims, sid: familyId })
     const refreshToken = await generateRefreshToken()
     const end = sessionEnd(claims.auth_time, claims.client_id)
     const refreshTokenExpiresAt = new Date(
@@ -798,6 +820,34 @@ export const createAuth = (input: AuthSettings): Auth => {
         if (error instanceof AuthError) throw error
         throw new AuthError('INVALID_ACCESS_TOKEN', { cause: error })
       }
+    },
+
+    async revokeSession(refreshToken, { scope = 'current' } = {}) {
+      const { dataProvider } = settings
+      const stored = await dataProvider.findRefreshToken(
+        await sha256(refreshToken)
+      )
+      if (!stored) return undefined
+      const sessionId = stored.familyId || undefined
+
+      if (scope === 'all') {
+        // Logging out every device requires a token that still works.
+        if (
+          stored.revokedAt ||
+          stored.isUsed ||
+          stored.expiresAt.getTime() <= Date.now()
+        ) {
+          return undefined
+        }
+        await dataProvider.revokeTokens(stored.userId)
+      } else if (sessionId) {
+        await dataProvider.revokeTokenFamily(sessionId)
+      } else {
+        // Token stored without family: its session cannot be singled out.
+        await dataProvider.revokeTokens(stored.userId)
+      }
+
+      return { userId: stored.userId, sessionId }
     },
 
     async getJwks() {

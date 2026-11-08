@@ -444,10 +444,51 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
   group.defineRoute({
     method: 'post',
     path: '/logout',
-    meta: { ...securedMeta, summary: 'Revoke the refresh tokens of the user' },
-    middlewares: [requireAuth],
-    handler: async ({ auth: session, res }) => {
-      await dataProvider.revokeTokens(session.userId)
+    meta: {
+      ...meta,
+      summary: 'Revoke the current session, or every session of the user',
+    },
+    schema: (z) => ({
+      body: z
+        .object({
+          refreshToken: z.string().optional(),
+          scope: z.enum(['current', 'all']).optional(),
+        })
+        .optional(),
+    }),
+    // The session is proven by the refresh token (cookie, then body), or
+    // by the access token: an expired access token does not prevent a
+    // logout.
+    handler: async ({ req, res, auth: session }) => {
+      const scope = req.body?.scope ?? 'current'
+      const cookieRefreshToken = cookies.enabled
+        ? req.cookies[cookies.refreshTokenName]
+        : undefined
+      if (
+        cookieRefreshToken &&
+        !isCookieAuthenticationAllowed(req, cookies.trustedOrigins)
+      ) {
+        return crossOriginError()
+      }
+
+      const refreshToken = cookieRefreshToken || req.body?.refreshToken
+      const revoked = refreshToken
+        ? await auth.revokeSession(refreshToken, { scope })
+        : undefined
+
+      if (!revoked && session) {
+        if (scope === 'all') {
+          await dataProvider.revokeTokens(session.userId)
+        } else if (session.sessionId) {
+          await dataProvider.revokeTokenFamily(session.sessionId)
+        }
+      } else if (!revoked && scope === 'all') {
+        // Logging out every device requires proving the identity.
+        return unauthorizedError()
+      }
+
+      // Idempotent (RFC 7009): an unknown or missing token still logs the
+      // client out.
       auth.clearAuthCookies(res)
       return { success: true }
     },

@@ -54,7 +54,7 @@ The request body is never read, so an app route can receive an `accessToken` fie
 | `POST /auth/refresh` | Rotates a token pair, sent in the body or as cookies. |
 | `GET /auth/me` | Authenticated user. |
 | `POST /auth/restore` | Restores a cookie session (requires `cookies.accessTokenInCookie`). |
-| `POST /auth/logout` | Revokes the refresh tokens of the user and clears the cookies. |
+| `POST /auth/logout` | `{ refreshToken?, scope? }` → revokes the current session (`scope: 'all'`: every session of the user) and clears the cookies. See [Logout](#logout). |
 
 In cookie mode, tokens set as cookies are never returned in the response body, so that the JavaScript of the page cannot read them:
 
@@ -225,7 +225,7 @@ createAuth({
 
 ## Access tokens
 
-Access tokens follow [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): `typ: at+jwt` header, RS256 signature, and the `iss`, `aud`, `sub`, `jti`, `iat`, `exp`, `auth_time` and `username` claims, plus `client_id` when the token was issued for a client. The type, issuer, audience and client are checked on every request.
+Access tokens follow [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): `typ: at+jwt` header, RS256 signature, and the `iss`, `aud`, `sub`, `jti`, `iat`, `exp`, `auth_time` and `username` claims, plus `sid` (session, exposed as `ctx.auth.sessionId`) when the token was issued with a refresh token, and `client_id` when it was issued for a client. The type, issuer, audience and client are checked on every request.
 
 ## Clients
 
@@ -307,9 +307,21 @@ clients: {
 
 An ended session makes `/auth/refresh` answer `401 EXPIRED_REFRESH_TOKEN`: the user must log in again.
 
+## Logout
+
+`POST /auth/logout` revokes the **current session**: the other devices of the user stay logged in. With `{ "scope": "all" }`, it revokes every session of the user, on every device.
+
+The session is identified by the refresh token (cookie, then `refreshToken` body field), or by the access token (`sid` claim). An expired access token does not prevent a logout: the refresh token is enough. The route is idempotent (RFC 7009): an unknown, revoked or missing token still answers `200` and clears the cookies, so that a client can always log out. Only `scope: 'all'` requires a proof, a valid access token or an active refresh token (`401` otherwise). In cookie mode, the refresh token cookie of a cross-origin request gets `403 CROSS_ORIGIN_REQUEST`, like `/auth/refresh`.
+
+Outside the routes, `auth.revokeSession(refreshToken, { scope })` does the same, and returns `{ userId, sessionId }` (or `undefined` when nothing was revoked). `ctx.auth.sessionId` lets an app list the sessions of a user and log out one device (`dataProvider.revokeTokenFamily(sessionId)`).
+
+> **Revoke every session when the password changes or is reset**: call `dataProvider.revokeTokens(userId)`. A stolen session must not survive a password change.
+
+The access tokens of a revoked session stay valid until they expire (`accessTokenTTL`).
+
 ## Refresh token rotation
 
-Each refresh returns a new refresh token and invalidates the previous one. All the refresh tokens of a session share a `familyId`, created at login.
+Each refresh returns a new refresh token and invalidates the previous one. All the refresh tokens of a session share a `familyId`, created at login: it is the `sid` claim of the access tokens.
 
 A refresh token can only be used once. When a used token is presented again, it was probably stolen (the attacker and the legitimate client both hold it): the whole session is revoked, `onRefreshTokenReuse` is called, and the request gets `401 INVALID_REFRESH_TOKEN`. Within `refreshTokenReuseInterval` (10 seconds by default) after its first use, a token presented again gets a new token pair in the same session, like with Auth0 or Okta: concurrent refreshes (several tabs) and retries after a lost response keep working. The interval is counted from the first use and is not extended by later presentations. Reusing the token after the interval revokes the whole session, including the pairs issued within the interval.
 

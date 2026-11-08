@@ -24,6 +24,12 @@ export interface AuthSession {
   readonly username: string
   /** Token identifier (`jti`), shared with its refresh token. */
   readonly tokenId: string
+  /**
+   * Session of the token (`sid` claim): shared by the tokens rotated from
+   * the same login. `undefined` for tokens issued without refresh token
+   * (`generateAccessToken()`).
+   */
+  readonly sessionId: string | undefined
   /** Client the token was issued for (`client_id` claim). */
   readonly clientId: string | undefined
   /** Roles of the user, used by `requireRole()`. */
@@ -181,6 +187,19 @@ export interface StoreRefreshTokenDto {
    */
   familyId: string
   expiresAt: Date
+}
+
+/**
+ * Sessions revoked by a logout: the current session, or every session of
+ * the user.
+ */
+export type LogoutScope = 'current' | 'all'
+
+/** Session revoked by `revokeSession()`. */
+export interface RevokedSession {
+  userId: string
+  /** `undefined` for tokens stored without family (before V2). */
+  sessionId: string | undefined
 }
 
 export interface RefreshTokenData {

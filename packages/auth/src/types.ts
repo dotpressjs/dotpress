@@ -21,7 +21,8 @@ export interface AuthSession {
   readonly username: string
   /** Token identifier (`jti`), shared with its refresh token. */
   readonly tokenId: string
-  readonly audience: string | undefined
+  /** Client the token was issued for (`client_id` claim). */
+  readonly clientId: string | undefined
   /** Roles of the user, used by `requireRole()`. */
   readonly roles: readonly string[]
   /** Decoded token claims. */
@@ -64,7 +65,8 @@ export type ResolvedCookieSettings = Required<
 export interface LoginFailedEvent {
   username: string
   errorType: 'invalid_username' | 'invalid_password' | 'invalid_role'
-  client: string
+  /** `clientId` sent at login; empty when missing. */
+  clientId: string
   ipAddress: string
 }
 
@@ -79,7 +81,8 @@ export interface RefreshTokenReuseEvent {
 export interface LoginSuccessEvent {
   userId: string
   username: string
-  client: string
+  /** `clientId` sent at login; empty when missing. */
+  clientId: string
   ipAddress: string
 }
 
@@ -136,10 +139,20 @@ export interface DataProvider {
   findUserIdentifiers(username: string): Promise<UserIdentifiers | undefined>
 }
 
-export interface AudienceSettings {
-  /** Requires an `aud` field at login. */
+/**
+ * Client applications (`client_id` claim), such as `app` or `backoffice`.
+ *
+ * The client identifier is declared by the caller at login: it does not
+ * prove which application sends a request. It means that the token was
+ * issued under the policy of that client (see `isUserRoleAllowed`).
+ */
+export interface ClientSettings {
+  /** Accepted client identifiers. Others are rejected at login (`400`). */
+  allowed: readonly string[]
+  /** Requires a `clientId` at login. Defaults to `false`. */
   required?: boolean
-  isUserRoleAllowed(role: string, aud: string): boolean
+  /** Checks at login that a user may get a token for a client. */
+  isUserRoleAllowed?: (role: string, clientId: string) => boolean
 }
 
 export interface AuthSettings {
@@ -149,10 +162,19 @@ export interface AuthSettings {
   accessTokenTTL?: number
   /** Refresh token lifetime, in days. Defaults to 14. */
   refreshTokenTTLInDays?: number
-  /** `iss` claim of the access tokens. Defaults to an empty string. */
-  issuer?: string
+  /**
+   * `iss` claim of the access tokens, checked on every request: for
+   * example the URL of the API. Use a different value per environment
+   * and application, especially when they share a key pair.
+   */
+  issuer: string
+  /**
+   * `aud` claim of the access tokens: the API that accepts them, checked
+   * on every request. Defaults to `issuer`.
+   */
+  audience?: string
   cookies?: CookieSettings
-  aud?: AudienceSettings
+  clients?: ClientSettings
   onLoginFailed?: (event: LoginFailedEvent) => Promise<void>
   onLoginSuccess?: (event: LoginSuccessEvent) => Promise<void>
   /**
@@ -186,14 +208,14 @@ export interface ResolvedAuthSettings extends Required<
   Omit<
     AuthSettings,
     | 'cookies'
-    | 'aud'
+    | 'clients'
     | 'onLoginFailed'
     | 'onLoginSuccess'
     | 'onRefreshTokenReuse'
   >
 > {
   cookies: ResolvedCookieSettings
-  aud: AudienceSettings | undefined
+  clients: ClientSettings | undefined
   onLoginFailed: ((event: LoginFailedEvent) => Promise<void>) | undefined
   onLoginSuccess: ((event: LoginSuccessEvent) => Promise<void>) | undefined
   onRefreshTokenReuse:
@@ -208,7 +230,8 @@ export interface TokenPair {
 export interface TokenSubject {
   userId: string
   username: string
-  aud?: string
+  /** `client_id` claim. Must be allowed by the `clients` setting. */
+  clientId?: string
 }
 
 export interface CreatedAccessToken {

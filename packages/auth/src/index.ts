@@ -10,6 +10,7 @@ export {
 
 export {
   requireAuth,
+  requireClient,
   requireRole,
   type AuthenticatedContext,
 } from './middlewares.js'
@@ -22,10 +23,10 @@ export {
 } from './plugin.js'
 
 export type {
-  AudienceSettings,
   AuthSession,
   AuthSettings,
   AuthUser,
+  ClientSettings,
   CookieSettings,
   CreatedAccessToken,
   CreatedRefreshToken,

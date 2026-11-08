@@ -7,6 +7,7 @@ import {
   authPlugin,
   createAuth,
   requireAuth,
+  requireClient,
   requireRole,
   type AuthSession,
   type AuthUser,
@@ -75,18 +76,17 @@ describe('authPlugin()', () => {
     })
 
     it('treats invalid, expired and orphan tokens as anonymous', async () => {
-      const { fetch, logger, store } = await createAuthApp({ routes: whoAmI })
+      const { fetch, logger, auth } = await createAuthApp({ routes: whoAmI })
       const expired = jwt.sign({ username: 'ada' }, keys.secretKey, {
         algorithm: 'RS256',
         subject: 'u1',
         expiresIn: -10,
       })
-      const orphan = jwt.sign({ username: 'ghost' }, keys.secretKey, {
-        algorithm: 'RS256',
-        subject: 'u404',
-        expiresIn: 60,
+      // Valid token of a user that no longer exists.
+      const { accessToken: orphan } = await auth.generateAccessToken({
+        userId: 'u404',
+        username: 'ghost',
       })
-      void store
 
       for (const token of ['garbage', expired, orphan]) {
         const res = await fetch('/whoami', {
@@ -178,11 +178,62 @@ describe('authPlugin()', () => {
     })
   })
 
+  describe('requireClient()', () => {
+    const backoffice = (router: ReturnType<typeof createRouter>) => {
+      router
+        .createGroup('/backoffice', [requireClient('backoffice')])
+        .defineRoute({
+          path: '/stats',
+          handler: ({ user, auth }) => {
+            expectTypeOf(user).toEqualTypeOf<AuthUser>()
+            return { client: auth.clientId }
+          },
+        })
+    }
+
+    it('requires a token issued for one of the clients', async () => {
+      const { fetch } = await createAuthApp({
+        settings: { clients: { allowed: ['app', 'backoffice'] } },
+        routes: backoffice,
+      })
+      const tokenFor = async (clientId?: string) =>
+        (
+          await login(fetch, {
+            username: 'ada',
+            password: 'secret',
+            ...(clientId && { clientId }),
+          })
+        ).body.accessToken
+      const as = (token: string) => ({
+        headers: { authorization: `Bearer ${token}` },
+      })
+
+      expect((await fetch('/backoffice/stats')).status).toBe(401)
+      expect(
+        (await fetch('/backoffice/stats', as(await tokenFor('app')))).status
+      ).toBe(403)
+      expect(
+        (await fetch('/backoffice/stats', as(await tokenFor()))).status
+      ).toBe(403)
+      expect(
+        await (
+          await fetch('/backoffice/stats', as(await tokenFor('backoffice')))
+        ).json()
+      ).toEqual({ client: 'backoffice' })
+    })
+
+    it('rejects empty client lists', () => {
+      // @ts-expect-error at least one client is required
+      expect(() => requireClient()).toThrow('at least one client')
+    })
+  })
+
   describe('setup', () => {
     it('fails at startup on invalid keys', async () => {
       const auth = createAuth({
         keys: { secretKey: 'invalid', publicKey: keys.publicKey },
         dataProvider: createStore().provider,
+        issuer: 'https://api.example.com',
       })
 
       await expect(
@@ -191,7 +242,11 @@ describe('authPlugin()', () => {
     })
 
     it('exposes the service and the security schemes to other plugins', () => {
-      const auth = createAuth({ keys, dataProvider: createStore().provider })
+      const auth = createAuth({
+        keys,
+        dataProvider: createStore().provider,
+        issuer: 'https://api.example.com',
+      })
       const plugin = authPlugin(auth)
 
       expect(plugin.name).toBe('auth')

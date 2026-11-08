@@ -20,7 +20,7 @@ describe('auth routes', () => {
       const { res, body } = await login(fetch, {
         username: 'ada',
         password: 'secret',
-        client: 'web',
+        clientId: 'web',
       })
 
       expect(res.status).toBe(200)
@@ -34,16 +34,16 @@ describe('auth routes', () => {
       expect(new Date(body.expiresAt).getTime() - Date.now()).toBeGreaterThan(
         3590 * 1000
       )
-      expect(decodeJwt(body.accessToken)).toMatchObject({
-        sub: 'u1',
-        username: 'ada',
-      })
+      const claims = decodeJwt(body.accessToken)
+      expect(claims).toMatchObject({ sub: 'u1', username: 'ada' })
+      // Without clients setting, the clientId is not written in the token.
+      expect(claims).not.toHaveProperty('client_id')
       expect(res.headers.getSetCookie()).toEqual([])
       // Local requests are reported without IP address, like V1.
       expect(onLoginSuccess).toHaveBeenCalledWith({
         userId: 'u1',
         username: 'ada',
-        client: 'web',
+        clientId: 'web',
         ipAddress: '',
       })
     })
@@ -68,7 +68,7 @@ describe('auth routes', () => {
       expect(onLoginFailed).toHaveBeenCalledWith({
         username: credentials.username,
         errorType,
-        client: '',
+        clientId: '',
         ipAddress: '',
       })
     })
@@ -110,39 +110,54 @@ describe('auth routes', () => {
       expect(await res.json()).toMatchObject({ error: 'VALIDATION_FAILED' })
     })
 
-    it('checks the audience against the user role', async () => {
+    it('checks the client against the allowed clients and the user role', async () => {
       const onLoginFailed = vi.fn(async () => {})
       const { fetch } = await createAuthApp({
         settings: {
           onLoginFailed,
-          aud: {
+          clients: {
+            allowed: ['app', 'backoffice'],
             required: true,
-            isUserRoleAllowed: (role, aud) =>
-              aud !== 'backoffice' || role === 'admin',
+            isUserRoleAllowed: (role, clientId) =>
+              clientId !== 'backoffice' || role === 'admin',
           },
         },
       })
 
+      // Missing or unknown client.
       expect(
         (await login(fetch, { username: 'ada', password: 'secret' })).res.status
       ).toBe(400)
+      const unknown = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        clientId: 'billing-admin',
+      })
+      expect(unknown.res.status).toBe(400)
+      expect(unknown.body).toMatchObject({ error: 'VALIDATION_FAILED' })
 
       const denied = await login(fetch, {
         username: 'linus',
         password: 'secret',
-        aud: 'backoffice',
+        clientId: 'backoffice',
       })
       expect(denied.res.status).toBe(401)
       expect(onLoginFailed).toHaveBeenCalledWith(
-        expect.objectContaining({ errorType: 'invalid_role' })
+        expect.objectContaining({
+          errorType: 'invalid_role',
+          clientId: 'backoffice',
+        })
       )
 
       const allowed = await login(fetch, {
         username: 'ada',
         password: 'secret',
-        aud: 'backoffice',
+        clientId: 'backoffice',
       })
-      expect(decodeJwt(allowed.body.accessToken).aud).toBe('backoffice')
+      expect(decodeJwt(allowed.body.accessToken)).toMatchObject({
+        client_id: 'backoffice',
+        aud: 'https://api.example.com',
+      })
     })
 
     it('sets the token cookies in cookie mode, without returning them', async () => {

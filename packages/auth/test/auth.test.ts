@@ -32,13 +32,32 @@ describe('createAuth()', () => {
     )
   })
 
+  it('requires an issuer', () => {
+    for (const issuer of [undefined, '']) {
+      expect(() => authWith({ issuer: issuer as unknown as string })).toThrow(
+        'requires an issuer'
+      )
+    }
+  })
+
+  it('rejects an empty audience and invalid client lists', () => {
+    expect(() => authWith({ audience: '' })).toThrow('Invalid audience')
+    for (const allowed of [[], [''], 'app']) {
+      expect(() =>
+        authWith({ clients: { allowed: allowed as string[] } })
+      ).toThrow('Invalid clients.allowed')
+    }
+  })
+
   it('applies the V1 defaults, with secure cookies', () => {
-    const { auth } = authWith({ issuer: undefined })
+    const { auth } = authWith()
 
     expect(auth.settings).toMatchObject({
       accessTokenTTL: 3600,
       refreshTokenTTLInDays: 14,
-      issuer: '',
+      issuer: 'https://api.example.com',
+      // The API audience defaults to the issuer.
+      audience: 'https://api.example.com',
       cookies: {
         enabled: false,
         httpOnly: true,
@@ -83,26 +102,30 @@ describe('createAuth()', () => {
   })
 
   describe('access tokens', () => {
-    it('signs RS256 tokens with the V1 claims', async () => {
-      const { auth } = authWith({ accessTokenTTL: 900 })
+    it('signs RS256 at+jwt tokens (RFC 9068)', async () => {
+      const { auth } = authWith({
+        accessTokenTTL: 900,
+        clients: { allowed: ['backoffice'] },
+      })
       const before = Math.floor(Date.now() / 1000)
 
       const { jwtId, accessToken } = await auth.generateAccessToken({
         userId: 'u1',
         username: 'ada',
-        aud: 'backoffice',
+        clientId: 'backoffice',
       })
 
       expect(decodeProtectedHeader(accessToken)).toEqual({
         alg: 'RS256',
-        typ: 'JWT',
+        typ: 'at+jwt',
       })
       const claims = decodeJwt(accessToken)
       expect(claims).toMatchObject({
         sub: 'u1',
         username: 'ada',
-        aud: 'backoffice',
         iss: 'https://api.example.com',
+        aud: 'https://api.example.com',
+        client_id: 'backoffice',
         jti: jwtId,
       })
       expect(claims.auth_time).toBeGreaterThanOrEqual(before)
@@ -119,7 +142,7 @@ describe('createAuth()', () => {
       await expect(auth.verifyAccessToken(accessToken)).resolves.toMatchObject({
         userId: 'u1',
         username: 'ada',
-        audience: undefined,
+        clientId: undefined,
       })
 
       const [header, , signature] = accessToken.split('.')
@@ -140,27 +163,139 @@ describe('createAuth()', () => {
       })
     })
 
-    it('accepts tokens issued by V1 (jsonwebtoken)', async () => {
+    it.each([
+      [
+        'another issuer',
+        // Same audience: only the issuer differs.
+        {
+          issuer: 'https://staging.example.com',
+          audience: 'https://api.example.com',
+        },
+      ],
+      ['another audience', { audience: 'https://billing.example.com' }],
+    ])('rejects tokens of %s', async (_label, settings) => {
+      const { accessToken } = await authWith(settings).auth.generateAccessToken(
+        { userId: 'u1', username: 'ada' }
+      )
+
+      await expect(
+        authWith().auth.verifyAccessToken(accessToken)
+      ).rejects.toMatchObject({ code: 'INVALID_ACCESS_TOKEN' })
+    })
+
+    it('verifies a configured audience', async () => {
+      const { auth } = authWith({ audience: 'https://api.example.com/admin' })
+      const { accessToken } = await auth.generateAccessToken({
+        userId: 'u1',
+        username: 'ada',
+      })
+
+      expect(decodeJwt(accessToken).aud).toBe('https://api.example.com/admin')
+      await expect(auth.verifyAccessToken(accessToken)).resolves.toMatchObject({
+        userId: 'u1',
+      })
+    })
+
+    it('rejects JWTs that are not access tokens (typ)', async () => {
       const { auth } = authWith()
+      // Same key, issuer and audience, but another type of token.
+      const idToken = jwt.sign({ username: 'ada' }, keys.secretKey, {
+        algorithm: 'RS256',
+        subject: 'u1',
+        issuer: 'https://api.example.com',
+        audience: 'https://api.example.com',
+        expiresIn: 60,
+      })
+
+      await expect(auth.verifyAccessToken(idToken)).rejects.toMatchObject({
+        code: 'INVALID_ACCESS_TOKEN',
+      })
+    })
+
+    it('only accepts the clients of the configuration', async () => {
+      const issuer = authWith({ clients: { allowed: ['app', 'backoffice'] } })
+      const tokenFor = async (clientId?: string) =>
+        (
+          await issuer.auth.generateAccessToken({
+            userId: 'u1',
+            username: 'ada',
+            clientId,
+          })
+        ).accessToken
+      const app = await tokenFor('app')
+      const anonymous = await tokenFor()
+
+      const verifier = authWith({
+        clients: { allowed: ['backoffice'], required: true },
+      }).auth
+      await expect(verifier.verifyAccessToken(app)).rejects.toMatchObject({
+        code: 'INVALID_ACCESS_TOKEN',
+      })
+      await expect(verifier.verifyAccessToken(anonymous)).rejects.toMatchObject(
+        { code: 'INVALID_ACCESS_TOKEN' }
+      )
+      await expect(
+        verifier.verifyAccessToken(await tokenFor('backoffice'))
+      ).resolves.toMatchObject({ clientId: 'backoffice' })
+    })
+
+    it('refuses to sign tokens for unknown or missing clients', async () => {
+      const { auth } = authWith({
+        clients: { allowed: ['app'], required: true },
+      })
+      const subject = { userId: 'u1', username: 'ada' }
+
+      await expect(
+        auth.generateAccessToken({ ...subject, clientId: 'other' })
+      ).rejects.toThrow('Unknown client "other"')
+      await expect(auth.generateAccessToken(subject)).rejects.toThrow(
+        'A clientId is required'
+      )
+    })
+
+    it('rejects V1 access tokens, then migrates them with a refresh', async () => {
+      const { auth, store } = authWith({
+        clients: { allowed: ['backoffice'] },
+      })
+      // V1 token: typ JWT, empty issuer, client in `aud`.
       const v1Token = jwt.sign(
         {
           sub: 'u1',
           username: 'ada',
-          auth_time: Math.floor(Date.now() / 1000),
+          auth_time: 1700000000,
+          aud: 'backoffice',
         },
         keys.secretKey,
-        {
-          algorithm: 'RS256',
-          issuer: 'https://api.example.com',
-          expiresIn: 3600,
-          jwtid: 'v1-jti',
-        }
+        { algorithm: 'RS256', issuer: '', expiresIn: 3600, jwtid: 'v1-jti' }
       )
-
-      await expect(auth.verifyAccessToken(v1Token)).resolves.toMatchObject({
+      const refresh = await auth.generateRefreshToken()
+      await store.provider.storeRefreshToken({
+        ...refresh,
         userId: 'u1',
-        tokenId: 'v1-jti',
+        jwtId: 'v1-jti',
+        familyId: 'v1-family',
+        expiresAt: new Date(Date.now() + 60_000),
       })
+
+      await expect(auth.verifyAccessToken(v1Token)).rejects.toMatchObject({
+        code: 'INVALID_ACCESS_TOKEN',
+      })
+
+      const migrated = await auth.refreshTokens({
+        accessToken: v1Token,
+        refreshToken: refresh.token,
+      })
+
+      expect(decodeProtectedHeader(migrated.accessToken).typ).toBe('at+jwt')
+      expect(decodeJwt(migrated.accessToken)).toMatchObject({
+        iss: 'https://api.example.com',
+        aud: 'https://api.example.com',
+        client_id: 'backoffice',
+        auth_time: 1700000000,
+      })
+      await expect(
+        auth.verifyAccessToken(migrated.accessToken)
+      ).resolves.toMatchObject({ userId: 'u1', clientId: 'backoffice' })
     })
 
     it('issues tokens that V1 (jsonwebtoken) accepts', async () => {
@@ -188,11 +323,11 @@ describe('createAuth()', () => {
     })
 
     it('rotates a token pair, keeping the original claims', async () => {
-      const { auth, store } = authWith()
+      const { auth, store } = authWith({ clients: { allowed: ['backoffice'] } })
       const pair = await auth.generateTokensForUser({
         userId: 'u1',
         username: 'ada',
-        aud: 'backoffice',
+        clientId: 'backoffice',
       })
       const original = decodeJwt(pair.accessToken)
 
@@ -203,13 +338,33 @@ describe('createAuth()', () => {
       expect(decodeJwt(rotated.accessToken)).toMatchObject({
         sub: 'u1',
         username: 'ada',
-        aud: 'backoffice',
+        client_id: 'backoffice',
         auth_time: original.auth_time,
       })
       expect([...store.refreshTokens.values()].map((t) => t.isUsed)).toEqual([
         true,
         false,
       ])
+    })
+
+    it('ends the sessions of a client removed from the configuration', async () => {
+      const { auth, store } = authWith({
+        clients: { allowed: ['app', 'kiosk'] },
+      })
+      const pair = await auth.generateTokensForUser({
+        userId: 'u1',
+        username: 'ada',
+        clientId: 'kiosk',
+      })
+      const updated = createAuth({
+        ...auth.settings,
+        clients: { allowed: ['app'] },
+      })
+      void store
+
+      await expect(updated.refreshTokens(pair)).rejects.toMatchObject({
+        code: 'INVALID_REFRESH_TOKEN',
+      })
     })
 
     it('accepts expired access tokens', async () => {

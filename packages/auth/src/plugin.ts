@@ -128,6 +128,8 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       : { accessToken: tokens.accessToken }
   }
 
+  const { clients } = settings
+
   const loginFailed = async (event: LoginFailedEvent) => {
     await settings.onLoginFailed?.(event)
     return unauthorizedError('INVALID_LOGIN')
@@ -144,8 +146,13 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       body: z.object({
         username: z.string(),
         password: z.string(),
-        client: z.string().optional(),
-        aud: settings.aud?.required ? z.string() : z.string().optional(),
+        // One of the allowed clients when the clients setting is defined,
+        // otherwise any string, only reported in the login events.
+        clientId: !clients
+          ? z.string().optional()
+          : clients.required
+            ? z.enum(clients.allowed as [string, ...string[]])
+            : z.enum(clients.allowed as [string, ...string[]]).optional(),
         mode: z.enum(['body', 'cookie']).optional(),
       }),
       response: z.object({
@@ -157,10 +164,10 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       }),
     }),
     handler: async ({ req, res }) => {
-      const { username, password, aud, mode } = req.body
+      const { username, password, clientId, mode } = req.body
       const event = {
         username,
-        client: req.body.client ?? '',
+        clientId: clientId ?? '',
         ipAddress: clientIp(req),
       }
 
@@ -180,9 +187,9 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       }
 
       if (
-        aud &&
-        settings.aud &&
-        !settings.aud.isUserRoleAllowed(user.role ?? '', aud)
+        clientId !== undefined &&
+        clients?.isUserRoleAllowed &&
+        !clients.isUserRoleAllowed(user.role ?? '', clientId)
       ) {
         return loginFailed({ ...event, errorType: 'invalid_role' })
       }
@@ -190,7 +197,9 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       const tokens = await auth.generateTokensForUser({
         userId: user.userId,
         username,
-        aud,
+        // Without clients setting, the clientId is only reported in the
+        // login events: an unchecked value is not written in the token.
+        clientId: clients ? clientId : undefined,
       })
 
       await settings.onLoginSuccess?.({ ...event, userId: user.userId })

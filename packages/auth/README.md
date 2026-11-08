@@ -28,7 +28,7 @@ const auth = createAuth({
     secretKey: process.env.JWT_PRIVATE_KEY!, // PKCS#8 PEM ("BEGIN PRIVATE KEY")
     publicKey: process.env.JWT_PUBLIC_KEY!, // SPKI PEM ("BEGIN PUBLIC KEY")
   },
-  issuer: 'https://api.example.com',
+  issuer: 'https://api.example.com', // required, checked on every request
   dataProvider, // see below
 })
 
@@ -48,7 +48,7 @@ The plugin reads the access token of every request (`Authorization: Bearer` head
 
 | Route | Description |
 | --- | --- |
-| `POST /auth/login` | `{ username, password, client?, aud?, mode? }` → token pair. `mode: 'cookie'` sets the cookies instead (see below). |
+| `POST /auth/login` | `{ username, password, clientId?, mode? }` → token pair. `mode: 'cookie'` sets the cookies instead (see below). |
 | `POST /auth/refresh` | Rotates a token pair, sent in the body or as cookies. |
 | `GET /auth/me` | Authenticated user. |
 | `POST /auth/restore` | Restores a cookie session (requires `cookies.accessTokenInCookie`). |
@@ -79,7 +79,7 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 })
 ```
 
-`requireAuth` answers `401`; `requireRole()` answers `401` without user and `403` without one of the roles. In the handlers of guarded routes, `ctx.user` and `ctx.auth` are typed as defined. Roles come from the user `roles` array (or `role` string), or from the `getUserRoles` setting.
+`requireAuth` answers `401`; `requireRole()` answers `401` without user and `403` without one of the roles; `requireClient()` answers `401` without user and `403` when the token was issued for another client (see [Clients](#clients)). In the handlers of guarded routes, `ctx.user` and `ctx.auth` are typed as defined. Roles come from the user `roles` array (or `role` string), or from the `getUserRoles` setting.
 
 ## Settings
 
@@ -89,10 +89,11 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `dataProvider` | — | Storage of users and refresh tokens. |
 | `accessTokenTTL` | `3600` | Access token lifetime, in seconds. |
 | `refreshTokenTTLInDays` | `14` | Refresh token lifetime, in days. |
-| `issuer` | `''` | `iss` claim. |
+| `issuer` | — | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair. |
+| `audience` | `issuer` | `aud` claim (the API that accepts the tokens), checked on every request. |
+| `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId) }`: client applications (see [Clients](#clients)). |
 | `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `domain`, `path` (`/`), `accessTokenName`, `refreshTokenName`, `accessTokenInCookie` (`false`). |
-| `aud` | — | `{ required?, isUserRoleAllowed(role, aud) }`: audience checked at login. |
-| `onLoginSuccess` / `onLoginFailed` | — | Login events (user, client, IP address). |
+| `onLoginSuccess` / `onLoginFailed` | — | Login events (user, `clientId`, IP address). |
 | `passwordHashRounds` | `10` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. Set it to the cost of the hashes stored in your database. |
 | `getUserRoles` | `user.roles` / `user.role` | Roles checked by `requireRole()`. |
 | `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token may be presented again and get a new token pair in the same session (concurrent refreshes, retries). `0` disables it. |
@@ -104,6 +105,33 @@ To convert PKCS#1 keys (`BEGIN RSA PRIVATE KEY`):
 openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem
 openssl rsa -RSAPublicKey_in -in public.pem -pubout -out public.spki.pem # BEGIN RSA PUBLIC KEY only
 ```
+
+## Access tokens
+
+Access tokens follow [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): `typ: at+jwt` header, RS256 signature, and the `iss`, `aud`, `sub`, `jti`, `iat`, `exp`, `auth_time` and `username` claims, plus `client_id` when the token was issued for a client. The type, issuer, audience and client are checked on every request.
+
+## Clients
+
+When one API serves several applications (an app and a backoffice, for example), declare them:
+
+```ts
+const auth = createAuth({
+  // …
+  clients: {
+    allowed: ['app', 'backoffice'],
+    required: true, // clientId required at login
+    isUserRoleAllowed: (role, clientId) => clientId !== 'backoffice' || role === 'admin',
+  },
+})
+
+createRouteGroup('/backoffice', [requireClient('backoffice'), requireRole('admin')])
+```
+
+The login `clientId` must be one of `allowed` (`400` otherwise), and `isUserRoleAllowed` checks that the user may get a token for it. The token carries a `client_id` claim, exposed as `ctx.auth.clientId`.
+
+> The client identifier is declared by the caller: anyone can send `clientId: 'backoffice'`. A `client_id` claim does not prove which application sends a request; it means that the token was issued under the policy of that client (`isUserRoleAllowed`). `requireClient()` keeps the tokens of one application away from the routes of another; combine it with `requireRole()`.
+
+Without `clients` setting, the login `clientId` is only reported in the login events, and not written in the token.
 
 ## Data provider
 

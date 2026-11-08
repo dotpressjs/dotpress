@@ -5,7 +5,7 @@ import {
 } from '@dotpress/core'
 import type { AuthSession, AuthUser } from './types.js'
 
-/** Context guaranteed by `requireAuth` and `requireRole()`. */
+/** Context guaranteed by `requireAuth`, `requireRole()` and `requireClient()`. */
 export interface AuthenticatedContext {
   user: AuthUser
   auth: AuthSession
@@ -33,6 +33,27 @@ export const requireRole = (...roles: [string, ...string[]]) => {
     if (!ctx.user || !ctx.auth) return unauthorizedError()
     const granted = ctx.auth.roles
     return roles.some((role) => granted.includes(role))
+      ? undefined
+      : forbiddenError()
+  })
+}
+
+/**
+ * Requires an access token issued for one of the clients (`401
+ * UNAUTHORIZED` without user, `403 FORBIDDEN` for another client). For
+ * example, keeps the tokens of a mobile app away from the backoffice
+ * routes. It does not prove which application sends the request: combine
+ * it with `requireRole()`.
+ */
+export const requireClient = (...clientIds: [string, ...string[]]) => {
+  if (clientIds.length === 0) {
+    throw new TypeError('requireClient() expects at least one client.')
+  }
+
+  return defineMiddleware<AuthenticatedContext>((ctx) => {
+    if (!ctx.user || !ctx.auth) return unauthorizedError()
+    const { clientId } = ctx.auth
+    return clientId !== undefined && clientIds.includes(clientId)
       ? undefined
       : forbiddenError()
   })

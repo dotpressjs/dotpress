@@ -21,6 +21,8 @@ import type {
 } from './types.js'
 
 const ALGORITHM = 'RS256'
+/** Media type of the access tokens (RFC 9068). */
+const ACCESS_TOKEN_TYPE = 'at+jwt'
 
 export type AuthErrorCode =
   | 'INVALID_ACCESS_TOKEN'
@@ -119,6 +121,25 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
   if (!settings.dataProvider) {
     throw new TypeError('createAuth() requires a dataProvider.')
   }
+  if (typeof settings.issuer !== 'string' || settings.issuer === '') {
+    throw new TypeError(
+      'createAuth() requires an issuer (iss claim), such as the URL of the API.'
+    )
+  }
+  if (settings.audience !== undefined && settings.audience === '') {
+    throw new TypeError('Invalid audience: expected a non-empty string.')
+  }
+  const clients = settings.clients
+  if (
+    clients &&
+    (!Array.isArray(clients.allowed) ||
+      clients.allowed.length === 0 ||
+      clients.allowed.some((id) => typeof id !== 'string' || id === ''))
+  ) {
+    throw new TypeError(
+      'Invalid clients.allowed: expected a non-empty list of client identifiers.'
+    )
+  }
   const rounds = settings.passwordHashRounds
   if (
     rounds !== undefined &&
@@ -143,9 +164,10 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     dataProvider: settings.dataProvider,
     accessTokenTTL: settings.accessTokenTTL ?? 3600,
     refreshTokenTTLInDays: settings.refreshTokenTTLInDays ?? 14,
-    issuer: settings.issuer ?? '',
+    issuer: settings.issuer,
+    audience: settings.audience ?? settings.issuer,
     cookies: { ...DEFAULT_COOKIE_SETTINGS, ...settings.cookies },
-    aud: settings.aud,
+    clients: settings.clients,
     onLoginFailed: settings.onLoginFailed,
     onLoginSuccess: settings.onLoginSuccess,
     passwordHashRounds: settings.passwordHashRounds ?? 10,
@@ -219,7 +241,8 @@ const toSession = (
     userId: claims.sub,
     username: typeof claims.username === 'string' ? claims.username : '',
     tokenId: typeof claims.jti === 'string' ? claims.jti : '',
-    audience: typeof claims.aud === 'string' ? claims.aud : undefined,
+    clientId:
+      typeof claims.client_id === 'string' ? claims.client_id : undefined,
     roles,
     claims,
   }
@@ -260,26 +283,27 @@ export const createAuth = (input: AuthSettings): Auth => {
     sub: string
     username: string
     auth_time: number
-    aud?: string
+    client_id?: string
   }): Promise<CreatedAccessToken> => {
     const { privateKey } = await getKeys()
     const jwtId = crypto.randomUUID()
     const issuedAt = Math.floor(Date.now() / 1000)
 
-    const token = new SignJWT({
+    const token = await new SignJWT({
       username: claims.username,
       auth_time: claims.auth_time,
+      ...(claims.client_id !== undefined && { client_id: claims.client_id }),
     })
-      .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+      .setProtectedHeader({ alg: ALGORITHM, typ: ACCESS_TOKEN_TYPE })
       .setSubject(claims.sub)
       .setIssuer(settings.issuer)
+      .setAudience(settings.audience)
       .setJti(jwtId)
       .setIssuedAt(issuedAt)
       .setExpirationTime(issuedAt + settings.accessTokenTTL)
+      .sign(privateKey)
 
-    if (claims.aud) token.setAudience(claims.aud)
-
-    return { jwtId, accessToken: await token.sign(privateKey) }
+    return { jwtId, accessToken: token }
   }
 
   const generateRefreshToken = async (): Promise<CreatedRefreshToken> => {
@@ -338,13 +362,34 @@ export const createAuth = (input: AuthSettings): Auth => {
     throw new AuthError('REFRESH_TOKEN_REUSED')
   }
 
-  const generateAccessToken = ({ userId, username, aud }: TokenSubject) =>
-    signAccessToken({
+  /** Whether the `clients` setting accepts a token client. */
+  const isClientAccepted = (clientId: string | undefined) => {
+    const { clients } = settings
+    if (!clients) return true
+    return clientId === undefined
+      ? !clients.required
+      : clients.allowed.includes(clientId)
+  }
+
+  const generateAccessToken = async ({
+    userId,
+    username,
+    clientId,
+  }: TokenSubject) => {
+    if (!isClientAccepted(clientId)) {
+      throw new TypeError(
+        clientId === undefined
+          ? 'A clientId is required by the clients setting.'
+          : `Unknown client "${clientId}": add it to clients.allowed.`
+      )
+    }
+    return signAccessToken({
       sub: userId,
       username,
       auth_time: Math.floor(Date.now() / 1000),
-      aud,
+      client_id: clientId,
     })
+  }
 
   const cookieOptions = () => {
     const { httpOnly, secure, sameSite, path, domain } = settings.cookies
@@ -380,20 +425,36 @@ export const createAuth = (input: AuthSettings): Auth => {
       const { publicKey } = await getKeys()
 
       let claims: Record<string, unknown>
+      let legacy: boolean
       try {
-        // Signature only: the access token is usually expired here.
-        const { payload } = await compactVerify(accessToken, publicKey, {
-          algorithms: [ALGORITHM],
-        })
+        // Signature only: the access token is usually expired here, and
+        // `iss`, `aud` and `typ` are not checked, so that tokens issued
+        // by V1 (or before a configuration change) are migrated. The
+        // stored refresh token proves the session.
+        const { payload, protectedHeader } = await compactVerify(
+          accessToken,
+          publicKey,
+          { algorithms: [ALGORITHM] }
+        )
         claims = JSON.parse(new TextDecoder().decode(payload)) as Record<
           string,
           unknown
         >
+        legacy = protectedHeader.typ !== ACCESS_TOKEN_TYPE
       } catch (error) {
         throw new AuthError('INVALID_REFRESH_TOKEN', { cause: error })
       }
 
       const userId = typeof claims.sub === 'string' ? claims.sub : ''
+      const clientId =
+        typeof claims.client_id === 'string'
+          ? claims.client_id
+          : // V1 tokens carried the client in `aud`.
+            legacy &&
+              typeof claims.aud === 'string' &&
+              settings.clients?.allowed.includes(claims.aud)
+            ? claims.aud
+            : undefined
       const refreshTokenHash = await sha256(refreshToken)
       const stored =
         await settings.dataProvider.findRefreshToken(refreshTokenHash)
@@ -405,7 +466,9 @@ export const createAuth = (input: AuthSettings): Auth => {
         !stored ||
         stored.userId !== userId ||
         stored.jwtId !== claims.jti ||
-        stored.revokedAt
+        stored.revokedAt ||
+        // Client removed from the configuration: the session ends.
+        !isClientAccepted(clientId)
       ) {
         throw new AuthError('INVALID_REFRESH_TOKEN')
       }
@@ -423,7 +486,7 @@ export const createAuth = (input: AuthSettings): Auth => {
           typeof claims.auth_time === 'number'
             ? claims.auth_time
             : Math.floor(Date.now() / 1000),
-        aud: typeof claims.aud === 'string' ? claims.aud : undefined,
+        client_id: clientId,
       })
 
       const newRefreshToken = await generateRefreshToken()
@@ -456,8 +519,15 @@ export const createAuth = (input: AuthSettings): Auth => {
       try {
         const { payload } = await jwtVerify(accessToken, publicKey, {
           algorithms: [ALGORITHM],
+          typ: ACCESS_TOKEN_TYPE,
+          issuer: settings.issuer,
+          audience: settings.audience,
         })
-        return toSession(payload as Record<string, unknown>, [])
+        const session = toSession(payload as Record<string, unknown>, [])
+        if (!isClientAccepted(session.clientId)) {
+          throw new AuthError('INVALID_ACCESS_TOKEN')
+        }
+        return session
       } catch (error) {
         if (error instanceof AuthError) throw error
         throw new AuthError('INVALID_ACCESS_TOKEN', { cause: error })

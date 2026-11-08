@@ -1,5 +1,5 @@
 import { malformedBodyError, unsupportedMediaTypeError } from './errors.js'
-import type { QueryValues } from './http.js'
+import type { QueryValues, UploadedFiles } from './http.js'
 
 /**
  * Default maximum size of a request body read by adapters: 1 MiB.
@@ -12,14 +12,31 @@ export const DEFAULT_BODY_LIMIT = 1024 * 1024
  */
 export const parseQueryString = (search: string): QueryValues => {
   const params = new URLSearchParams(search)
-  const query: QueryValues = {}
 
-  for (const key of new Set(params.keys())) {
-    const values = params.getAll(key)
-    query[key] = values.length === 1 ? values[0]! : values
+  // `Object.fromEntries()` defines own properties: a `__proto__` key cannot
+  // change the prototype of the result.
+  return Object.fromEntries(
+    [...new Set(params.keys())].map((key) => {
+      const values = params.getAll(key)
+      return [key, values.length === 1 ? values[0]! : values]
+    })
+  )
+}
+
+const groupValues = <T>(entries: Iterable<[string, T]>) => {
+  const groups = new Map<string, T[]>()
+  for (const [key, value] of entries) {
+    const group = groups.get(key)
+    if (group) group.push(value)
+    else groups.set(key, [value])
   }
 
-  return query
+  return Object.fromEntries(
+    [...groups].map(([key, values]) => [
+      key,
+      values.length === 1 ? values[0]! : values,
+    ])
+  ) as Record<string, T | T[]>
 }
 
 interface ContentType {
@@ -57,24 +74,58 @@ const decodeUtf8 = (bytes: Uint8Array): string | undefined => {
   }
 }
 
+export interface ParsedBody {
+  /** Parsed body (`undefined` when there is none). */
+  readonly body: unknown
+  /** Uploaded files (`multipart/form-data` bodies only). */
+  readonly files: UploadedFiles | undefined
+}
+
+const parseMultipart = async (
+  bytes: Uint8Array,
+  contentTypeHeader: string
+): Promise<ParsedBody> => {
+  let form: FormData
+  try {
+    // Request bodies are never backed by a SharedArrayBuffer.
+    form = await new Response(bytes as Uint8Array<ArrayBuffer>, {
+      headers: { 'content-type': contentTypeHeader },
+    }).formData()
+  } catch {
+    throw malformedBodyError()
+  }
+
+  const fields: [string, string][] = []
+  const files: [string, File][] = []
+
+  for (const [name, value] of form) {
+    if (typeof value === 'string') fields.push([name, value])
+    else files.push([name, value])
+  }
+
+  return { body: groupValues(fields), files: groupValues(files) }
+}
+
 /**
  * Parses a raw request body according to its `Content-Type`:
  *
  * - empty body: `undefined`
  * - `application/json`, `*+json`: parsed JSON (UTF-8)
  * - `application/x-www-form-urlencoded`: record of strings, like the query
+ * - `multipart/form-data`: text fields in `body` (like forms), files in
+ *   `files` (Web `File` objects); repeated names produce arrays
  * - `text/*`: string, decoded with the declared charset (UTF-8 by default)
  * - anything else: the raw bytes
  *
- * Throws `MALFORMED_BODY` (400) for invalid JSON or UTF-8, and
- * `UNSUPPORTED_MEDIA_TYPE` (415) for unknown charsets.
+ * Throws `MALFORMED_BODY` (400) for invalid JSON, UTF-8 or multipart
+ * bodies, and `UNSUPPORTED_MEDIA_TYPE` (415) for unknown charsets.
  */
-export const parseRequestBody = (
+export const parseRequestBody = async (
   bytes: Uint8Array,
   contentTypeHeader: string | undefined
-): unknown => {
+): Promise<ParsedBody> => {
   if (bytes.byteLength === 0) {
-    return undefined
+    return { body: undefined, files: undefined }
   }
 
   const { type, charset } = parseContentType(contentTypeHeader)
@@ -84,7 +135,7 @@ export const parseRequestBody = (
     if (text === undefined) throw malformedBodyError()
 
     try {
-      return JSON.parse(text) as unknown
+      return { body: JSON.parse(text) as unknown, files: undefined }
     } catch {
       throw malformedBodyError()
     }
@@ -93,7 +144,11 @@ export const parseRequestBody = (
   if (type === 'application/x-www-form-urlencoded') {
     const text = decodeUtf8(bytes)
     if (text === undefined) throw malformedBodyError()
-    return parseQueryString(text)
+    return { body: parseQueryString(text), files: undefined }
+  }
+
+  if (type === 'multipart/form-data') {
+    return parseMultipart(bytes, contentTypeHeader!)
   }
 
   if (type.startsWith('text/')) {
@@ -103,8 +158,8 @@ export const parseRequestBody = (
     } catch {
       throw unsupportedMediaTypeError(`Unsupported charset "${charset}"`)
     }
-    return decoder.decode(bytes)
+    return { body: decoder.decode(bytes), files: undefined }
   }
 
-  return bytes
+  return { body: bytes, files: undefined }
 }

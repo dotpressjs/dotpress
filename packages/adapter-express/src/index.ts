@@ -21,6 +21,7 @@ import {
   type NormalizedRequest,
   type NormalizedResponse,
   type RouteMatch,
+  type UploadedFiles,
 } from '@dotpress/core'
 import express, { type Express } from 'express'
 
@@ -45,7 +46,10 @@ export interface ExpressAdapterOptions<TApp extends ExpressApplication> {
    * before the not-found handler.
    */
   afterRoutes?: (app: TApp) => void | Promise<void>
-  /** Maximum request body size, in bytes. Defaults to 1 MiB. */
+  /**
+   * Maximum request body size, in bytes. Defaults to 1 MiB. Routes can
+   * override it with their own `bodyLimit`.
+   */
   bodyLimit?: number
 }
 
@@ -106,17 +110,26 @@ const discard = (req: IncomingMessage) => {
 
 interface RequestBody {
   readonly body: unknown
+  readonly files: UploadedFiles | undefined
   /** Undefined when a native middleware read the body. */
   readonly rawBody: Uint8Array | undefined
 }
 
-const NO_BODY: RequestBody = { body: undefined, rawBody: undefined }
+const NO_BODY: RequestBody = {
+  body: undefined,
+  files: undefined,
+  rawBody: undefined,
+}
 
 const readBody = (req: ExpressRequest, limit: number): Promise<RequestBody> => {
   // The body was already read by a native middleware (express.json(),
   // multer…): use its result.
   if (req._body === true || req.readableEnded) {
-    return Promise.resolve({ body: req.body, rawBody: undefined })
+    return Promise.resolve({
+      body: req.body,
+      files: undefined,
+      rawBody: undefined,
+    })
   }
 
   if (!hasBody(req)) {
@@ -170,14 +183,10 @@ const readBody = (req: ExpressRequest, limit: number): Promise<RequestBody> => {
         buffer.byteOffset,
         buffer.byteLength
       )
-      try {
-        resolve({
-          body: parseRequestBody(bytes, req.headers['content-type']),
-          rawBody: bytes,
-        })
-      } catch (error) {
-        reject(error)
-      }
+      parseRequestBody(bytes, req.headers['content-type']).then(
+        ({ body, files }) => resolve({ body, files, rawBody: bytes }),
+        reject
+      )
     }
 
     function onGone() {
@@ -430,8 +439,12 @@ export function expressAdapter<TApp extends ExpressApplication>(
     const request = normalize(req, controller.signal)
 
     try {
-      const { body, rawBody } = await readBody(req, bodyLimit)
+      const { body, files, rawBody } = await readBody(
+        req,
+        match.route.definition.bodyLimit ?? bodyLimit
+      )
       request.body = body
+      request.files = files
       request.rawBody = rawBody
     } catch (error) {
       if (error === CLIENT_GONE) return

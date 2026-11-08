@@ -149,7 +149,7 @@ export const routeNotFoundError = () =>
  * A single request validation issue.
  */
 export interface ValidationIssue {
-  source: 'params' | 'query' | 'body'
+  source: 'params' | 'query' | 'body' | 'files'
   path: (string | number)[]
   code: string
   message: string

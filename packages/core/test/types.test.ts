@@ -10,6 +10,7 @@ import {
   type EmptyObject,
   type PathParams,
   type QueryValues,
+  type UploadedFiles,
 } from '../src/index.js'
 
 const router = createRouter()
@@ -123,6 +124,25 @@ describe('type inference', () => {
       path: '/regular',
       handler: ({ req }) => {
         expectTypeOf(req.rawBody).toEqualTypeOf<Uint8Array | undefined>()
+      },
+    })
+  })
+
+  it('types uploaded files from the schema', () => {
+    router.defineRoute({
+      method: 'post',
+      path: '/avatar',
+      schema: (z) => ({ files: z.object({ avatar: z.file() }) }),
+      handler: ({ req }) => {
+        expectTypeOf(req.files).toEqualTypeOf<{ avatar: File }>()
+      },
+    })
+
+    router.defineRoute({
+      method: 'post',
+      path: '/untyped',
+      handler: ({ req }) => {
+        expectTypeOf(req.files).toEqualTypeOf<UploadedFiles>()
       },
     })
   })

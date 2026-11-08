@@ -4,6 +4,7 @@ export {
   DEFAULT_BODY_LIMIT,
   parseQueryString,
   parseRequestBody,
+  type ParsedBody,
 } from './body.js'
 
 export type {
@@ -66,6 +67,7 @@ export {
   type ResponseBody,
   type ResponseHeaders,
   type ResponseKind,
+  type UploadedFiles,
 } from './http.js'
 
 export {

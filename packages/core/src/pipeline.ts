@@ -56,7 +56,7 @@ export interface PipelineConfig {
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8'
 const TEXT_CONTENT_TYPE = 'text/plain; charset=utf-8'
 const REQUEST_ID_HEADER = 'x-request-id'
-const VALIDATED_SOURCES = ['params', 'query', 'body'] as const
+const VALIDATED_SOURCES = ['params', 'query', 'body', 'files'] as const
 
 /**
  * Raised when a handler result does not match the route response schema.
@@ -92,7 +92,7 @@ export const resolveSchema = (route: RouteRecord): RouteSchema => {
     throw new TypeError(`Invalid schema for route "${route.path}".`)
   }
 
-  for (const key of ['params', 'query', 'body', 'response'] as const) {
+  for (const key of ['params', 'query', 'body', 'files', 'response'] as const) {
     const schema = resolved[key]
     if (schema !== undefined && !(schema instanceof z.core.$ZodType)) {
       throw new TypeError(
@@ -232,6 +232,7 @@ export const compileRoute = (
     meta: Object.freeze({ ...route.meta }),
     status: route.status,
     rawBody: route.rawBody,
+    bodyLimit: route.bodyLimit,
   })
 
   const validateRequest = async (

@@ -1,5 +1,5 @@
 import type { HttpError } from './errors.js'
-import type { QueryValues } from './http.js'
+import type { QueryValues, UploadedFiles } from './http.js'
 import type { Logger } from './logger.js'
 import type { EmptyObject } from './path.js'
 import type { DotpressRequest } from './request.js'
@@ -58,7 +58,8 @@ export type ResponseFilter = (
 export type RouteRequest<S, TPathParams, TRawBody = false> = DotpressRequest<
   SchemaOutput<S, 'params', TPathParams>,
   SchemaOutput<S, 'query', QueryValues>,
-  SchemaOutput<S, 'body', unknown>
+  SchemaOutput<S, 'body', unknown>,
+  SchemaOutput<S, 'files', UploadedFiles>
 > &
   (TRawBody extends true ? { readonly rawBody: Uint8Array } : EmptyObject)
 

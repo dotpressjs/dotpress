@@ -47,6 +47,11 @@ export interface RouteConfig<
    * to the parsed body. Use it to verify webhook signatures.
    */
   rawBody?: TRawBody
+  /**
+   * Maximum request body size in bytes, for instance to accept uploads.
+   * Defaults to the adapter limit (1 MiB unless configured otherwise).
+   */
+  bodyLimit?: number
   handler: RouteHandler<S, Simplify<TParentParams & PathParams<P>>, TRawBody>
   meta?: RouteMeta
   /** Success status. Defaults to 200 (204 when nothing is returned). */
@@ -65,6 +70,7 @@ export interface RouteRecord {
   readonly meta: RouteMeta
   readonly status: number | undefined
   readonly rawBody: boolean
+  readonly bodyLimit: number | undefined
 }
 
 export interface RouteGroup<TParams = EmptyObject> {
@@ -130,6 +136,15 @@ export const createRouter = (): Router => {
       throw new TypeError(`Invalid rawBody option for route "${path}".`)
     }
 
+    if (
+      route.bodyLimit !== undefined &&
+      (!Number.isInteger(route.bodyLimit) || route.bodyLimit < 0)
+    ) {
+      throw new RangeError(
+        `Invalid bodyLimit for route "${path}": expected a non-negative integer (bytes).`
+      )
+    }
+
     routes.push({
       method,
       path,
@@ -139,6 +154,7 @@ export const createRouter = (): Router => {
       meta: { ...route.meta },
       status: route.status,
       rawBody: route.rawBody === true,
+      bodyLimit: route.bodyLimit,
     })
   }
 

@@ -14,6 +14,11 @@ export interface RouteSchema {
   query?: Schema
   body?: Schema
   /**
+   * Uploaded files (`multipart/form-data`), as an object schema of
+   * `z.file()` (or `z.array(z.file())` for repeated fields).
+   */
+  files?: Schema
+  /**
    * Response body. Returned values are parsed with this schema (unknown keys
    * are stripped by object schemas) before being sent.
    */

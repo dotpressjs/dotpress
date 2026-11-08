@@ -599,6 +599,188 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
         ))
     })
 
+    describe('uploads', () => {
+      const formWith = (entries: [string, string | File][]) => {
+        const form = new FormData()
+        for (const [name, value] of entries) form.append(name, value)
+        return form
+      }
+
+      it('parses multipart bodies into fields and files', () => {
+        const bytes = Uint8Array.from({ length: 256 }, (_, index) => index)
+
+        return withApp(
+          (router) => {
+            router.defineRoute({
+              method: 'post',
+              path: '/documents',
+              schema: (z) => ({
+                body: z.object({ title: z.string() }),
+                files: z.object({
+                  document: z.file().mime(['application/pdf']),
+                }),
+              }),
+              handler: async ({ req }) => ({
+                title: req.body.title,
+                name: req.files.document.name,
+                type: req.files.document.type,
+                bytes: [
+                  ...new Uint8Array(await req.files.document.arrayBuffer()),
+                ],
+              }),
+            })
+            router.defineRoute({
+              method: 'post',
+              path: '/gallery',
+              handler: ({ req }) => ({
+                fields: req.body,
+                files: Object.fromEntries(
+                  Object.entries(req.files).map(([name, value]) => [
+                    name,
+                    [value].flat().map((file) => file.name),
+                  ])
+                ),
+              }),
+            })
+          },
+          async ({ fetch }) => {
+            const res = await fetch('/documents', {
+              method: 'POST',
+              body: formWith([
+                ['title', 'Contrat signé'],
+                [
+                  'document',
+                  new File([bytes], 'contrat été.pdf', {
+                    type: 'application/pdf',
+                  }),
+                ],
+              ]),
+            })
+            expect(await res.json()).toEqual({
+              title: 'Contrat signé',
+              name: 'contrat été.pdf',
+              type: 'application/pdf',
+              bytes: [...bytes],
+            })
+
+            const gallery = await fetch('/gallery', {
+              method: 'POST',
+              body: formWith([
+                ['tag', 'sea'],
+                ['tag', 'sun'],
+                ['photos', new File(['a'], 'a.jpg')],
+                ['photos', new File(['b'], 'b.jpg')],
+                ['cover', new File(['c'], 'c.jpg')],
+              ]),
+            })
+            expect(await gallery.json()).toEqual({
+              fields: { tag: ['sea', 'sun'] },
+              files: { photos: ['a.jpg', 'b.jpg'], cover: ['c.jpg'] },
+            })
+          }
+        )
+      })
+
+      it('validates files', () =>
+        withApp(
+          (router) => {
+            router.defineRoute({
+              method: 'post',
+              path: '/avatar',
+              schema: (z) => ({
+                files: z.object({
+                  avatar: z.file().max(10).mime(['image/png']),
+                }),
+              }),
+              handler: () => ({ ok: true }),
+            })
+          },
+          async ({ fetch }) => {
+            const res = await fetch('/avatar', {
+              method: 'POST',
+              body: formWith([
+                [
+                  'avatar',
+                  new File([new Uint8Array(11)], 'a.gif', {
+                    type: 'image/gif',
+                  }),
+                ],
+              ]),
+            })
+
+            expect(res.status).toBe(400)
+            expect(await res.json()).toMatchObject({
+              error: 'VALIDATION_FAILED',
+              data: {
+                issues: [
+                  { source: 'files', path: ['avatar'], code: 'too_big' },
+                  { source: 'files', path: ['avatar'], code: 'invalid_value' },
+                ],
+              },
+            })
+          }
+        ))
+
+      it('applies the route body limit', () =>
+        withApp(
+          (router) => {
+            router.defineRoute({
+              method: 'post',
+              path: '/large',
+              bodyLimit: 3 * DEFAULT_BODY_LIMIT,
+              handler: ({ req }) => ({
+                size: (req.files.file as File).size,
+              }),
+            })
+            router.defineRoute({
+              method: 'post',
+              path: '/small',
+              bodyLimit: 100,
+              handler: () => ({ unreachable: true }),
+            })
+          },
+          async ({ fetch }) => {
+            const size = 2 * DEFAULT_BODY_LIMIT
+            const large = await fetch('/large', {
+              method: 'POST',
+              body: formWith([
+                ['file', new File([new Uint8Array(size)], 'big.bin')],
+              ]),
+            })
+            expect(await large.json()).toEqual({ size })
+
+            const small = await fetch('/small', {
+              method: 'POST',
+              body: formWith([
+                ['file', new File([new Uint8Array(200)], 'a.bin')],
+              ]),
+            })
+            expect(small.status).toBe(413)
+          }
+        ))
+
+      it('rejects malformed multipart bodies', () =>
+        withApp(
+          (router) => {
+            router.defineRoute({
+              method: 'post',
+              path: '/upload',
+              handler: () => ({ unreachable: true }),
+            })
+          },
+          async ({ fetch }) => {
+            const res = await fetch('/upload', {
+              method: 'POST',
+              headers: { 'content-type': 'multipart/form-data; boundary=xyz' },
+              body: 'not a multipart body',
+            })
+
+            expect(res.status).toBe(400)
+            expect(await res.json()).toMatchObject({ error: 'MALFORMED_BODY' })
+          }
+        ))
+    })
+
     describe('validation', () => {
       it('returns VALIDATION_FAILED errors and parsed values', () =>
         withApp(

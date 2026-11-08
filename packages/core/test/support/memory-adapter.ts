@@ -4,6 +4,7 @@ import {
   createRouter,
   malformedBodyError,
   parseQueryString,
+  parseRequestBody,
   type AppOptions,
   type CompiledRoute,
   type DotpressRuntime,
@@ -21,6 +22,8 @@ export interface InjectOptions {
   body?: unknown
   /** Raw JSON body, parsed by the adapter. */
   rawBody?: string
+  /** Multipart body, encoded then parsed by the adapter. */
+  formData?: FormData
   /** Simulates client disconnections. */
   signal?: AbortSignal
 }
@@ -92,6 +95,25 @@ export const memoryAdapter = (): MemoryAdapter => {
         request.body = JSON.parse(options.rawBody)
       } catch {
         return runtime.handleError(malformedBodyError(), request)
+      }
+    }
+
+    if (options.formData !== undefined) {
+      const encoded = new Request(url, {
+        method: 'POST',
+        body: options.formData,
+      })
+      const bytes = new Uint8Array(await encoded.arrayBuffer())
+      try {
+        const parsed = await parseRequestBody(
+          bytes,
+          encoded.headers.get('content-type') ?? undefined
+        )
+        request.body = parsed.body
+        request.files = parsed.files
+        request.rawBody = bytes
+      } catch (error) {
+        return runtime.handleError(error, request)
       }
     }
 

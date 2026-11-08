@@ -1,17 +1,23 @@
 import { parseCookieHeader } from './cookies.js'
-import type { IncomingHeaders, NormalizedRequest, QueryValues } from './http.js'
+import type {
+  IncomingHeaders,
+  NormalizedRequest,
+  QueryValues,
+  UploadedFiles,
+} from './http.js'
 
 /**
  * Request exposed to middlewares and handlers as `ctx.req`.
  *
- * In middlewares, `params`, `query` and `body` hold the raw values received
- * by the adapter. In handlers, they hold the values parsed by the route
- * schema.
+ * In middlewares, `params`, `query`, `body` and `files` hold the raw values
+ * received by the adapter. In handlers, they hold the values parsed by the
+ * route schema.
  */
 export interface DotpressRequest<
   TParams = Record<string, string>,
   TQuery = QueryValues,
   TBody = unknown,
+  TFiles = UploadedFiles,
 > {
   /** Uppercase HTTP method. */
   readonly method: string
@@ -22,6 +28,8 @@ export interface DotpressRequest<
   readonly params: TParams
   readonly query: TQuery
   readonly body: TBody
+  /** Files uploaded with a `multipart/form-data` body (empty otherwise). */
+  readonly files: TFiles
   /** Request headers, with lowercase names. Repeated values are joined. */
   readonly headers: Readonly<Record<string, string | undefined>>
   readonly cookies: Readonly<Record<string, string>>
@@ -47,6 +55,7 @@ export interface MutableRequest extends DotpressRequest {
   params: Record<string, string>
   query: QueryValues
   body: unknown
+  files: UploadedFiles
 }
 
 const normalizeHeaders = (
@@ -97,6 +106,7 @@ export const createRequest = (
     params: { ...input.params },
     query: { ...input.query },
     body: input.body,
+    files: { ...input.files },
     headers,
     cookies: parseCookieHeader(headers.cookie),
     signal: input.signal ?? NEVER_ABORTED,

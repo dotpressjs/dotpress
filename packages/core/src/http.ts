@@ -35,6 +35,12 @@ export type IncomingHeaders = Record<string, string | string[] | undefined>
 export type QueryValues = Record<string, string | string[]>
 
 /**
+ * Files uploaded with a `multipart/form-data` body. Repeated names produce
+ * arrays.
+ */
+export type UploadedFiles = Record<string, File | File[]>
+
+/**
  * Body of a normalized response.
  * - `string`: serialized JSON or text
  * - `Uint8Array`: binary payload
@@ -65,6 +71,8 @@ export interface NormalizedRequest {
   headers: IncomingHeaders
   /** Parsed request body (`undefined` when there is none). */
   body: unknown
+  /** Uploaded files (`multipart/form-data` bodies). */
+  files?: UploadedFiles
   /**
    * Raw bytes of the body, when the adapter read it itself. Required by
    * routes declared with `rawBody: true`.

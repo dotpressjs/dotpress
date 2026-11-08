@@ -21,6 +21,11 @@ export interface RouteInfo {
   readonly status: number | undefined
   /** Whether the route needs `NormalizedRequest.rawBody`. */
   readonly rawBody: boolean
+  /**
+   * Maximum body size of the route, in bytes. When undefined, the adapter
+   * limit applies (`DEFAULT_BODY_LIMIT` by default).
+   */
+  readonly bodyLimit: number | undefined
 }
 
 /**
@@ -66,9 +71,10 @@ export interface DotpressRuntime {
  *
  * - match routes with `createRouteMatcher()`, or follow its rules;
  * - parse the query with `parseQueryString()`, and the body with
- *   `parseRequestBody()`, limited to `DEFAULT_BODY_LIMIT` unless configured
- *   otherwise (`PAYLOAD_TOO_LARGE`), rejecting `Content-Encoding` other than
- *   `identity` (`UNSUPPORTED_MEDIA_TYPE`);
+ *   `parseRequestBody()` (body, files and raw bytes), limited to the route
+ *   `bodyLimit`, else to the adapter limit (`DEFAULT_BODY_LIMIT` by
+ *   default), with `PAYLOAD_TOO_LARGE` beyond; reject `Content-Encoding`
+ *   other than `identity` (`UNSUPPORTED_MEDIA_TYPE`);
  * - send body errors through `DotpressRuntime.handleError()`, and requests
  *   matching no route through `DotpressRuntime.handleNotFound()`;
  * - provide `NormalizedRequest.signal`, aborted when the client disconnects;

@@ -104,6 +104,148 @@ describe('authPlugin()', () => {
     })
   })
 
+  describe('cross-site request forgery', () => {
+    const TRUSTED = 'https://app.example.com'
+    const routes = (router: ReturnType<typeof createRouter>) => {
+      whoAmI(router)
+      router.defineRoute({
+        path: '/whoami',
+        handler: ({ user }) => ({ user: user?.id ?? null }),
+      })
+    }
+
+    const setup = async () => {
+      const app = await createAuthApp({
+        settings: {
+          cookies: {
+            enabled: true,
+            accessTokenInCookie: true,
+            trustedOrigins: [TRUSTED],
+          },
+        },
+        routes,
+      })
+      const { body } = await login(app.fetch)
+      const cookie = cookieHeader({
+        dotpress_access_token: body.accessToken,
+        dotpress_refresh_token: body.refreshToken,
+      })
+      const whoami = async (
+        headers: Record<string, string>,
+        method = 'POST'
+      ) => {
+        const res = await app.fetch('/whoami', {
+          method,
+          headers: { cookie, ...headers },
+        })
+        return ((await res.json()) as { user: string | null }).user
+      }
+      return { ...app, body, cookie, whoami }
+    }
+
+    it.each([
+      ['same origin', { 'sec-fetch-site': 'same-origin' }],
+      ['typed URL or bookmark', { 'sec-fetch-site': 'none' }],
+      ['trusted origin', { 'sec-fetch-site': 'same-site', origin: TRUSTED }],
+      ['non-browser client', {}],
+      ['older browser, same host', { origin: 'http://localhost' }],
+    ])('authenticates cookie requests: %s', async (_label, headers) => {
+      const { whoami } = await setup()
+      expect(await whoami(headers)).toBe('u1')
+    })
+
+    it.each([
+      [
+        'another site',
+        { 'sec-fetch-site': 'cross-site', origin: 'https://evil.com' },
+      ],
+      [
+        'another subdomain',
+        { 'sec-fetch-site': 'same-site', origin: 'https://evil.example.com' },
+      ],
+      ['older browser, another host', { origin: 'https://evil.com' }],
+      ['opaque origin', { origin: 'null' }],
+    ])(
+      'ignores the cookie of cross-origin requests: %s',
+      async (_label, headers) => {
+        const { whoami, logger } = await setup()
+
+        expect(await whoami(headers)).toBeNull()
+        expect(
+          logger.entries.some((entry) =>
+            String(entry.args[1]).startsWith('Access token cookie ignored')
+          )
+        ).toBe(true)
+      }
+    )
+
+    it('does not check safe methods, nor bearer tokens', async () => {
+      const { whoami, body } = await setup()
+      const crossSite = {
+        'sec-fetch-site': 'cross-site',
+        origin: 'https://evil.com',
+      }
+
+      expect(await whoami(crossSite, 'GET')).toBe('u1')
+      expect(
+        await whoami({
+          ...crossSite,
+          authorization: `Bearer ${body.accessToken}`,
+        })
+      ).toBe('u1')
+    })
+
+    it('rejects cross-origin refresh and restore with cookies', async () => {
+      const { fetch, cookie } = await setup()
+      const crossSite = {
+        cookie,
+        'sec-fetch-site': 'cross-site',
+        origin: 'https://evil.com',
+      }
+
+      for (const path of ['/auth/refresh', '/auth/restore']) {
+        const res = await fetch(path, { method: 'POST', headers: crossSite })
+        expect(res.status).toBe(403)
+        expect(await res.json()).toMatchObject({
+          message: 'CROSS_ORIGIN_REQUEST',
+        })
+      }
+
+      const trusted = await fetch('/auth/refresh', {
+        method: 'POST',
+        headers: { ...crossSite, origin: TRUSTED },
+      })
+      expect(trusted.status).toBe(200)
+    })
+
+    it('does not check refreshes in body mode', async () => {
+      const { fetch, body } = await setup()
+
+      const res = await fetch(
+        '/auth/refresh',
+        postJson(
+          { accessToken: body.accessToken, refreshToken: body.refreshToken },
+          { 'sec-fetch-site': 'cross-site', origin: 'https://evil.com' }
+        )
+      )
+
+      expect(res.status).toBe(200)
+    })
+
+    it('rejects invalid trusted origins', () => {
+      for (const origin of ['app.example.com', 'https://app.example.com/']) {
+        expect(() =>
+          createAuth({
+            keys,
+            dataProvider: createStore().provider,
+            issuer: 'https://api.example.com',
+            cookies: { trustedOrigins: [origin] },
+          })
+        ).toThrow('Invalid cookies.trustedOrigins')
+      }
+    })
+  })
+
   describe('requireAuth and requireRole()', () => {
     const guarded = (router: ReturnType<typeof createRouter>) => {
       router.defineRoute({

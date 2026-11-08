@@ -1,5 +1,6 @@
 import {
   definePlugin,
+  forbiddenError,
   internalError,
   unauthorizedError,
   type DotpressRequest,
@@ -7,6 +8,7 @@ import {
   type RouteGroup,
 } from '@dotpress/core'
 import { AuthError, type Auth } from './auth.js'
+import { isCookieAuthenticationAllowed } from './csrf.js'
 import { requireAuth } from './middlewares.js'
 import type {
   IssuedTokens,
@@ -46,6 +48,25 @@ const bodyField = (body: unknown, key: string): string | undefined => {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
+/** Access token of a request, and where it was found. */
+const findAccessToken = (
+  req: DotpressRequest,
+  cookies: ResolvedCookieSettings
+): { token: string; source: 'header' | 'cookie' | 'body' } | undefined => {
+  const header = req.header('authorization')
+  if (header?.startsWith('Bearer ')) {
+    return { token: header.slice('Bearer '.length), source: 'header' }
+  }
+
+  if (cookies.enabled && cookies.accessTokenInCookie) {
+    const cookie = req.cookies[cookies.accessTokenName]
+    if (cookie) return { token: cookie, source: 'cookie' }
+  }
+
+  const body = bodyField(req.body, 'accessToken')
+  return body === undefined ? undefined : { token: body, source: 'body' }
+}
+
 /**
  * Access token of a request: `Authorization: Bearer` header, then cookie
  * (when enabled), then `accessToken` body field.
@@ -53,17 +74,10 @@ const bodyField = (body: unknown, key: string): string | undefined => {
 export const extractAccessToken = (
   req: DotpressRequest,
   cookies: ResolvedCookieSettings
-): string | undefined => {
-  const header = req.header('authorization')
-  if (header?.startsWith('Bearer ')) return header.slice('Bearer '.length)
+): string | undefined => findAccessToken(req, cookies)?.token
 
-  if (cookies.enabled && cookies.accessTokenInCookie) {
-    const cookie = req.cookies[cookies.accessTokenName]
-    if (cookie) return cookie
-  }
-
-  return bodyField(req.body, 'accessToken')
-}
+/** Response of the cookie routes to a cross-origin request. */
+const crossOriginError = () => forbiddenError('CROSS_ORIGIN_REQUEST')
 
 /**
  * Token pair sent to the refresh route: refresh token cookie first, then
@@ -255,6 +269,12 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
     handler: async ({ req, res }) => {
       const extracted = extractTokens(req, req.body, cookies)
       if (!extracted) return unauthorizedError('NO_TOKENS_PROVIDED')
+      if (
+        extracted.mode === 'cookie' &&
+        !isCookieAuthenticationAllowed(req, cookies.trustedOrigins)
+      ) {
+        return crossOriginError()
+      }
 
       try {
         const { userId, ...tokens } = await auth.refreshTokens(extracted)
@@ -303,6 +323,9 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       const accessToken = req.cookies[cookies.accessTokenName]
       if (!refreshToken) return unauthorizedError('NO_REFRESH_TOKEN')
       if (!accessToken) return unauthorizedError('NO_ACCESS_TOKEN')
+      if (!isCookieAuthenticationAllowed(req, cookies.trustedOrigins)) {
+        return crossOriginError()
+      }
 
       // A valid access token restores the session as is.
       try {
@@ -377,8 +400,23 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       api.decorateContext('auth', () => undefined)
 
       const authenticate: Middleware = async (ctx) => {
-        const token = extractAccessToken(ctx.req, auth.settings.cookies)
-        if (!token) return
+        const { cookies } = auth.settings
+        const found = findAccessToken(ctx.req, cookies)
+        if (!found) return
+        const { token } = found
+
+        // Cross-site request forgery: the browser attached the cookie to a
+        // request from another origin. The request stays anonymous.
+        if (
+          found.source === 'cookie' &&
+          !isCookieAuthenticationAllowed(ctx.req, cookies.trustedOrigins)
+        ) {
+          ctx.logger.warn(
+            { origin: ctx.req.header('origin') },
+            'Access token cookie ignored: cross-origin request (see cookies.trustedOrigins)'
+          )
+          return
+        }
 
         try {
           const session = await auth.verifyAccessToken(token)

@@ -45,6 +45,19 @@ export interface CookieSettings {
   secure?: boolean
   /** Defaults to `lax`. */
   sameSite?: 'strict' | 'lax' | 'none'
+  /**
+   * `SameSite` attribute of the refresh token cookie, which never needs to
+   * accompany a navigation from another site. Defaults to `strict`, or to
+   * `none` when `sameSite` is `none`.
+   */
+  refreshTokenSameSite?: 'strict' | 'lax' | 'none'
+  /**
+   * Origins allowed to send requests authenticated by the cookies, besides
+   * the API origin: for example `https://app.example.com` when the app is
+   * served from another subdomain. Other cross-origin requests do not use
+   * the cookies (protection against cross-site request forgery).
+   */
+  trustedOrigins?: readonly string[]
   domain?: string
   /** Defaults to `/`. */
   path?: string

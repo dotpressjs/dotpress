@@ -180,9 +180,11 @@ describe('auth routes', () => {
       const refreshToken = cookies.dotpress_refresh_token?.value
       expect(refreshToken).toMatch(/^[0-9a-f]{256}$/)
       expect(cookies.dotpress_refresh_token?.raw).toBe(
-        `dotpress_refresh_token=${refreshToken}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Lax`
+        `dotpress_refresh_token=${refreshToken}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Strict`
       )
       expect(decodeJwt(cookies.dotpress_access_token!.value).sub).toBe('u1')
+      // The access token cookie accompanies navigations from other sites.
+      expect(cookies.dotpress_access_token?.raw).toContain('SameSite=Lax')
     })
 
     it('returns the access token only, when it is not a cookie', async () => {
@@ -448,6 +450,35 @@ describe('auth routes', () => {
       )
       expect(cookies.dotpress_access_token?.value).toBeDefined()
     })
+  })
+
+  describe('cookie SameSite attributes', () => {
+    it.each([
+      [{}, 'Strict', 'Lax'],
+      [{ sameSite: 'none' as const }, 'None', 'None'],
+      [{ refreshTokenSameSite: 'lax' as const }, 'Lax', 'Lax'],
+    ])(
+      'sets them from the settings (%o)',
+      async (settings, refreshSameSite, accessSameSite) => {
+        const { fetch } = await createAuthApp({
+          settings: { cookies: { ...COOKIES, ...settings } },
+        })
+
+        const { res } = await login(fetch, {
+          username: 'ada',
+          password: 'secret',
+          mode: 'cookie',
+        })
+        const cookies = cookiesOf(res)
+
+        expect(cookies.dotpress_refresh_token?.raw).toContain(
+          `SameSite=${refreshSameSite}`
+        )
+        expect(cookies.dotpress_access_token?.raw).toContain(
+          `SameSite=${accessSameSite}`
+        )
+      }
+    )
   })
 
   describe('sessions', () => {

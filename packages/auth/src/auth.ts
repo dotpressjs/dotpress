@@ -111,6 +111,8 @@ const DEFAULT_COOKIE_SETTINGS: ResolvedCookieSettings = {
   secure: true,
   sameSite: 'lax',
   path: '/',
+  refreshTokenSameSite: 'strict',
+  trustedOrigins: [],
   accessTokenName: 'dotpress_access_token',
   refreshTokenName: 'dotpress_refresh_token',
   accessTokenInCookie: false,
@@ -178,6 +180,19 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
       'refreshTokenTTLInDays is replaced by session.idleTimeout, in seconds.'
     )
   }
+  for (const origin of settings.cookies?.trustedOrigins ?? []) {
+    let valid = false
+    try {
+      valid = new URL(origin).origin === origin
+    } catch {
+      // Invalid URL.
+    }
+    if (!valid) {
+      throw new TypeError(
+        `Invalid cookies.trustedOrigins: "${origin}" is not an origin (expected a scheme and a host, such as https://app.example.com, without path or trailing slash).`
+      )
+    }
+  }
   checkSession(settings.session, 'session')
   for (const [clientId, session] of Object.entries(clients?.sessions ?? {})) {
     if (!clients?.allowed.includes(clientId)) {
@@ -207,7 +222,13 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     },
     issuer: settings.issuer,
     audience: settings.audience ?? settings.issuer,
-    cookies: { ...DEFAULT_COOKIE_SETTINGS, ...settings.cookies },
+    cookies: {
+      ...DEFAULT_COOKIE_SETTINGS,
+      ...settings.cookies,
+      refreshTokenSameSite:
+        settings.cookies?.refreshTokenSameSite ??
+        (settings.cookies?.sameSite === 'none' ? 'none' : 'strict'),
+    },
     clients: settings.clients,
     onLoginFailed: settings.onLoginFailed,
     onLoginSuccess: settings.onLoginSuccess,
@@ -649,7 +670,10 @@ export const createAuth = (input: AuthSettings): Auth => {
             : Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))),
       }
 
-      res.setCookie(cookies.refreshTokenName, tokens.refreshToken, options)
+      res.setCookie(cookies.refreshTokenName, tokens.refreshToken, {
+        ...options,
+        sameSite: cookies.refreshTokenSameSite,
+      })
       if (cookies.accessTokenInCookie) {
         res.setCookie(cookies.accessTokenName, tokens.accessToken, options)
       }

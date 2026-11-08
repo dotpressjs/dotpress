@@ -64,6 +64,25 @@ In cookie mode, tokens set as cookies are never returned in the response body, s
 
 Every route still returns `userId`, `expiresIn` and `expiresAt` (access token expiration), plus `sessionExpiresAt` when the session has an absolute timeout (see [Sessions](#sessions)).
 
+### Cross-site request forgery
+
+The browser attaches cookies to every request, including the ones forged by another site. In cookie mode, the plugin checks the origin of the requests authenticated by a cookie, with the headers set by the browser (`Sec-Fetch-Site`, then `Origin` for older browsers), like the OWASP recommendations and Go's `http.CrossOriginProtection`. Clients need no CSRF token.
+
+- Requests from the API origin are accepted, as well as requests without these headers (non-browser clients).
+- Requests from another origin, including another subdomain of the same site, are accepted only from `cookies.trustedOrigins`:
+
+  ```ts
+  cookies: { enabled: true, accessTokenInCookie: true, trustedOrigins: ['https://app.example.com'] }
+  ```
+
+- Otherwise, the access token cookie is ignored (the request is anonymous, and a warning is logged), and `/auth/refresh` and `/auth/restore` answer `403 CROSS_ORIGIN_REQUEST`.
+- `GET`, `HEAD` and `OPTIONS` requests are not checked: they must not change data.
+- Requests authenticated by the `Authorization` header are not checked: another site cannot set it.
+
+For older browsers without `Sec-Fetch-Site`, the `Origin` is compared with the `Host` header: behind a proxy, forward the original `Host`, or list the origin in `trustedOrigins`.
+
+The refresh token cookie is `SameSite=Strict`: it never accompanies a navigation from another site, while the requests of the app keep sending it.
+
 `authPlugin(auth, { prefix: '/api/auth' })` changes the prefix; `{ routes: false }` keeps only the authentication middleware.
 
 ## Guards
@@ -92,7 +111,7 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `issuer` | — | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair. |
 | `audience` | `issuer` | `aud` claim (the API that accepts the tokens), checked on every request. |
 | `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: client applications (see [Clients](#clients)). |
-| `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `domain`, `path` (`/`), `accessTokenName`, `refreshTokenName`, `accessTokenInCookie` (`false`). |
+| `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (`[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`), `accessTokenName`, `refreshTokenName`, `accessTokenInCookie` (`false`). |
 | `onLoginSuccess` / `onLoginFailed` | — | Login events (user, `clientId`, IP address). |
 | `passwordHashRounds` | `10` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. Set it to the cost of the hashes stored in your database. |
 | `getUserRoles` | `user.roles` / `user.role` | Roles checked by `requireRole()`. |

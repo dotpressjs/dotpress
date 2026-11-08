@@ -10,6 +10,7 @@ import {
 } from './support.js'
 
 const COOKIES = { enabled: true, accessTokenInCookie: true }
+const DAY = 24 * 60 * 60
 
 describe('auth routes', () => {
   describe('POST /auth/login', () => {
@@ -436,7 +437,8 @@ describe('auth routes', () => {
       expect(res.status).toBe(200)
       expect(restored).toEqual({
         userId: 'u1',
-        expiresIn: -10,
+        // The access token issued with a negative lifetime is expired.
+        expiresIn: 0,
         expiresAt: expect.any(String),
         user: { id: 'u1', username: 'ada', roles: ['admin'] },
       })
@@ -445,6 +447,43 @@ describe('auth routes', () => {
         tokens.refreshToken
       )
       expect(cookies.dotpress_access_token?.value).toBeDefined()
+    })
+  })
+
+  describe('sessions', () => {
+    it('returns sessionExpiresAt and bounds the cookies with an absolute timeout', async () => {
+      const { fetch } = await createAuthApp({
+        settings: {
+          cookies: { enabled: true },
+          session: { idleTimeout: 7 * DAY, absoluteTimeout: DAY },
+        },
+      })
+
+      const { res, body } = await login(fetch, {
+        username: 'ada',
+        password: 'secret',
+        mode: 'cookie',
+      })
+      const sessionExpiresAt = (body as { sessionExpiresAt?: string })
+        .sessionExpiresAt
+
+      expect(
+        new Date(sessionExpiresAt!).getTime() - Date.now()
+      ).toBeGreaterThan((DAY - 10) * 1000)
+      // The refresh token cookie expires with the session, not after the
+      // inactivity timeout.
+      const maxAge = Number(
+        /Max-Age=(\d+)/.exec(cookiesOf(res).dotpress_refresh_token!.raw)![1]
+      )
+      expect(maxAge).toBeGreaterThan(DAY - 10)
+      expect(maxAge).toBeLessThanOrEqual(DAY)
+    })
+
+    it('does not return sessionExpiresAt without absolute timeout', async () => {
+      const { fetch } = await createAuthApp()
+      const { body } = await login(fetch)
+
+      expect(body).not.toHaveProperty('sessionExpiresAt')
     })
   })
 

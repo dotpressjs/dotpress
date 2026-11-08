@@ -1,14 +1,18 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { decodeJwt, decodeProtectedHeader } from 'jose'
 import jwt from 'jsonwebtoken'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AuthError,
   createAuth,
   generatePasswordHash,
   type AuthSettings,
+  type TokenPair,
 } from '../src/index.js'
 import { createStore, keys, TEST_HASH_ROUNDS } from './support.js'
+
+const DAY = 24 * 60 * 60
+const HOUR = 60 * 60
 
 const authWith = (settings: Partial<AuthSettings> = {}) => {
   const store = createStore()
@@ -54,7 +58,7 @@ describe('createAuth()', () => {
 
     expect(auth.settings).toMatchObject({
       accessTokenTTL: 3600,
-      refreshTokenTTLInDays: 14,
+      session: { idleTimeout: 14 * DAY, absoluteTimeout: undefined },
       issuer: 'https://api.example.com',
       // The API audience defaults to the issuer.
       audience: 'https://api.example.com',
@@ -600,6 +604,192 @@ describe('createAuth()', () => {
       await expect(
         auth.refreshTokens({ ...pair, accessToken: forged })
       ).rejects.toMatchObject({ code: 'INVALID_REFRESH_TOKEN' })
+    })
+  })
+
+  describe('sessions', () => {
+    const subject = { userId: 'u1', username: 'ada' }
+    let now = Date.UTC(2026, 0, 1)
+    const advance = (seconds: number) => {
+      now += seconds * 1000
+      vi.setSystemTime(now)
+    }
+
+    beforeEach(() => {
+      now = Date.UTC(2026, 0, 1)
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(now)
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('keeps active sessions forever without absolute timeout', async () => {
+      const { auth } = authWith()
+      let tokens: TokenPair = await auth.generateTokensForUser(subject)
+
+      // Active every 13 days during a year.
+      for (let day = 0; day < 365; day += 13) {
+        advance(13 * DAY)
+        const refreshed = await auth.refreshTokens(tokens)
+        expect(refreshed.sessionExpiresAt).toBeUndefined()
+        expect(refreshed.refreshTokenExpiresAt.getTime()).toBe(
+          now + 14 * DAY * 1000
+        )
+        tokens = refreshed
+      }
+    })
+
+    it('ends inactive sessions after the idle timeout', async () => {
+      const { auth } = authWith({ session: { idleTimeout: 7 * DAY } })
+      const tokens = await auth.generateTokensForUser(subject)
+
+      advance(7 * DAY + 1)
+
+      await expect(auth.refreshTokens(tokens)).rejects.toMatchObject({
+        code: 'EXPIRED_REFRESH_TOKEN',
+      })
+    })
+
+    it('ends sessions at the absolute timeout, even when active', async () => {
+      const { auth } = authWith({
+        session: { idleTimeout: 12 * HOUR, absoluteTimeout: DAY },
+      })
+      const start = now
+      const end = start + DAY * 1000
+      const first = await auth.generateTokensForUser(subject)
+      expect(first.sessionExpiresAt?.getTime()).toBe(end)
+
+      advance(11 * HOUR)
+      const second = await auth.refreshTokens(first)
+      advance(11 * HOUR)
+      const third = await auth.refreshTokens(second)
+
+      // Everything is bounded by the end of the session.
+      expect(third.sessionExpiresAt?.getTime()).toBe(end)
+      expect(third.refreshTokenExpiresAt.getTime()).toBe(end)
+      expect(third.accessTokenExpiresAt.getTime()).toBe(now + HOUR * 1000)
+      // At 23h30, an access token of one hour would outlive the session.
+      advance(90 * 60)
+      const fourth = await auth.refreshTokens(third)
+      expect(fourth.accessTokenExpiresAt.getTime()).toBe(end)
+      expect(decodeJwt(fourth.accessToken).exp).toBe(end / 1000)
+
+      advance(HOUR)
+      await expect(auth.refreshTokens(fourth)).rejects.toMatchObject({
+        code: 'EXPIRED_REFRESH_TOKEN',
+      })
+    })
+
+    it('ends the sessions opened before an absolute timeout was configured', async () => {
+      const { auth, store } = authWith()
+      const tokens = await auth.generateTokensForUser(subject)
+      // Configuration change: the stored refresh token is not bounded.
+      const bounded = createAuth({
+        ...auth.settings,
+        dataProvider: store.provider,
+        session: { absoluteTimeout: DAY },
+      })
+
+      advance(DAY + 1)
+
+      await expect(bounded.refreshTokens(tokens)).rejects.toMatchObject({
+        code: 'EXPIRED_REFRESH_TOKEN',
+      })
+    })
+
+    it('applies the session lifetimes of the client', async () => {
+      const { auth } = authWith({
+        session: { absoluteTimeout: DAY },
+        clients: {
+          allowed: ['app', 'backoffice'],
+          sessions: {
+            backoffice: { idleTimeout: HOUR },
+            // Explicitly removes the global absolute timeout.
+            app: { absoluteTimeout: undefined },
+          },
+        },
+      })
+      let app: TokenPair = await auth.generateTokensForUser({
+        ...subject,
+        clientId: 'app',
+      })
+      const backoffice = await auth.generateTokensForUser({
+        ...subject,
+        clientId: 'backoffice',
+      })
+      expect(backoffice.refreshTokenExpiresAt.getTime()).toBe(now + HOUR * 1000)
+      expect(backoffice.sessionExpiresAt?.getTime()).toBe(now + DAY * 1000)
+
+      for (let index = 0; index < 3; index++) {
+        advance(DAY)
+        app = await auth.refreshTokens(app)
+      }
+
+      advance(-3 * DAY + HOUR + 1)
+      await expect(auth.refreshTokens(backoffice)).rejects.toMatchObject({
+        code: 'EXPIRED_REFRESH_TOKEN',
+      })
+    })
+
+    it('ends sessions without auth_time when an absolute timeout applies', async () => {
+      const legacySession = async (settings: Partial<AuthSettings>) => {
+        const { auth, store } = authWith(settings)
+        const accessToken = jwt.sign({ sub: 'u1' }, keys.secretKey, {
+          algorithm: 'RS256',
+          jwtid: 'old-jti',
+        })
+        const refresh = await auth.generateRefreshToken()
+        await store.provider.storeRefreshToken({
+          ...refresh,
+          userId: 'u1',
+          jwtId: 'old-jti',
+          familyId: 'old',
+          expiresAt: new Date(now + DAY * 1000),
+        })
+        return auth.refreshTokens({
+          accessToken,
+          refreshToken: refresh.token,
+        })
+      }
+
+      await expect(
+        legacySession({ session: { absoluteTimeout: DAY } })
+      ).rejects.toMatchObject({ code: 'EXPIRED_REFRESH_TOKEN' })
+      await expect(legacySession({})).resolves.toMatchObject({ userId: 'u1' })
+    })
+
+    it('computes the end of a session from its access token', async () => {
+      const { auth } = authWith({ session: { absoluteTimeout: DAY } })
+      const { accessToken } = await auth.generateTokensForUser(subject)
+
+      const session = await auth.verifyAccessToken(accessToken)
+
+      expect(auth.getSessionExpiresAt(session)?.getTime()).toBe(
+        now + DAY * 1000
+      )
+      expect(authWith().auth.getSessionExpiresAt(session)).toBeUndefined()
+    })
+
+    it.each([
+      [{ session: { idleTimeout: 0 } }, 'Invalid session.idleTimeout'],
+      [{ session: { absoluteTimeout: -1 } }, 'Invalid session.absoluteTimeout'],
+      [
+        {
+          clients: {
+            allowed: ['app'],
+            sessions: { app: { idleTimeout: Number.NaN } },
+          },
+        },
+        'Invalid clients.sessions.app.idleTimeout',
+      ],
+      [
+        { clients: { allowed: ['app'], sessions: { kiosk: {} } } },
+        '"kiosk" is not in clients.allowed',
+      ],
+      [{ refreshTokenTTLInDays: 14 }, 'replaced by session.idleTimeout'],
+    ])('rejects invalid session settings (%o)', (settings, message) => {
+      expect(() => authWith(settings as Partial<AuthSettings>)).toThrow(message)
     })
   })
 

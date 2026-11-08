@@ -9,6 +9,7 @@ import {
 import { AuthError, type Auth } from './auth.js'
 import { requireAuth } from './middlewares.js'
 import type {
+  IssuedTokens,
   LoginFailedEvent,
   ResolvedCookieSettings,
   TokenPair,
@@ -105,12 +106,22 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
   const { settings } = auth
   const { dataProvider, cookies } = settings
 
-  const expiration = () => ({
-    expiresIn: settings.accessTokenTTL,
-    expiresAt: new Date(
-      Date.now() + settings.accessTokenTTL * 1000
-    ).toISOString(),
+  /**
+   * Expiration fields of the responses: access token, and session when an
+   * absolute timeout applies.
+   */
+  const expiration = (accessTokenExpiresAt: Date, sessionExpiresAt?: Date) => ({
+    expiresIn: Math.max(
+      0,
+      Math.ceil((accessTokenExpiresAt.getTime() - Date.now()) / 1000)
+    ),
+    expiresAt: accessTokenExpiresAt.toISOString(),
+    ...(sessionExpiresAt && {
+      sessionExpiresAt: sessionExpiresAt.toISOString(),
+    }),
   })
+  const issuedExpiration = (tokens: IssuedTokens) =>
+    expiration(tokens.accessTokenExpiresAt, tokens.sessionExpiresAt)
 
   /**
    * Tokens returned in the response body. Tokens set as cookies are never
@@ -122,7 +133,12 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
     tokens: TokenPair,
     inCookies: boolean
   ): Partial<TokenPair> => {
-    if (!inCookies) return tokens
+    if (!inCookies) {
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      }
+    }
     return cookies.accessTokenInCookie
       ? {}
       : { accessToken: tokens.accessToken }
@@ -161,6 +177,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         refreshToken: z.string().optional(),
         expiresIn: z.number(),
         expiresAt: z.string(),
+        sessionExpiresAt: z.string().optional(),
       }),
     }),
     handler: async ({ req, res }) => {
@@ -210,7 +227,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       return {
         userId: user.userId,
         ...bodyTokens(tokens, inCookies),
-        ...expiration(),
+        ...issuedExpiration(tokens),
       }
     },
   })
@@ -232,6 +249,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         refreshToken: z.string().optional(),
         expiresIn: z.number(),
         expiresAt: z.string(),
+        sessionExpiresAt: z.string().optional(),
       }),
     }),
     handler: async ({ req, res }) => {
@@ -242,7 +260,11 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         const { userId, ...tokens } = await auth.refreshTokens(extracted)
         const inCookies = extracted.mode === 'cookie' && cookies.enabled
         if (inCookies) auth.setAuthCookies(res, tokens)
-        return { userId, ...bodyTokens(tokens, inCookies), ...expiration() }
+        return {
+          userId,
+          ...bodyTokens(tokens, inCookies),
+          ...issuedExpiration(tokens),
+        }
       } catch (error) {
         return refreshErrorResponse(error, 'Can not refresh tokens.')
       }
@@ -267,6 +289,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         refreshToken: z.string().optional(),
         expiresIn: z.number(),
         expiresAt: z.string(),
+        sessionExpiresAt: z.string().optional(),
         user: z.unknown(),
       }),
     }),
@@ -283,10 +306,20 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
 
       // A valid access token restores the session as is.
       try {
-        const { userId } = await auth.verifyAccessToken(accessToken)
+        const session = await auth.verifyAccessToken(accessToken)
+        const { userId } = session
         const user = await dataProvider.findUserById(userId)
         // The tokens stay in their cookies.
-        if (user) return { userId, ...expiration(), user }
+        if (user) {
+          return {
+            userId,
+            ...expiration(
+              new Date(Number(session.claims.exp) * 1000),
+              auth.getSessionExpiresAt(session)
+            ),
+            user,
+          }
+        }
       } catch {
         // Expired or invalid: try the refresh token.
       }
@@ -301,7 +334,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         const user = await dataProvider.findUserById(userId)
         if (!user) return unauthorizedError('USER_NOT_FOUND')
 
-        return { userId, ...expiration(), user }
+        return { userId, ...issuedExpiration(tokens), user }
       } catch (error) {
         return refreshErrorResponse(error, 'Cannot restore session.')
       }

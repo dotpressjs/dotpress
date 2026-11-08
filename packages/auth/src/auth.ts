@@ -13,9 +13,12 @@ import type {
   AuthUser,
   CreatedAccessToken,
   CreatedRefreshToken,
+  IssuedTokens,
   RefreshTokenData,
   ResolvedAuthSettings,
   ResolvedCookieSettings,
+  ResolvedSessionSettings,
+  SessionSettings,
   TokenPair,
   TokenSubject,
 } from './types.js'
@@ -23,6 +26,7 @@ import type {
 const ALGORITHM = 'RS256'
 /** Media type of the access tokens (RFC 9068). */
 const ACCESS_TOKEN_TYPE = 'at+jwt'
+const DEFAULT_IDLE_TIMEOUT = 14 * 24 * 60 * 60
 
 export type AuthErrorCode =
   | 'INVALID_ACCESS_TOKEN'
@@ -50,8 +54,8 @@ export interface Auth {
   init(): Promise<void>
   generateAccessToken(subject: TokenSubject): Promise<CreatedAccessToken>
   generateRefreshToken(): Promise<CreatedRefreshToken>
-  /** Generates and stores a token pair. */
-  generateTokensForUser(subject: TokenSubject): Promise<TokenPair>
+  /** Generates and stores a token pair, starting a session. */
+  generateTokensForUser(subject: TokenSubject): Promise<IssuedTokens>
   /**
    * Rotates a token pair. The access token may be expired, but must be
    * signed by the key pair and match the refresh token.
@@ -62,19 +66,28 @@ export interface Auth {
    * is issued in the same session. After, presenting it again means it was
    * probably stolen: the whole session (token family) is revoked, and
    * `REFRESH_TOKEN_REUSED` is thrown.
+   *
+   * Throws `EXPIRED_REFRESH_TOKEN` when the session reached its inactivity
+   * or absolute timeout.
    */
-  refreshTokens(tokens: TokenPair): Promise<TokenPair & { userId: string }>
+  refreshTokens(tokens: TokenPair): Promise<IssuedTokens & { userId: string }>
   /** Verifies a valid (not expired) access token. */
   verifyAccessToken(accessToken: string): Promise<AuthSession>
+  /**
+   * End of a session, when an absolute timeout applies to it (computed
+   * from the `auth_time` claim).
+   */
+  getSessionExpiresAt(session: AuthSession): Date | undefined
   /** Roles of a user, from the `getUserRoles` setting. */
   getUserRoles(user: AuthUser): readonly string[]
   /**
-   * Sets the token cookies (cookie mode only). Defaults to the refresh
-   * token lifetime.
+   * Sets the token cookies (cookie mode only). They expire with the
+   * refresh token (`refreshTokenExpiresAt` of issued tokens), or after the
+   * inactivity timeout.
    */
   setAuthCookies(
     res: DotpressResponse,
-    tokens: TokenPair,
+    tokens: TokenPair & { refreshTokenExpiresAt?: Date },
     expiresInSeconds?: number
   ): void
   clearAuthCookies(res: DotpressResponse): void
@@ -110,6 +123,17 @@ const defaultUserRoles = (user: AuthUser): readonly string[] => {
     return roles.filter((value): value is string => typeof value === 'string')
   }
   return typeof role === 'string' ? [role] : []
+}
+
+const checkSession = (session: SessionSettings | undefined, name: string) => {
+  for (const key of ['idleTimeout', 'absoluteTimeout'] as const) {
+    const value = session?.[key]
+    if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
+      throw new RangeError(
+        `Invalid ${name}.${key}: expected a positive number of seconds.`
+      )
+    }
+  }
 }
 
 const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
@@ -149,6 +173,20 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
       'Invalid passwordHashRounds: expected an integer between 4 and 31.'
     )
   }
+  if ('refreshTokenTTLInDays' in settings) {
+    throw new TypeError(
+      'refreshTokenTTLInDays is replaced by session.idleTimeout, in seconds.'
+    )
+  }
+  checkSession(settings.session, 'session')
+  for (const [clientId, session] of Object.entries(clients?.sessions ?? {})) {
+    if (!clients?.allowed.includes(clientId)) {
+      throw new TypeError(
+        `Invalid clients.sessions: "${clientId}" is not in clients.allowed.`
+      )
+    }
+    checkSession(session, `clients.sessions.${clientId}`)
+  }
   const reuseInterval = settings.refreshTokenReuseInterval
   if (
     reuseInterval !== undefined &&
@@ -163,7 +201,10 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     keys: settings.keys,
     dataProvider: settings.dataProvider,
     accessTokenTTL: settings.accessTokenTTL ?? 3600,
-    refreshTokenTTLInDays: settings.refreshTokenTTLInDays ?? 14,
+    session: {
+      idleTimeout: settings.session?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT,
+      absoluteTimeout: settings.session?.absoluteTimeout,
+    },
     issuer: settings.issuer,
     audience: settings.audience ?? settings.issuer,
     cookies: { ...DEFAULT_COOKIE_SETTINGS, ...settings.cookies },
@@ -224,11 +265,7 @@ const sha256 = async (value: string) =>
 /** bcrypt hash format: `$2a$`, `$2b$` or `$2y$`, cost, salt and hash. */
 const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/
 
-const addDaysFromNow = (days: number): Date => {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  return date
-}
+const nowInSeconds = () => Math.floor(Date.now() / 1000)
 
 const toSession = (
   claims: Record<string, unknown>,
@@ -279,6 +316,32 @@ export const createAuth = (input: AuthSettings): Auth => {
     return dummyHash
   }
 
+  /** Session lifetimes of a client. */
+  const sessionPolicy = (
+    clientId: string | undefined
+  ): ResolvedSessionSettings => {
+    const override =
+      clientId === undefined
+        ? undefined
+        : settings.clients?.sessions?.[clientId]
+    if (!override) return settings.session
+    return {
+      idleTimeout: override.idleTimeout ?? settings.session.idleTimeout,
+      absoluteTimeout:
+        'absoluteTimeout' in override
+          ? override.absoluteTimeout
+          : settings.session.absoluteTimeout,
+    }
+  }
+
+  /** End of a session started at `authTime`, in seconds, if bounded. */
+  const sessionEnd = (authTime: number, clientId: string | undefined) => {
+    const { absoluteTimeout } = sessionPolicy(clientId)
+    return absoluteTimeout === undefined
+      ? undefined
+      : authTime + absoluteTimeout
+  }
+
   const signAccessToken = async (claims: {
     sub: string
     username: string
@@ -287,7 +350,12 @@ export const createAuth = (input: AuthSettings): Auth => {
   }): Promise<CreatedAccessToken> => {
     const { privateKey } = await getKeys()
     const jwtId = crypto.randomUUID()
-    const issuedAt = Math.floor(Date.now() / 1000)
+    const issuedAt = nowInSeconds()
+    // An access token never outlives its session.
+    const expiresAt = Math.min(
+      issuedAt + settings.accessTokenTTL,
+      sessionEnd(claims.auth_time, claims.client_id) ?? Infinity
+    )
 
     const token = await new SignJWT({
       username: claims.username,
@@ -300,10 +368,10 @@ export const createAuth = (input: AuthSettings): Auth => {
       .setAudience(settings.audience)
       .setJti(jwtId)
       .setIssuedAt(issuedAt)
-      .setExpirationTime(issuedAt + settings.accessTokenTTL)
+      .setExpirationTime(expiresAt)
       .sign(privateKey)
 
-    return { jwtId, accessToken: token }
+    return { jwtId, accessToken: token, expiresAt: new Date(expiresAt * 1000) }
   }
 
   const generateRefreshToken = async (): Promise<CreatedRefreshToken> => {
@@ -311,19 +379,46 @@ export const createAuth = (input: AuthSettings): Auth => {
     return { token, tokenHash: await sha256(token) }
   }
 
-  const storeRefreshToken = async (
-    userId: string,
-    jwtId: string,
-    familyId: string,
-    refreshToken: CreatedRefreshToken
-  ) =>
-    settings.dataProvider.storeRefreshToken({
+  /**
+   * Signs an access token and stores a new refresh token. The refresh
+   * token expires after the inactivity timeout, or at the end of the
+   * session.
+   */
+  const issueTokens = async (
+    claims: {
+      sub: string
+      username: string
+      auth_time: number
+      client_id?: string
+    },
+    familyId: string
+  ): Promise<IssuedTokens> => {
+    const access = await signAccessToken(claims)
+    const refreshToken = await generateRefreshToken()
+    const end = sessionEnd(claims.auth_time, claims.client_id)
+    const refreshTokenExpiresAt = new Date(
+      Math.min(
+        Date.now() + sessionPolicy(claims.client_id).idleTimeout * 1000,
+        end === undefined ? Infinity : end * 1000
+      )
+    )
+
+    await settings.dataProvider.storeRefreshToken({
       ...refreshToken,
-      userId,
-      jwtId,
+      userId: claims.sub,
+      jwtId: access.jwtId,
       familyId,
-      expiresAt: addDaysFromNow(settings.refreshTokenTTLInDays),
+      expiresAt: refreshTokenExpiresAt,
     })
+
+    return {
+      accessToken: access.accessToken,
+      refreshToken: refreshToken.token,
+      accessTokenExpiresAt: access.expiresAt,
+      refreshTokenExpiresAt,
+      sessionExpiresAt: end === undefined ? undefined : new Date(end * 1000),
+    }
+  }
 
   /**
    * Handles a used refresh token presented again. Within the reuse
@@ -371,11 +466,8 @@ export const createAuth = (input: AuthSettings): Auth => {
       : clients.allowed.includes(clientId)
   }
 
-  const generateAccessToken = async ({
-    userId,
-    username,
-    clientId,
-  }: TokenSubject) => {
+  /** Claims of a new session, for trusted code (login, scripts). */
+  const sessionClaims = ({ userId, username, clientId }: TokenSubject) => {
     if (!isClientAccepted(clientId)) {
       throw new TypeError(
         clientId === undefined
@@ -383,13 +475,16 @@ export const createAuth = (input: AuthSettings): Auth => {
           : `Unknown client "${clientId}": add it to clients.allowed.`
       )
     }
-    return signAccessToken({
+    return {
       sub: userId,
       username,
-      auth_time: Math.floor(Date.now() / 1000),
+      auth_time: nowInSeconds(),
       client_id: clientId,
-    })
+    }
   }
+
+  const generateAccessToken = async (subject: TokenSubject) =>
+    signAccessToken(sessionClaims(subject))
 
   const cookieOptions = () => {
     const { httpOnly, secure, sameSite, path, domain } = settings.cookies
@@ -410,15 +505,7 @@ export const createAuth = (input: AuthSettings): Auth => {
     generateRefreshToken,
 
     async generateTokensForUser(subject) {
-      const { jwtId, accessToken } = await generateAccessToken(subject)
-      const refreshToken = await generateRefreshToken()
-      await storeRefreshToken(
-        subject.userId,
-        jwtId,
-        crypto.randomUUID(),
-        refreshToken
-      )
-      return { accessToken, refreshToken: refreshToken.token }
+      return issueTokens(sessionClaims(subject), crypto.randomUUID())
     },
 
     async refreshTokens({ accessToken, refreshToken }) {
@@ -475,28 +562,37 @@ export const createAuth = (input: AuthSettings): Auth => {
 
       if (stored.isUsed) await checkReuse(stored)
 
-      if (stored.expiresAt.getTime() <= Date.now()) {
+      // Start of the session, kept across rotations. Without it, a
+      // session cannot be bounded: with an absolute timeout, it ends.
+      const claimedAuthTime =
+        typeof claims.auth_time === 'number' ? claims.auth_time : undefined
+      if (
+        claimedAuthTime === undefined &&
+        sessionPolicy(clientId).absoluteTimeout !== undefined
+      ) {
+        throw new AuthError('EXPIRED_REFRESH_TOKEN')
+      }
+      const authTime = claimedAuthTime ?? nowInSeconds()
+      const end = sessionEnd(authTime, clientId)
+
+      // Inactivity timeout (refresh token expiry) and absolute timeout.
+      if (
+        stored.expiresAt.getTime() <= Date.now() ||
+        (end !== undefined && end * 1000 <= Date.now())
+      ) {
         throw new AuthError('EXPIRED_REFRESH_TOKEN')
       }
 
-      const created = await signAccessToken({
-        sub: userId,
-        username: typeof claims.username === 'string' ? claims.username : '',
-        auth_time:
-          typeof claims.auth_time === 'number'
-            ? claims.auth_time
-            : Math.floor(Date.now() / 1000),
-        client_id: clientId,
-      })
-
-      const newRefreshToken = await generateRefreshToken()
-      await storeRefreshToken(
-        userId,
-        created.jwtId,
+      const issued = await issueTokens(
+        {
+          sub: userId,
+          username: typeof claims.username === 'string' ? claims.username : '',
+          auth_time: authTime,
+          client_id: clientId,
+        },
         // Tokens stored without family start one, derived from the token
         // so that concurrent rotations land in the same family.
-        stored.familyId || stored.jwtId,
-        newRefreshToken
+        stored.familyId || stored.jwtId
       )
       // A token reused within the interval keeps its first use date: the
       // interval cannot be extended by presenting it again.
@@ -507,11 +603,7 @@ export const createAuth = (input: AuthSettings): Auth => {
         )
       }
 
-      return {
-        userId,
-        accessToken: created.accessToken,
-        refreshToken: newRefreshToken.token,
-      }
+      return { userId, ...issued }
     },
 
     async verifyAccessToken(accessToken) {
@@ -534,16 +626,27 @@ export const createAuth = (input: AuthSettings): Auth => {
       }
     },
 
+    getSessionExpiresAt(session) {
+      const authTime = session.claims.auth_time
+      if (typeof authTime !== 'number') return undefined
+      const end = sessionEnd(authTime, session.clientId)
+      return end === undefined ? undefined : new Date(end * 1000)
+    },
+
     getUserRoles: (user) => settings.getUserRoles(user),
 
     setAuthCookies(res, tokens, expiresInSeconds) {
       const cookies = settings.cookies
       if (!cookies.enabled) return
 
+      const expiresAt = tokens.refreshTokenExpiresAt?.getTime()
       const options = {
         ...cookieOptions(),
         maxAge:
-          expiresInSeconds ?? settings.refreshTokenTTLInDays * 24 * 60 * 60,
+          expiresInSeconds ??
+          (expiresAt === undefined
+            ? settings.session.idleTimeout
+            : Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))),
       }
 
       res.setCookie(cookies.refreshTokenName, tokens.refreshToken, options)

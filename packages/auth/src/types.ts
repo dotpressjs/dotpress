@@ -153,6 +153,36 @@ export interface ClientSettings {
   required?: boolean
   /** Checks at login that a user may get a token for a client. */
   isUserRoleAllowed?: (role: string, clientId: string) => boolean
+  /**
+   * Session lifetimes of some clients, overriding the `session` setting
+   * (an explicit `absoluteTimeout: undefined` removes the global limit).
+   *
+   * @example
+   * sessions: { backoffice: { idleTimeout: 86400, absoluteTimeout: 86400 } }
+   */
+  sessions?: Readonly<Record<string, SessionSettings>>
+}
+
+/**
+ * Session lifetimes, in seconds. A session starts at login and is extended
+ * by each refresh.
+ */
+export interface SessionSettings {
+  /**
+   * Inactivity timeout: the session ends when it is not refreshed during
+   * this delay (lifetime of each refresh token). Defaults to 14 days.
+   */
+  idleTimeout?: number
+  /**
+   * Absolute timeout: the session ends this delay after login, even when
+   * it is active. Defaults to none: active sessions never end.
+   */
+  absoluteTimeout?: number | undefined
+}
+
+export interface ResolvedSessionSettings {
+  idleTimeout: number
+  absoluteTimeout: number | undefined
 }
 
 export interface AuthSettings {
@@ -160,8 +190,8 @@ export interface AuthSettings {
   dataProvider: DataProvider
   /** Access token lifetime, in seconds. Defaults to 3600. */
   accessTokenTTL?: number
-  /** Refresh token lifetime, in days. Defaults to 14. */
-  refreshTokenTTLInDays?: number
+  /** Session lifetimes (inactivity and absolute timeouts). */
+  session?: SessionSettings
   /**
    * `iss` claim of the access tokens, checked on every request: for
    * example the URL of the API. Use a different value per environment
@@ -209,6 +239,7 @@ export interface ResolvedAuthSettings extends Required<
     AuthSettings,
     | 'cookies'
     | 'clients'
+    | 'session'
     | 'onLoginFailed'
     | 'onLoginSuccess'
     | 'onRefreshTokenReuse'
@@ -216,6 +247,7 @@ export interface ResolvedAuthSettings extends Required<
 > {
   cookies: ResolvedCookieSettings
   clients: ClientSettings | undefined
+  session: ResolvedSessionSettings
   onLoginFailed: ((event: LoginFailedEvent) => Promise<void>) | undefined
   onLoginSuccess: ((event: LoginSuccessEvent) => Promise<void>) | undefined
   onRefreshTokenReuse:
@@ -234,9 +266,18 @@ export interface TokenSubject {
   clientId?: string
 }
 
+/** Token pair issued at login or by a refresh. */
+export interface IssuedTokens extends TokenPair {
+  accessTokenExpiresAt: Date
+  refreshTokenExpiresAt: Date
+  /** End of the session, when an absolute timeout applies. */
+  sessionExpiresAt: Date | undefined
+}
+
 export interface CreatedAccessToken {
   jwtId: string
   accessToken: string
+  expiresAt: Date
 }
 
 export interface CreatedRefreshToken {

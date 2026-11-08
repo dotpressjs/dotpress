@@ -62,7 +62,7 @@ In cookie mode, tokens set as cookies are never returned in the response body, s
 | `cookies: { enabled: true }` | refresh token | `accessToken` (send it in the `Authorization` header) |
 | `cookies: { enabled: true, accessTokenInCookie: true }` | refresh token, access token | no token |
 
-Every route still returns `userId`, `expiresIn` and `expiresAt`.
+Every route still returns `userId`, `expiresIn` and `expiresAt` (access token expiration), plus `sessionExpiresAt` when the session has an absolute timeout (see [Sessions](#sessions)).
 
 `authPlugin(auth, { prefix: '/api/auth' })` changes the prefix; `{ routes: false }` keeps only the authentication middleware.
 
@@ -88,10 +88,10 @@ createRouteGroup('/admin', [requireRole('admin')]).defineRoute({
 | `keys` | — | RSA key pair: `secretKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM). Tokens are signed with RS256. |
 | `dataProvider` | — | Storage of users and refresh tokens. |
 | `accessTokenTTL` | `3600` | Access token lifetime, in seconds. |
-| `refreshTokenTTLInDays` | `14` | Refresh token lifetime, in days. |
+| `session` | `{ idleTimeout: 14 days }` | Session lifetimes, in seconds: `idleTimeout` (inactivity) and `absoluteTimeout` (none by default). See [Sessions](#sessions). |
 | `issuer` | — | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair. |
 | `audience` | `issuer` | `aud` claim (the API that accepts the tokens), checked on every request. |
-| `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId) }`: client applications (see [Clients](#clients)). |
+| `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: client applications (see [Clients](#clients)). |
 | `cookies` | disabled | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `domain`, `path` (`/`), `accessTokenName`, `refreshTokenName`, `accessTokenInCookie` (`false`). |
 | `onLoginSuccess` / `onLoginFailed` | — | Login events (user, `clientId`, IP address). |
 | `passwordHashRounds` | `10` | bcrypt cost of `hashPassword()` and of the dummy hash used for unknown users. Set it to the cost of the hashes stored in your database. |
@@ -157,6 +157,38 @@ A login fails with the same `401 INVALID_LOGIN` response, in the same time, whet
 
 - `passwordHashRounds` must match the cost of the hashes stored in your database;
 - `onLoginFailed` must do the same work whatever the `errorType` (for example, do not update the user row only on `invalid_password`).
+
+## Sessions
+
+A session starts at login and is extended by each refresh. It ends after one of two timeouts, in seconds:
+
+| Setting | Default | The session ends… |
+| --- | --- | --- |
+| `session.idleTimeout` | 14 days | when it is not refreshed during this delay (lifetime of each refresh token) |
+| `session.absoluteTimeout` | none | this delay after login, even when it is active |
+
+Without absolute timeout, an active session never ends, like on most consumer apps. Examples:
+
+```ts
+const DAY = 24 * 60 * 60
+
+session: { idleTimeout: 30 * DAY } // consumer app: never logged out while active
+session: { idleTimeout: DAY, absoluteTimeout: DAY } // backoffice: log in every day
+session: { idleTimeout: 7 * DAY, absoluteTimeout: 28 * DAY } // log in every 4 weeks
+```
+
+With an absolute timeout, the access tokens, refresh tokens and cookies never outlive the session, and responses return `sessionExpiresAt`, so that the client can warn the user. The session start is the `auth_time` claim of the access token. Adding an absolute timeout also ends the sessions opened before.
+
+Each client can have its own lifetimes (an explicit `absoluteTimeout: undefined` removes the global one):
+
+```ts
+clients: {
+  allowed: ['app', 'backoffice'],
+  sessions: { backoffice: { idleTimeout: DAY, absoluteTimeout: DAY } },
+}
+```
+
+An ended session makes `/auth/refresh` answer `401 EXPIRED_REFRESH_TOKEN`: the user must log in again.
 
 ## Refresh token rotation
 

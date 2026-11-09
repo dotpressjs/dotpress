@@ -1,7 +1,8 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // `lambda` is the AWS Lambda handler.
+  entry: ['src/index.ts', 'src/lambda.ts'],
   format: ['esm'],
   target: 'node22',
   platform: 'node',

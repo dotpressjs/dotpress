@@ -1,6 +1,6 @@
 import { runConformanceSuite } from '@dotpress/testing'
 import Fastify from 'fastify'
-import { fastifyAdapter, startApp } from './support.js'
+import { fastifyAdapter, startApp, startLambda } from './support.js'
 
 runConformanceSuite({
   name: 'Fastify 5',
@@ -21,3 +21,16 @@ runConformanceSuite({
       options
     ),
 })
+
+for (const [format, name] of [
+  ['v1', 'API Gateway REST API'],
+  ['v2', 'API Gateway HTTP API'],
+  ['alb', 'Application Load Balancer'],
+] as const) {
+  runConformanceSuite({
+    name: `Fastify 5 (AWS Lambda, ${name})`,
+    // Without response streaming.
+    bufferedResponses: true,
+    setup: async (options) => startLambda(format, options),
+  })
+}

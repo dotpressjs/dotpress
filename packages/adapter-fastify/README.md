@@ -1,6 +1,6 @@
 # @dotpress/adapter-fastify
 
-[Fastify](https://fastify.dev) adapter for [Dotpress](https://dotpress.dev). Supports Fastify 5.
+[Fastify](https://fastify.dev) adapter for [Dotpress](https://dotpress.dev), on Node.js and AWS Lambda. Supports Fastify 5.
 
 > 🚧 Dotpress V2 is under active development and not published yet.
 
@@ -54,6 +54,32 @@ const adapter = fastifyAdapter()
 await createApp({ adapter })
 const res = await adapter.native().inject('/hello')
 ```
+
+## On AWS Lambda
+
+```sh
+pnpm add @dotpress/core @dotpress/adapter-fastify fastify @fastify/aws-lambda zod
+```
+
+```ts
+import { createApp } from '@dotpress/core'
+import { fastifyAdapter } from '@dotpress/adapter-fastify'
+import { createLambdaHandler } from '@dotpress/adapter-fastify/lambda'
+
+export const handler = createLambdaHandler(() =>
+  createApp({ adapter: fastifyAdapter(), plugins: [/* ... */] })
+)
+```
+
+`createLambdaHandler()` (based on [`@fastify/aws-lambda`](https://github.com/fastify/aws-lambda-fastify) 6.1 or later, which sends the events to `inject()`) handles the events of API Gateway REST APIs (payload v1), HTTP APIs and Function URLs (payload v2), and Application Load Balancers, with or without multi-value headers. Enable the multi-value headers of the target group to receive repeated query keys and send several cookies through a load balancer.
+
+- **Lazy creation.** The factory is called at the first invocation (cold start), and the app is reused by the next invocations of the execution environment. Invocations received meanwhile wait for the same app. The handler export stays synchronous: no top-level `await`.
+- **Recoverable failures.** When the factory fails, the error is logged (`logger` option, console by default), the invocation gets the standard `500` error, and the next invocation calls the factory again.
+- **Buffered responses.** Responses are sent once complete: `stream()` works for finite streams, but Server-Sent Events (`sse()`) are not supported, and a stream that fails gets an empty `500` response rather than a truncated one. Lambda response streaming is not supported yet.
+- **Binary responses** are sent in base64: compressed responses, and every content type except text, JSON and XML by default, or as decided by the `isContentTypeBinary(contentType)` option.
+- **Query strings** are read as sent when the event has them (payload v2, load balancers): plus signs and commas keep their meaning, like on the other adapters.
+- **`ctx.req.ip`** is the source IP of API Gateway, or the last `X-Forwarded-For` entry behind a load balancer (appended by the load balancer); `127.0.0.1` when the event has no address. With the `trustProxy` option, Fastify reads `X-Forwarded-For` instead.
+- The Lambda event and context are not given to the routes: `request.awsLambda` of `@fastify/aws-lambda` needs a decoration before the instance is ready.
 
 ## License
 

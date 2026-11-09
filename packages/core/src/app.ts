@@ -5,9 +5,10 @@ import type {
   RouteInfo,
 } from './adapter.js'
 import type { Middleware, ResponseFilter } from './context.js'
+import { createCorsPolicy, type CorsOptions } from './cors.js'
 import type { NormalizedRequest } from './http.js'
 import { createConsoleLogger, type Logger } from './logger.js'
-import { createRouteMatcher } from './matcher.js'
+import { createRouteMatcher, type RouteMatcher } from './matcher.js'
 import { joinPaths, normalizeBasePath, prefixPath, routeKey } from './path.js'
 import {
   compileRoute,
@@ -65,6 +66,13 @@ export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
    * `basePath`.
    */
   publicBasePath?: string
+  /**
+   * Answers cross-origin requests (CORS) from the given origins, on every
+   * route, including error responses. Disabled by default.
+   *
+   * @example cors: { origin: ['https://app.example.com'], credentials: true }
+   */
+  cors?: CorsOptions
   /** Defaults to a `console` based logger. Pino loggers are supported. */
   logger?: Logger
   /**
@@ -341,8 +349,12 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
 
   const paths = resolveBasePaths(options)
   const logger = options.logger ?? createConsoleLogger()
+  const cors =
+    options.cors === undefined
+      ? undefined
+      : createCorsPolicy(options.cors, logger)
 
-  const compiled: { routes?: readonly RouteInfo[] } = {}
+  const compiled: { routes?: readonly RouteInfo[]; matcher?: RouteMatcher } = {}
   const getRoutes = () => {
     if (!compiled.routes) {
       throw new Error(
@@ -381,6 +393,9 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     ),
     requestHooks: [...registry.requestHooks],
     responseHooks: [...registry.responseHooks],
+    cors,
+    allowedMethods: (path: string) =>
+      compiled.matcher?.allowedMethods(path) ?? [],
   })
 
   const routers = [...(options.routers ?? [globalRouter]), ...registry.routers]
@@ -390,10 +405,8 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
 
   for (const hook of registry.initHooks) await hook()
 
-  const runtime: DotpressRuntime = createRuntime(
-    config,
-    createRouteMatcher(routes)
-  )
+  compiled.matcher = createRouteMatcher(routes)
+  const runtime: DotpressRuntime = createRuntime(config, compiled.matcher)
 
   await adapter.mount(routes, runtime)
 

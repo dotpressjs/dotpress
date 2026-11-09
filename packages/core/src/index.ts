@@ -1,4 +1,5 @@
 export { createApp, type App, type AppOptions } from './app.js'
+export type { CorsOptions, CorsOrigin } from './cors.js'
 
 export {
   DEFAULT_BODY_LIMIT,

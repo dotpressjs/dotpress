@@ -1192,6 +1192,134 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
       })
     })
 
+    describe('cors', () => {
+      const APP = 'https://app.example.com'
+      const EVIL = 'https://evil.example.org'
+
+      const corsRoutes = (router: Router) => {
+        router.defineRoute({ path: '/users', handler: () => [] })
+        router.defineRoute({
+          method: 'post',
+          path: '/users',
+          handler: () => ({ created: true }),
+        })
+        router.defineRoute({
+          path: '/private',
+          middlewares: [() => unauthorizedError()],
+          handler: () => ({ secret: true }),
+        })
+        router.defineRoute({
+          method: 'options',
+          path: '/custom',
+          handler: () => ({ custom: true }),
+        })
+        router.defineRoute({
+          path: '/export.csv',
+          handler: () => stream(['a,b\n'], { contentType: 'text/csv' }),
+        })
+      }
+
+      const preflight = (origin = APP): RequestInit => ({
+        method: 'OPTIONS',
+        headers: {
+          origin,
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'content-type, authorization',
+        },
+      })
+
+      it('answers preflight requests before the middlewares', () =>
+        withApp(
+          corsRoutes,
+          async ({ fetch }) => {
+            const res = await fetch('/users', preflight())
+            expect(res.status).toBe(204)
+            expect(res.headers.get('access-control-allow-origin')).toBe(APP)
+            expect(res.headers.get('access-control-allow-methods')).toBe(
+              'GET, HEAD, POST'
+            )
+            expect(res.headers.get('access-control-allow-headers')).toBe(
+              'content-type, authorization'
+            )
+            expect(res.headers.get('access-control-max-age')).toBe('600')
+            expect(res.headers.get('vary')).toContain('Origin')
+            expect(await res.text()).toBe('')
+
+            const private_ = await fetch('/private', preflight())
+            expect(private_.status).toBe(204)
+
+            const custom = await fetch('/custom', preflight())
+            expect(custom.status).toBe(204)
+            expect(custom.headers.get('access-control-allow-methods')).toBe(
+              'OPTIONS'
+            )
+
+            // Handled as usual.
+            const refused = await fetch('/users', preflight(EVIL))
+            expect(refused.status).toBe(405)
+            expect(
+              refused.headers.get('access-control-allow-origin')
+            ).toBeNull()
+            expect((await fetch('/missing', preflight())).status).toBe(404)
+          },
+          { cors: { origin: [APP], maxAge: 600 } }
+        ))
+
+      it('adds the CORS headers to every response, errors included', () =>
+        withApp(
+          corsRoutes,
+          async ({ fetch }) => {
+            const requests: [string, RequestInit, number][] = [
+              ['/users', {}, 200],
+              ['/private', {}, 401],
+              ['/missing', {}, 404],
+              ['/users', { method: 'DELETE' }, 405],
+              [
+                '/users',
+                {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: '{oops',
+                },
+                400,
+              ],
+              ['/export.csv', {}, 200],
+            ]
+
+            for (const [path, init, status] of requests) {
+              const res = await fetch(path, {
+                ...init,
+                headers: { ...init.headers, origin: APP },
+              })
+              expect(res.status).toBe(status)
+              expect(res.headers.get('access-control-allow-origin')).toBe(APP)
+              expect(res.headers.get('access-control-allow-credentials')).toBe(
+                'true'
+              )
+              expect(res.headers.get('access-control-expose-headers')).toBe(
+                'x-request-id'
+              )
+              expect(res.headers.get('vary')).toContain('Origin')
+              await res.arrayBuffer()
+            }
+
+            const refused = await fetch('/users', { headers: { origin: EVIL } })
+            expect(refused.status).toBe(200)
+            expect(
+              refused.headers.get('access-control-allow-origin')
+            ).toBeNull()
+            expect(refused.headers.get('vary')).toContain('Origin')
+          },
+          {
+            cors: {
+              origin: APP,
+              credentials: true,
+              exposedHeaders: ['x-request-id'],
+            },
+          }
+        ))
+    })
+
     describe('streaming', () => {
       const incremental = options.bufferedResponses ? it.skip : it
 

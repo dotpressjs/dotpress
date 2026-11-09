@@ -74,6 +74,36 @@ defineRoute({
 - **`meta.responses`** documents the other responses of a route: errors returned by the handler, or bodies that are not JSON (`{ description: 'CSV export', contentType: 'text/csv' }`). An entry is a description, or an object with a `description`, an optional `schema` and an optional `contentType`.
 - **`meta.hidden`** excludes a route from the documentation.
 
+## CORS
+
+Cross-origin requests from browsers (CORS) are disabled by default. Enable them with the list of allowed origins:
+
+```ts
+await createApp({
+  adapter,
+  cors: {
+    origin: ['https://app.example.com', /^https:\/\/[a-z]+\.example\.com$/],
+    credentials: true, // cookies, fetch(..., { credentials: 'include' })
+    exposedHeaders: ['x-request-id'],
+    maxAge: 600, // preflight cache, in seconds
+  },
+})
+```
+
+| Option | Description |
+| --- | --- |
+| `origin` | Required. `'*'` (any origin, without credentials), an origin (`'https://app.example.com'`, lowercase, without trailing slash), a regular expression, a list of origins and regular expressions, or a function `(origin, request) => boolean \| Promise<boolean>`. A failing function is logged and refuses the origin. |
+| `credentials` | Allows cookies and credentialed requests. Cannot be combined with `'*'`. Defaults to `false`. |
+| `allowedHeaders` | Request headers allowed by preflight responses. Defaults to the headers requested by the browser. |
+| `exposedHeaders` | Response headers readable by the browser, besides the CORS-safelisted ones. Defaults to none. |
+| `maxAge` | How long browsers may cache preflight responses, in seconds. |
+
+- **Preflight requests** (`OPTIONS` with `Origin` and `Access-Control-Request-Method`) from an allowed origin get a `204` response listing the methods of the routes of the path, before the middlewares (authentication) and explicit `OPTIONS` routes. From other origins or for unknown paths, they are handled as usual (`405`, `404`).
+- **Every response** of Dotpress to an allowed origin gets the CORS headers, errors included (`401`, `404`, `422`, `500`…), so that the browser can read them. Responses to other origins are sent without CORS headers: the browser blocks them. The server does not reject them, protection against cross-site requests is the job of authentication (see the cookie mode of `@dotpress/auth`).
+- `Vary: Origin` is added to every response, unless `origin` is `'*'`, so that HTTP caches do not mix up origins.
+- The CORS headers are set before the `onResponse` hooks, which see the final response.
+- Native routes of the HTTP server (Express, Fastify) are not covered. Behind API Gateway or a Lambda Function URL, configure CORS either in AWS or in Dotpress, not both: AWS answers preflight requests before the function.
+
 ## Base path
 
 To serve the app under a sub-path, for instance `https://example.com/my-app/api/users` behind a reverse proxy shared by several apps, use one of these options, depending on what the proxy forwards:

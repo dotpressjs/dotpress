@@ -1,5 +1,6 @@
 import * as z from 'zod'
 import type { CompiledRoute, RouteInfo } from './adapter.js'
+import type { CorsPolicy } from './cors.js'
 import {
   getMiddlewareSecurity,
   type Middleware,
@@ -16,6 +17,7 @@ import {
   type ValidationIssue,
 } from './errors.js'
 import type {
+  HttpMethod,
   NormalizedRequest,
   NormalizedResponse,
   ResponseHeaders,
@@ -72,6 +74,10 @@ export interface PipelineConfig {
   >
   readonly requestHooks: readonly RequestHook[]
   readonly responseHooks: readonly ResponseHook[]
+  /** `cors` option of `createApp()`. */
+  readonly cors: CorsPolicy | undefined
+  /** Methods of the routes of a path (preflight requests). */
+  readonly allowedMethods: (path: string) => readonly HttpMethod[]
 }
 
 /**
@@ -113,6 +119,26 @@ const decorateContext = (ctx: RequestContext, config: PipelineConfig) => {
     })
   }
 }
+
+/**
+ * Response to a CORS preflight request, if the request is one, from an
+ * allowed origin: answered before the routes and their middlewares.
+ */
+const corsPreflight = async (
+  config: PipelineConfig,
+  request: NormalizedRequest,
+  requestId: string
+) => {
+  const response = await config.cors?.preflight(request, config.allowedMethods)
+  return response && withRequestId(response, requestId)
+}
+
+/** Adds the CORS headers, before the response hooks. */
+const withCors = (
+  config: PipelineConfig,
+  request: NormalizedRequest,
+  response: NormalizedResponse
+) => (config.cors ? config.cors.apply(request, response) : response)
 
 /**
  * Runs the response hooks. A failing hook is logged and ignored.
@@ -620,19 +646,25 @@ export const compileRoute = (
     let requestId: string
     let logger = config.logger
     let ctx: RequestContext | undefined
-    let response: NormalizedResponse
+    let response: NormalizedResponse | undefined
 
     try {
       requestId = config.generateRequestId(request)
       logger = config.logger.child({ requestId })
-      response = await run(request, requestId, logger, (created) => {
-        ctx = created
-      })
+      response = await corsPreflight(config, request, requestId)
+      response ??= await withCors(
+        config,
+        request,
+        await run(request, requestId, logger, (created) => {
+          ctx = created
+        })
+      )
     } catch (error) {
       requestId = crypto.randomUUID()
-      response = withRequestId(
-        await handleError(error, logger, undefined),
-        requestId
+      response = await withCors(
+        config,
+        request,
+        withRequestId(await handleError(error, logger, undefined), requestId)
       )
     }
 
@@ -672,7 +704,7 @@ export const createRuntime = (
     }
   }
 
-  const finish = (
+  const finish = async (
     request: NormalizedRequest | undefined,
     requestId: string,
     response: NormalizedResponse,
@@ -681,7 +713,7 @@ export const createRuntime = (
     request
       ? applyResponseHooks(config, config.logger.child({ requestId }), {
           request,
-          response,
+          response: await withCors(config, request, response),
           requestId,
           ctx: undefined,
           route: undefined,
@@ -694,6 +726,19 @@ export const createRuntime = (
     handleNotFound: async (request: NormalizedRequest) => {
       const startedAt = performance.now()
       const requestId = requestIdFor(request)
+
+      const preflight = await corsPreflight(config, request, requestId)
+      if (preflight) {
+        return applyResponseHooks(config, config.logger.child({ requestId }), {
+          request,
+          response: preflight,
+          requestId,
+          ctx: undefined,
+          route: undefined,
+          duration: performance.now() - startedAt,
+        })
+      }
+
       const allowed = matcher.allowedMethods(request.path)
       const response =
         allowed.length > 0

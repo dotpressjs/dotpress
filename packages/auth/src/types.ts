@@ -1,4 +1,4 @@
-import type { DotpressRequest, HttpError } from '@dotpress/core'
+import type { DotpressRequest, HttpError, PluginCors } from '@dotpress/core'
 import type { RateLimitStore } from './rate-limit.js'
 
 /**
@@ -82,6 +82,9 @@ export interface CookieSettings {
    * the API origin: for example `https://app.example.com` when the app is
    * served from another subdomain. Other cross-origin requests do not use
    * the cookies (protection against cross-site request forgery).
+   *
+   * Defaults to the origins allowed by the `cors` option of the app, when
+   * it allows credentials (`authPlugin()`), else to none.
    */
   trustedOrigins?: readonly string[]
   domain?: string
@@ -404,6 +407,12 @@ export interface AuthInitOptions {
    * refresh token cookie. An auth service serves a single path.
    */
   routesPath?: string
+  /**
+   * CORS settings of the app (`api.cors`). When `cookies.trustedOrigins`
+   * is not set and CORS allows credentials, the origins allowed by CORS
+   * are trusted.
+   */
+  cors?: PluginCors
 }
 
 export interface ResolvedAuthSettings extends Required<

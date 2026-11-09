@@ -459,6 +459,71 @@ describe('cors option', () => {
     })
   })
 
+  describe('api.cors', () => {
+    const inspect = (seen: unknown[]) =>
+      definePlugin({
+        name: 'inspect',
+        setup(api) {
+          seen.push(api.cors)
+          api.addGlobalMiddleware(async ({ req }) => {
+            if (api.cors) {
+              seen.push(await api.cors.isOriginAllowed(req))
+              seen.push(await api.cors.isOriginAllowed({ ...req }))
+            }
+          })
+        },
+      })
+
+    it('is undefined when CORS is disabled', async () => {
+      const seen: unknown[] = []
+      const { inject } = await createTestApp(
+        (router) => {
+          router.defineRoute({ path: '/users', handler: () => [] })
+        },
+        { plugins: [inspect(seen)] }
+      )
+
+      await inject({ url: '/users', headers: { origin: APP } })
+      expect(seen).toEqual([undefined])
+    })
+
+    it('tells whether the origin of a request is allowed', async () => {
+      const seen: unknown[] = []
+      const checked: string[] = []
+      const { inject } = await createCorsApp(
+        {
+          origin: (origin) => {
+            checked.push(origin)
+            return origin === APP
+          },
+          credentials: true,
+        },
+        { plugins: [inspect(seen)] }
+      )
+
+      expect(seen).toEqual([
+        { credentials: true, isOriginAllowed: expect.any(Function) },
+      ])
+      seen.length = 0
+
+      await inject({ url: '/users', headers: { origin: APP } })
+      await inject({ url: '/users', headers: { origin: EVIL } })
+      await inject({ url: '/users' })
+      // A copy of ctx.req is not a request of the app.
+      expect(seen).toEqual([true, false, false, false, false, false])
+      // Once per request, for the plugin and the headers.
+      expect(checked).toEqual([APP, EVIL])
+    })
+
+    it('reports credentials: false', async () => {
+      const seen: unknown[] = []
+      await createCorsApp({ origin: '*' }, { plugins: [inspect(seen)] })
+      expect(seen).toEqual([
+        { credentials: false, isOriginAllowed: expect.any(Function) },
+      ])
+    })
+  })
+
   describe('validation', () => {
     const create = (cors: unknown) =>
       createTestApp(() => {}, { cors: cors as CorsOptions })

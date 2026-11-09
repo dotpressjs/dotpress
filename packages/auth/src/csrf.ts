@@ -20,20 +20,20 @@ const hostOf = (url: string | undefined) => {
  * `http.CrossOriginProtection`:
  *
  * - safe methods (`GET`, `HEAD`, `OPTIONS`) are allowed;
- * - an `Origin` among the trusted origins is allowed;
+ * - a trusted `Origin` is allowed;
  * - with `Sec-Fetch-Site`, only `same-origin` and `none` (typed URL,
  *   bookmark) are allowed: `same-site` covers the other subdomains;
  * - otherwise, an `Origin` is allowed when its host is the API host;
  * - a request with neither header does not come from a browser: allowed.
  */
-export const isCookieAuthenticationAllowed = (
+export const isCookieAuthenticationAllowed = async (
   req: DotpressRequest,
-  trustedOrigins: readonly string[]
-): boolean => {
+  isTrustedOrigin: (origin: string) => boolean | Promise<boolean>
+): Promise<boolean> => {
   if (SAFE_METHODS.has(req.method)) return true
 
   const origin = req.header('origin')
-  if (origin !== undefined && trustedOrigins.includes(origin)) return true
+  if (origin !== undefined && (await isTrustedOrigin(origin))) return true
 
   const site = req.header('sec-fetch-site')
   if (site !== undefined) return site === 'same-origin' || site === 'none'

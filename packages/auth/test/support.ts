@@ -141,7 +141,7 @@ export interface AuthAppOptions {
   sessionRevocation?: boolean
   plugin?: AuthPluginOptions
   /** `basePath` and `publicBasePath` of the app. */
-  app?: Pick<AppOptions, 'basePath' | 'publicBasePath'>
+  app?: Pick<AppOptions, 'basePath' | 'publicBasePath' | 'cors'>
   routes?: (router: Router) => void
 }
 

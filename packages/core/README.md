@@ -102,6 +102,7 @@ await createApp({
 - **Every response** of Dotpress to an allowed origin gets the CORS headers, errors included (`401`, `404`, `422`, `500`…), so that the browser can read them. Responses to other origins are sent without CORS headers: the browser blocks them. The server does not reject them, protection against cross-site requests is the job of authentication (see the cookie mode of `@dotpress/auth`).
 - `Vary: Origin` is added to every response, unless `origin` is `'*'`, so that HTTP caches do not mix up origins.
 - The CORS headers are set before the `onResponse` hooks, which see the final response.
+- Plugins read the settings with `api.cors` (`credentials`, and `isOriginAllowed(req)`): `@dotpress/auth` trusts the allowed origins for its protection against cross-site request forgery when `credentials` is `true`.
 - Native routes of the HTTP server (Express, Fastify) are not covered. Behind API Gateway or a Lambda Function URL, configure CORS either in AWS or in Dotpress, not both: AWS answers preflight requests before the function.
 
 ## Base path

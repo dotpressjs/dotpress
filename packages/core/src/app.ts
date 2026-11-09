@@ -5,7 +5,7 @@ import type {
   RouteInfo,
 } from './adapter.js'
 import type { Middleware, ResponseFilter } from './context.js'
-import { createCorsPolicy, type CorsOptions } from './cors.js'
+import { createCorsPolicy, type CorsOptions, type CorsPolicy } from './cors.js'
 import type { NormalizedRequest } from './http.js'
 import { createConsoleLogger, type Logger } from './logger.js'
 import { createRouteMatcher, type RouteMatcher } from './matcher.js'
@@ -22,9 +22,11 @@ import {
   type LifecycleHook,
   type Plugin,
   type PluginAPI,
+  type PluginCors,
   type RequestHook,
   type ResponseHook,
 } from './plugins.js'
+import { getRequestSource, type DotpressRequest } from './request.js'
 import { createRouter, globalRouter, type Router } from './routes.js'
 
 export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
@@ -179,9 +181,19 @@ const setupPlugins = async (
   plugins: readonly Plugin[],
   logger: Logger,
   getRoutes: () => readonly RouteInfo[],
-  paths: BasePaths
+  paths: BasePaths,
+  cors: CorsPolicy | undefined
 ): Promise<PluginRegistry & { plugins: readonly Plugin[] }> => {
   const registry = createPluginRegistry()
+  const pluginCors: PluginCors | undefined =
+    cors &&
+    Object.freeze({
+      credentials: cors.credentials,
+      isOriginAllowed: async (req: DotpressRequest) => {
+        const source = getRequestSource(req)
+        return source ? cors.isAllowed(source) : false
+      },
+    })
   const sorted = Object.freeze(sortPlugins(plugins))
   const byName = new Map(sorted.map((plugin) => [plugin.name, plugin]))
 
@@ -208,6 +220,7 @@ const setupPlugins = async (
       name: plugin.name,
       logger: logger.child({ plugin: plugin.name }),
       ...paths,
+      cors: pluginCors,
       addRoute: register(
         'addRoute',
         router.defineRoute
@@ -368,7 +381,8 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     options.plugins ?? [],
     logger,
     getRoutes,
-    paths
+    paths,
+    cors
   )
 
   const config: PipelineConfig = Object.freeze({

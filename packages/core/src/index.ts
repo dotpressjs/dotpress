@@ -104,6 +104,7 @@ export {
   type LifecycleHook,
   type Plugin,
   type PluginAPI,
+  type PluginCors,
   type PluginHooks,
   type RequestHook,
   type ResponseEvent,

@@ -1,4 +1,8 @@
-import { createRouter, unauthorizedError } from '@dotpress/core'
+import {
+  createRouter,
+  unauthorizedError,
+  type CorsOptions,
+} from '@dotpress/core'
 import { createTestApp } from '@dotpress/testing'
 import jwt from 'jsonwebtoken'
 import { describe, expect, expectTypeOf, it } from 'vitest'
@@ -342,6 +346,86 @@ describe('authPlugin()', () => {
       )
 
       expect(res.status).toBe(200)
+    })
+
+    describe('origins allowed by CORS', () => {
+      const corsSetup = async (
+        cors: CorsOptions,
+        trustedOrigins?: readonly string[]
+      ) => {
+        const app = await createAuthApp({
+          settings: {
+            cookies: {
+              enabled: true,
+              accessTokenInCookie: true,
+              ...(trustedOrigins ? { trustedOrigins } : {}),
+            },
+          },
+          app: { cors },
+          routes,
+        })
+        const { body } = await login(app.fetch)
+        const cookie = cookieHeader({
+          [ACCESS_COOKIE]: body.accessToken,
+          [REFRESH_COOKIE]: body.refreshToken,
+        })
+        const post = (path: string, origin: string) =>
+          app.fetch(path, {
+            method: 'POST',
+            headers: { cookie, origin, 'sec-fetch-site': 'same-site' },
+          })
+        const whoami = async (origin: string) =>
+          (
+            (await (await post('/whoami', origin)).json()) as {
+              user: string | null
+            }
+          ).user
+        return { whoami, post }
+      }
+
+      it('are trusted by default when CORS allows credentials', async () => {
+        const { whoami, post } = await corsSetup({
+          origin: [TRUSTED, /^https:\/\/admin\.example\.net$/],
+          credentials: true,
+        })
+
+        expect(await whoami(TRUSTED)).toBe('u1')
+        expect(await whoami('https://admin.example.net')).toBe('u1')
+        expect(await whoami('https://evil.example.com')).toBeNull()
+        expect((await post('/auth/refresh', TRUSTED)).status).toBe(200)
+        expect(
+          (await post('/auth/refresh', 'https://evil.example.com')).status
+        ).toBe(403)
+      })
+
+      it('are trusted with an origin function', async () => {
+        const { whoami } = await corsSetup({
+          origin: (origin) => origin === TRUSTED,
+          credentials: true,
+        })
+
+        expect(await whoami(TRUSTED)).toBe('u1')
+        expect(await whoami('https://evil.example.com')).toBeNull()
+      })
+
+      it('are not trusted when CORS does not allow credentials', async () => {
+        const { whoami } = await corsSetup({ origin: [TRUSTED] })
+        expect(await whoami(TRUSTED)).toBeNull()
+
+        const any = await corsSetup({ origin: '*' })
+        expect(await any.whoami(TRUSTED)).toBeNull()
+      })
+
+      it('are replaced by cookies.trustedOrigins', async () => {
+        const cors = { origin: [TRUSTED], credentials: true }
+
+        const none = await corsSetup(cors, [])
+        expect(await none.whoami(TRUSTED)).toBeNull()
+
+        const other = await corsSetup(cors, ['https://other.example.com'])
+        expect(await other.whoami(TRUSTED)).toBeNull()
+        expect(await other.whoami('https://other.example.com')).toBe('u1')
+      })
     })
 
     it('rejects invalid trusted origins', () => {

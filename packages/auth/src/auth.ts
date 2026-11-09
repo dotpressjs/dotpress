@@ -1,4 +1,8 @@
-import type { DotpressResponse } from '@dotpress/core'
+import type {
+  DotpressRequest,
+  DotpressResponse,
+  PluginCors,
+} from '@dotpress/core'
 import bcrypt from 'bcryptjs'
 import {
   CompactSign,
@@ -14,6 +18,7 @@ import {
   type JWK,
 } from 'jose'
 import { sha256, toHex } from './crypto.js'
+import { isCookieAuthenticationAllowed } from './csrf.js'
 import { memoryRateLimitStore } from './rate-limit.js'
 import type {
   AuthInitOptions,
@@ -140,6 +145,13 @@ export interface Auth {
     expiresInSeconds?: number
   ): void
   clearAuthCookies(res: DotpressResponse): void
+  /**
+   * Whether a request may be authenticated by the cookies: protection
+   * against cross-site request forgery (see `cookies.trustedOrigins`).
+   * `authPlugin()` checks it on its routes and before reading the access
+   * token cookie.
+   */
+  isCookieAuthenticationAllowed(req: DotpressRequest): Promise<boolean>
   /**
    * Hashes a password with bcrypt. Defaults to `passwordHashRounds`.
    * Throws a `RangeError` for passwords longer than 72 bytes (see
@@ -773,6 +785,15 @@ export const createAuth = (input: AuthSettings): Auth => {
     signAccessToken(sessionClaims(subject))
 
   let routesPath: string | undefined
+  let cors: PluginCors | undefined
+
+  /** Trusted origins: `cookies.trustedOrigins`, else the CORS origins. */
+  const isTrustedOrigin = (req: DotpressRequest) => (origin: string) => {
+    if (input.cookies?.trustedOrigins !== undefined || !cors?.credentials) {
+      return settings.cookies.trustedOrigins.includes(origin)
+    }
+    return cors.isOriginAllowed(req)
+  }
 
   /**
    * Sets the path of the refresh token cookie to the browser path of the
@@ -806,8 +827,12 @@ export const createAuth = (input: AuthSettings): Auth => {
   return {
     settings,
 
+    isCookieAuthenticationAllowed: (req) =>
+      isCookieAuthenticationAllowed(req, isTrustedOrigin(req)),
+
     init: async (options = {}) => {
       if (options.routesPath !== undefined) bindRoutesPath(options.routesPath)
+      if (options.cors !== undefined) cors = options.cors
       // The dummy hash is computed now: otherwise, the first login of an
       // unknown user would take longer.
       await Promise.all([getKeys(), getDummyHash()])

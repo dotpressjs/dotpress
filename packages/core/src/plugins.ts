@@ -7,6 +7,7 @@ import type {
 } from './context.js'
 import type { NormalizedRequest, NormalizedResponse } from './http.js'
 import type { Logger } from './logger.js'
+import type { DotpressRequest } from './request.js'
 import type { ErrorHook } from './pipeline.js'
 import type { RouteGroup } from './routes.js'
 
@@ -102,6 +103,17 @@ export interface PluginHooks {
  * API given to `Plugin.setup()`. Registration methods are only available
  * during `setup()`.
  */
+/** CORS settings of the app, for plugins (`api.cors`). */
+export interface PluginCors {
+  /** `credentials` option: credentialed requests (cookies) are allowed. */
+  readonly credentials: boolean
+  /**
+   * Whether the `cors` option allows the `Origin` of the request (`false`
+   * without `Origin`). The origin is checked once per request.
+   */
+  isOriginAllowed(req: DotpressRequest): Promise<boolean>
+}
+
 export interface PluginAPI {
   /** Name of the plugin being set up. */
   readonly name: string
@@ -124,6 +136,8 @@ export interface PluginAPI {
    * @example api.publicPath('/auth') // '/my-app/api/auth'
    */
   publicPath(path: string): string
+  /** CORS settings (`cors` option). Undefined when CORS is disabled. */
+  readonly cors: PluginCors | undefined
   addRoute: RouteGroup['defineRoute']
   addRouteGroup: RouteGroup['createGroup']
   /**

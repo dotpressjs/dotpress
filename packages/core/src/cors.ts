@@ -44,6 +44,10 @@ export interface CorsOptions {
 
 /** CORS policy of an app, applied by the pipeline. */
 export interface CorsPolicy {
+  /** `credentials` option. */
+  readonly credentials: boolean
+  /** Whether the `Origin` of the request is allowed. */
+  isAllowed(request: NormalizedRequest): Promise<boolean>
   /**
    * Response to a preflight request from an allowed origin, for a path
    * with routes. Undefined otherwise: the request is handled as usual.
@@ -195,8 +199,7 @@ export const createCorsPolicy = (
 
   const check = any ? () => true : toOriginCheck(origin)
 
-  /** Allowed origin of the request, if any. */
-  const allowedOrigin = async (request: NormalizedRequest) => {
+  const resolveOrigin = async (request: NormalizedRequest) => {
     const value = headerOf(request.headers, 'origin')
     if (value === undefined) return undefined
     try {
@@ -210,6 +213,22 @@ export const createCorsPolicy = (
     }
   }
 
+  // The origin is checked once per request (headers, plugins).
+  const decisions = new WeakMap<
+    NormalizedRequest,
+    Promise<string | undefined>
+  >()
+
+  /** Allowed origin of the request, if any. */
+  const allowedOrigin = (request: NormalizedRequest) => {
+    let decision = decisions.get(request)
+    if (!decision) {
+      decision = resolveOrigin(request)
+      decisions.set(request, decision)
+    }
+    return decision
+  }
+
   /** Headers of every response from an allowed origin. */
   const originHeaders = (headers: ResponseHeaders, value: string) => {
     headers['access-control-allow-origin'] = any ? '*' : value
@@ -217,6 +236,10 @@ export const createCorsPolicy = (
   }
 
   return {
+    credentials,
+
+    isAllowed: async (request) => (await allowedOrigin(request)) !== undefined,
+
     preflight: async (request, allowedMethods) => {
       if (request.method.toUpperCase() !== 'OPTIONS') return undefined
       const requested = headerOf(

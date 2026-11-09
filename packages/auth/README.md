@@ -91,7 +91,17 @@ The access token cookie lives as long as the refresh token, and not `accessToken
 The browser attaches cookies to every request, including the ones forged by another site. In cookie mode, the plugin checks the origin of the requests authenticated by a cookie, with the headers set by the browser (`Sec-Fetch-Site`, then `Origin` for older browsers), like the OWASP recommendations and Go's `http.CrossOriginProtection`. Clients need no CSRF token.
 
 - Requests from the API origin are accepted, as well as requests without these headers (non-browser clients).
-- Requests from another origin, including another subdomain of the same site, are accepted only from `cookies.trustedOrigins`:
+- Requests from another origin, including another subdomain of the same site, are accepted only from trusted origins. By default, these are the origins allowed by the [`cors` option](../core/README.md#cors) of the app when it allows credentials, which a front-end on another origin needs anyway to use the cookies:
+
+  ```ts
+  await createApp({
+    adapter,
+    cors: { origin: ['https://app.example.com'], credentials: true },
+    plugins: [authPlugin(auth)],
+  })
+  ```
+
+  `cookies.trustedOrigins` replaces them (`[]` trusts no other origin):
 
   ```ts
   cookies: { enabled: true, accessTokenInCookie: true, trustedOrigins: ['https://app.example.com'] }
@@ -100,6 +110,7 @@ The browser attaches cookies to every request, including the ones forged by anot
 - Otherwise, the access token cookie is ignored (the request is anonymous, and a warning is logged), and `/auth/refresh` and `/auth/restore` answer `403 CROSS_ORIGIN_REQUEST`.
 - `GET`, `HEAD` and `OPTIONS` requests are not checked: they must not change data.
 - Requests authenticated by the `Authorization` header are not checked: another site cannot set it.
+- `auth.isCookieAuthenticationAllowed(req)` applies the same check, for routes of the app that read the cookies themselves.
 
 For older browsers without `Sec-Fetch-Site`, the `Origin` is compared with the `Host` header: behind a proxy, forward the original `Host`, or list the origin in `trustedOrigins`.
 
@@ -135,7 +146,7 @@ The guards declare the `bearerAuth` security scheme (`AUTH_SECURITY_SCHEMES`, ex
 | `issuer`                           | —                          | **Required.** `iss` claim, checked on every request: for example the URL of the API. Use one value per environment and application, especially when they share a key pair.                                                                                                                                                                                                                                                                                                     |
 | `audience`                         | `issuer`                   | `aud` claim (the API that accepts the tokens), checked on every request.                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `clients`                          | —                          | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: client applications (see [Clients](#clients)).                                                                                                                                                                                                                                                                                                                                                        |
-| `cookies`                          | disabled                   | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (`[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`, access token cookie), `refreshTokenPath` (path of the auth routes), `accessTokenName`, `refreshTokenName` (see [Cookie names and paths](#cookie-names-and-paths)), `accessTokenInCookie` (`false`). |
+| `cookies`                          | disabled                   | Cookie mode: `enabled`, `httpOnly` (`true`), `secure` (`true`), `sameSite` (`lax`), `refreshTokenSameSite` (`strict`, or `none` when `sameSite` is `none`), `trustedOrigins` (origins allowed by `cors` with credentials, else `[]`, see [Cross-site request forgery](#cross-site-request-forgery)), `domain`, `path` (`/`, access token cookie), `refreshTokenPath` (path of the auth routes), `accessTokenName`, `refreshTokenName` (see [Cookie names and paths](#cookie-names-and-paths)), `accessTokenInCookie` (`false`). |
 | `onLoginSuccess` / `onLoginFailed` | —                          | Login events (user, `clientId`, IP address).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `loginThrottle`                    | enabled, in memory         | Brute force protection: `{ store?, limits? }`, or `false`. See [Brute force protection](#brute-force-protection).                                                                                                                                                                                                                                                                                                                                                              |
 | `beforeLogin`                      | —                          | Called before checking the password: return an error to reject the attempt.                                                                                                                                                                                                                                                                                                                                                                                                    |

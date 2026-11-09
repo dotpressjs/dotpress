@@ -99,13 +99,21 @@ export interface CreateRequestOptions {
   readonly rawBody?: boolean
 }
 
+/** Normalized request of each `ctx.req`. */
+const sources = new WeakMap<object, NormalizedRequest>()
+
+/** Normalized request from which a `ctx.req` was created. */
+export const getRequestSource = (
+  req: DotpressRequest
+): NormalizedRequest | undefined => sources.get(req)
+
 export const createRequest = (
   input: NormalizedRequest,
   options: CreateRequestOptions = {}
 ): MutableRequest => {
   const headers = normalizeHeaders(input.headers)
 
-  return {
+  const req: MutableRequest = {
     method: input.method.toUpperCase(),
     path: input.path,
     url: input.url,
@@ -120,4 +128,6 @@ export const createRequest = (
     rawBody: options.rawBody ? resolveRawBody(input) : undefined,
     header: (name) => headers[name.toLowerCase()],
   }
+  sources.set(req, input)
+  return req
 }

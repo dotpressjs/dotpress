@@ -10,7 +10,6 @@ import {
 } from '@dotpress/core'
 import { AuthError, type Auth } from './auth.js'
 import { sha256 } from './crypto.js'
-import { isCookieAuthenticationAllowed } from './csrf.js'
 import { requireAuth } from './middlewares.js'
 import type {
   IssuedTokens,
@@ -384,7 +383,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       if (!extracted) return unauthorizedError('NO_TOKENS_PROVIDED')
       if (
         extracted.mode === 'cookie' &&
-        !isCookieAuthenticationAllowed(req, cookies.trustedOrigins)
+        !(await auth.isCookieAuthenticationAllowed(req))
       ) {
         return crossOriginError()
       }
@@ -443,7 +442,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       const accessToken = req.cookies[cookies.accessTokenName]
       if (!refreshToken) return unauthorizedError('NO_REFRESH_TOKEN')
       if (!accessToken) return unauthorizedError('NO_ACCESS_TOKEN')
-      if (!isCookieAuthenticationAllowed(req, cookies.trustedOrigins)) {
+      if (!(await auth.isCookieAuthenticationAllowed(req))) {
         return crossOriginError()
       }
 
@@ -510,7 +509,7 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
         : undefined
       if (
         cookieRefreshToken &&
-        !isCookieAuthenticationAllowed(req, cookies.trustedOrigins)
+        !(await auth.isCookieAuthenticationAllowed(req))
       ) {
         return crossOriginError()
       }
@@ -561,11 +560,12 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
     async setup(api) {
       // Fails at startup on invalid keys. The refresh token cookie is only
       // sent to the auth routes: its path is their browser path.
-      await auth.init(
-        options.routes === false
+      await auth.init({
+        ...(options.routes === false
           ? {}
-          : { routesPath: api.publicPath(normalizePrefix(prefix)) }
-      )
+          : { routesPath: api.publicPath(normalizePrefix(prefix)) }),
+        ...(api.cors ? { cors: api.cors } : {}),
+      })
 
       api.decorateContext('user', () => undefined)
       api.decorateContext('auth', () => undefined)
@@ -583,7 +583,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
         // request from another origin. The request stays anonymous.
         if (
           found.source === 'cookie' &&
-          !isCookieAuthenticationAllowed(ctx.req, cookies.trustedOrigins)
+          !(await auth.isCookieAuthenticationAllowed(ctx.req))
         ) {
           ctx.logger.warn(
             { origin: ctx.req.header('origin') },

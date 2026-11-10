@@ -33,6 +33,13 @@ pnpm typecheck
 pnpm check:core  # core, openapi and the main entry of adapter-hono must stay runtime-agnostic
 ```
 
+Integration tests of the event transports run when their services are available, and are skipped otherwise:
+
+```sh
+docker run -d --rm -p 6379:6379 redis:7-alpine
+REDIS_URL=redis://localhost:6379 pnpm test
+```
+
 Every publishable change must come with a changeset (`pnpm changeset`).
 
 ## License

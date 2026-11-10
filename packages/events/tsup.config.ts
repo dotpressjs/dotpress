@@ -6,6 +6,7 @@ export default defineConfig([
       index: 'src/index.ts',
       plugin: 'src/plugin.ts',
       sqs: 'src/transports/sqs.ts',
+      bullmq: 'src/transports/bullmq.ts',
     },
     format: ['esm'],
     target: 'es2022',

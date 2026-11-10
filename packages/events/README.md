@@ -167,7 +167,9 @@ The code that emits does not change: `events.emit(recordingUploaded, …)` reach
 
 | `createSqsTransport()` | `@dotpress/events/sqs` | Amazon SQS (standard and FIFO queues), with a Lambda handler and a long-polling source |
 
-Transports for Redis (BullMQ), Cloudflare Queues, Postgres (pg-boss), Google Pub/Sub and Azure Service Bus are coming.
+| `createBullmqTransport()` | `@dotpress/events/bullmq` | Redis, through BullMQ: retries with backoff, delays, deduplication |
+
+Transports for Cloudflare Queues, Postgres (pg-boss), Google Pub/Sub and Azure Service Bus are coming.
 
 ```ts
 // Tests: emit, wait, check
@@ -286,6 +288,41 @@ resource "aws_lambda_event_source_mapping" "events" {
 ```
 
 **IAM permissions**: `sqs:SendMessage` for the code that emits; for workers, `sqs:ReceiveMessage`, `sqs:DeleteMessage` and `sqs:GetQueueAttributes` (granted by the Lambda event source mapping, or yours for a long-running worker), `sqs:ChangeMessageVisibility` with `retryDelay` or `visibilityTimeout`, and `sqs:SendMessage` on the dead-letter queue with `deadLetterQueueUrl`.
+
+## Redis (BullMQ)
+
+```sh
+pnpm add bullmq ioredis
+```
+
+```ts
+import { createBullmqSource, createBullmqTransport } from '@dotpress/events/bullmq'
+
+const connection = { host: 'localhost', port: 6379 }
+
+// The code that emits
+const transport = createBullmqTransport({ name: 'events', connection })
+const events = createEventBus({ transport, listeners })
+// On shutdown: await transport.close()
+
+// worker.ts, for startWorker() or `dotpress-events work ./worker.ts`
+export default {
+  worker: createWorker({ listeners, maxAttempts: 3 }),
+  source: createBullmqSource({ name: 'events', connection, concurrency: 5 }),
+}
+```
+
+Each message becomes a [BullMQ](https://docs.bullmq.io) job named after its listener, with the message id as job id: emitting again adds no duplicate while the job exists. `delay` has no upper limit.
+
+**Job options** (`jobOptions`, merged with the defaults): 3 `attempts`, `exponential` backoff from 1 second, completed jobs removed (`removeOnComplete: true`), failed jobs kept (`removeOnFail: false`). Set `maxAttempts` of the worker to the same number of attempts, so that `onFailure` reports the last one as `final`.
+
+**Failed jobs are the dead-letter queue**: after their last attempt, jobs stay in the failed set of the queue, with their error, where you can inspect and retry them (BullMQ API, or a dashboard such as Bull Board). Messages that can never be handled (invalid payload, unknown listener) fail at once, without retries (`UnrecoverableError`).
+
+**Source**: `concurrency` jobs at a time (1 by default). On stop, the source waits for the jobs in progress, up to `closeTimeout` (30 seconds by default); their jobs then become stalled and another worker retries them. While Redis is unreachable, BullMQ cannot close: the stop gives up waiting after `closeTimeout`, and BullMQ may keep reconnecting until the process exits.
+
+**Redis requirements** (BullMQ): Redis 6.2 or later, with `maxmemory-policy=noeviction`. Use `prefix` for the key prefix, not the `keyPrefix` of ioredis. An ioredis instance passed as `connection` to a source needs `maxRetriesPerRequest: null`. Pass `queue` instead of `name` and `connection` to reuse a `Queue` (shared connection, another BullMQ backend).
+
+BullMQ runs on Node.js and Bun.
 
 ## Workers
 

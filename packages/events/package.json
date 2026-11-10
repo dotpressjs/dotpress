@@ -32,6 +32,10 @@
     "./sqs": {
       "types": "./dist/sqs.d.ts",
       "default": "./dist/sqs.js"
+    },
+    "./bullmq": {
+      "types": "./dist/bullmq.d.ts",
+      "default": "./dist/bullmq.js"
     }
   },
   "engines": {
@@ -47,6 +51,7 @@
   "peerDependencies": {
     "@aws-sdk/client-sqs": "^3.572.0",
     "@dotpress/core": "workspace:^",
+    "bullmq": "^6.0.0",
     "zod": "^4.6.0"
   },
   "peerDependenciesMeta": {
@@ -55,12 +60,17 @@
     },
     "@dotpress/core": {
       "optional": true
+    },
+    "bullmq": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@aws-sdk/client-sqs": "^3.1164.0",
     "@dotpress/core": "workspace:*",
     "@dotpress/testing": "workspace:*",
+    "bullmq": "^6.7.2",
+    "ioredis": "^5.11.1",
     "zod": "^4.6.7"
   },
   "keywords": [
@@ -73,6 +83,8 @@
     "typescript",
     "sqs",
     "aws",
-    "lambda"
+    "lambda",
+    "bullmq",
+    "redis"
   ]
 }

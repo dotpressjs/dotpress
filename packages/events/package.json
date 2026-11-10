@@ -28,6 +28,10 @@
     "./plugin": {
       "types": "./dist/plugin.d.ts",
       "default": "./dist/plugin.js"
+    },
+    "./sqs": {
+      "types": "./dist/sqs.d.ts",
+      "default": "./dist/sqs.js"
     }
   },
   "engines": {
@@ -41,15 +45,20 @@
     "test:watch": "vitest watch"
   },
   "peerDependencies": {
+    "@aws-sdk/client-sqs": "^3.572.0",
     "@dotpress/core": "workspace:^",
     "zod": "^4.6.0"
   },
   "peerDependenciesMeta": {
+    "@aws-sdk/client-sqs": {
+      "optional": true
+    },
     "@dotpress/core": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@aws-sdk/client-sqs": "^3.1164.0",
     "@dotpress/core": "workspace:*",
     "@dotpress/testing": "workspace:*",
     "zod": "^4.6.7"
@@ -61,6 +70,9 @@
     "queue",
     "worker",
     "plugin",
-    "typescript"
+    "typescript",
+    "sqs",
+    "aws",
+    "lambda"
   ]
 }

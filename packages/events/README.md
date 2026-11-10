@@ -165,7 +165,9 @@ The code that emits does not change: `events.emit(recordingUploaded, …)` reach
 | `createSyncTransport()` | `@dotpress/events` | runs the listeners inside `emit()`, which waits for them and throws an `EventEmitError` if one fails; delays are ignored. Development, tests, apps without a queue |
 | `createMemoryTransport()` | `@dotpress/events` | in-process queue with retries (3 attempts, 100 ms then doubled; `maxAttempts`, `retryDelay`), `sent`, `drain()`, `clear()`. Development and tests; messages are lost when the process stops |
 
-Transports for SQS, Redis (BullMQ), Cloudflare Queues, Postgres (pg-boss), Google Pub/Sub and Azure Service Bus are coming.
+| `createSqsTransport()` | `@dotpress/events/sqs` | Amazon SQS (standard and FIFO queues), with a Lambda handler and a long-polling source |
+
+Transports for Redis (BullMQ), Cloudflare Queues, Postgres (pg-boss), Google Pub/Sub and Azure Service Bus are coming.
 
 ```ts
 // Tests: emit, wait, check
@@ -175,6 +177,115 @@ await signUp(events, 'ada@example.com')
 await transport.drain()
 expect(transport.sent).toMatchObject([{ event: 'user.created', listener: 'send-welcome-mail' }])
 ```
+
+## Amazon SQS
+
+```sh
+pnpm add @aws-sdk/client-sqs
+```
+
+### Sending
+
+```ts
+import { createSqsTransport } from '@dotpress/events/sqs'
+
+const events = createEventBus({
+  transport: createSqsTransport({ queueUrl: process.env.EVENTS_QUEUE_URL! }),
+  listeners,
+})
+```
+
+Messages are sent in batches of 10 (`SendMessageBatch`), with `event` and `listener` message attributes. The client is created from the environment (region, credentials), or from `clientConfig`; pass `client` to reuse yours.
+
+| Limit | Value |
+| --- | --- |
+| Message size, attributes included | 1 MiB: larger messages fail (`EventEmitError`), the others are sent |
+| `delay` | 900 seconds (15 minutes) |
+
+**FIFO queues** (URL ending with `.fifo`): messages are ordered within a message group, the listener by default (`messageGroupId: (envelope) => …` to group by entity), and deduplicated by their id for 5 minutes. They do not accept per-message delays.
+
+### Lambda workers
+
+```ts
+import { createSqsHandler } from '@dotpress/events/sqs'
+
+export const handler = createSqsHandler(
+  createWorker({ listeners: [sendWelcomeMail, geocodePractitioner], logger }),
+  {
+    deadLetterQueueUrl: process.env.EVENTS_DLQ_URL, // optional, see below
+    retryDelay: (attempt) => 30 * 2 ** (attempt - 1), // optional backoff, in seconds
+  }
+)
+```
+
+**Enable `ReportBatchItemFailures`** on the event source mapping: the handler returns the failed messages (`batchItemFailures`), so only they are retried. Without it, a failure retries the whole batch. Messages of a batch run in parallel; with a FIFO queue, in order, stopping at the first failure.
+
+### Long-running workers
+
+```ts
+import { createSqsSource } from '@dotpress/events/sqs'
+
+// worker.ts, for startWorker() or `dotpress-events work ./worker.ts`
+export default {
+  worker: createWorker({ listeners }),
+  source: createSqsSource({
+    queueUrl: process.env.EVENTS_QUEUE_URL!,
+    visibilityTimeout: 60, // extended while a listener runs
+  }),
+}
+```
+
+The source reads the queue by long polling (`waitTimeSeconds`, 20 by default; `batchSize`, 10 by default), runs the messages of a batch in parallel, and deletes the handled ones. With `visibilityTimeout`, it keeps a message invisible while its listener runs (every half timeout), so that a long listener is not delivered twice. Receive errors are logged and retried, after 1 second then up to 30 seconds. At startup, it warns when the queue has no dead-letter queue.
+
+### Retries and dead-letter queue
+
+Configure the queue in your infrastructure:
+
+- a **dead-letter queue**, with a redrive policy: `maxReceiveCount` is the number of attempts before a message moves there;
+- a **visibility timeout** of at least 6 times the timeout of the Lambda function (AWS recommendation), or longer than your slowest listener for a long-running worker;
+- for Lambda, `ReportBatchItemFailures` on the event source mapping.
+
+A failed message becomes visible again after the visibility timeout; `retryDelay(attempt)` sets another delay (`ChangeMessageVisibility`, up to 12 hours). Set `maxAttempts` on the worker to the `maxReceiveCount` of the queue: `onFailure` then reports the last attempt as `final`.
+
+**Messages that can never be handled** (invalid payload, unknown listener): with `deadLetterQueueUrl`, they are copied to the dead-letter queue at once, with `reason` and `error` attributes, and deleted from the queue. Without it, they fail until `maxReceiveCount`, like other failures.
+
+```ts
+// AWS CDK
+const dlq = new sqs.Queue(this, 'EventsDlq', { retentionPeriod: Duration.days(14) })
+const queue = new sqs.Queue(this, 'Events', {
+  visibilityTimeout: Duration.seconds(180), // 6 × the timeout of the function
+  deadLetterQueue: { queue: dlq, maxReceiveCount: 5 },
+})
+worker.addEventSource(
+  new SqsEventSource(queue, { batchSize: 10, reportBatchItemFailures: true })
+)
+```
+
+```hcl
+# Terraform
+resource "aws_sqs_queue" "events_dlq" {
+  name                      = "events-dlq"
+  message_retention_seconds = 1209600
+}
+
+resource "aws_sqs_queue" "events" {
+  name                       = "events"
+  visibility_timeout_seconds = 180
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.events_dlq.arn
+    maxReceiveCount     = 5
+  })
+}
+
+resource "aws_lambda_event_source_mapping" "events" {
+  event_source_arn        = aws_sqs_queue.events.arn
+  function_name           = aws_lambda_function.worker.arn
+  batch_size              = 10
+  function_response_types = ["ReportBatchItemFailures"]
+}
+```
+
+**IAM permissions**: `sqs:SendMessage` for the code that emits; for workers, `sqs:ReceiveMessage`, `sqs:DeleteMessage` and `sqs:GetQueueAttributes` (granted by the Lambda event source mapping, or yours for a long-running worker), `sqs:ChangeMessageVisibility` with `retryDelay` or `visibilityTimeout`, and `sqs:SendMessage` on the dead-letter queue with `deadLetterQueueUrl`.
 
 ## Workers
 

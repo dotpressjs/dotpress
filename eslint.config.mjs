@@ -12,6 +12,7 @@ const RUNTIME_AGNOSTIC_SOURCES = [
   'packages/auth/src/**/*.ts',
   'packages/openapi/src/**/*.ts',
   'packages/mailer/src/**/*.ts',
+  'packages/events/src/**/*.ts',
 ]
 
 const NODE_MESSAGE =
@@ -59,6 +60,9 @@ export default defineConfig(
       'packages/openapi/src/bin.ts',
       // nodemailer runs on Node.js only.
       'packages/mailer/src/providers/smtp.ts',
+      // Node.js-only command of @dotpress/events.
+      'packages/events/src/cli.ts',
+      'packages/events/src/bin.ts',
     ],
     rules: {
       'no-restricted-imports': [

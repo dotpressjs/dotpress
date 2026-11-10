@@ -309,6 +309,18 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  packages/events:
+    devDependencies:
+      '@dotpress/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dotpress/testing':
+        specifier: workspace:*
+        version: link:../testing
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   packages/mailer:
     dependencies:
       html-to-text:

@@ -16,6 +16,7 @@ A lightweight, decorator-free TypeScript framework for building end-to-end typed
 | [`@dotpress/auth`](packages/auth) | JWT authentication plugin | 2.0 alpha |
 | [`@dotpress/openapi`](packages/openapi) | OpenAPI 3.1 documents and Scalar API reference | 2.0 alpha |
 | [`@dotpress/mailer`](packages/mailer) | Typed, multilingual email templates (MJML or HTML) | 2.0 alpha |
+| [`@dotpress/events`](packages/events) | Typed events and listeners, run by workers through interchangeable transports | 2.0 alpha |
 
 The V1 framework (`dotpress` on npm) is frozen in 1.x.
 

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Runtime-agnostic: Web-standard APIs only.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src"],
+  // Node.js-only command (tsconfig.cli.json).
+  "exclude": ["src/cli.ts", "src/bin.ts"]
+}

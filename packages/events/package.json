@@ -1,0 +1,66 @@
+{
+  "name": "@dotpress/events",
+  "version": "2.0.0-alpha.0",
+  "description": "Typed events with listeners, delivered by interchangeable transports (SQS, Redis, Cloudflare Queues, Postgres, Pub/Sub, Service Bus)",
+  "author": "Renaud Guyon",
+  "license": "MIT",
+  "homepage": "https://dotpress.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/renoguyon/dotpress",
+    "directory": "packages/events"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "dotpress-events": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "test:watch": "vitest watch"
+  },
+  "peerDependencies": {
+    "@dotpress/core": "workspace:^",
+    "zod": "^4.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@dotpress/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@dotpress/core": "workspace:*",
+    "@dotpress/testing": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "keywords": [
+    "dotpress",
+    "events",
+    "listeners",
+    "queue",
+    "worker",
+    "plugin",
+    "typescript"
+  ]
+}

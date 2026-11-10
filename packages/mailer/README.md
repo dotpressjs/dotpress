@@ -236,17 +236,16 @@ Each provider translates them to its own API. A provider without tags or metadat
 | Provider | `tags` | `metadata` |
 | --- | --- | --- |
 | SendGrid | `categories` | `custom_args` |
+| Postmark | `Tag` (a single tag) | `Metadata` |
+| Brevo | `tags` | ignored |
+| Mailjet | ignored | `EventPayload` (JSON) |
 | Amazon SES | `EmailTags`, with the value `true` | `EmailTags` |
 | Resend | `tags`, with the value `true` | `tags` |
-| SMTP, nodemailer, console (printed) | ignored | ignored |
+| SMTP, nodemailer | ignored | ignored |
+| console | printed | printed |
 | memory | kept in the message | kept in the message |
 
-Limits of the provider are checked before calling its API, and throw a `MailMessageError`:
-
-| Provider | Limits |
-| --- | --- |
-| SendGrid | 10 tags, of 255 characters at most; metadata of 10,000 bytes at most (JSON) |
-| Amazon SES, Resend | metadata values of 1 to 256 letters, digits, `_` or `-` (use identifiers, not email addresses or dates); a name cannot be both a tag and a metadata key, since both end up in the same list |
+The limits of each provider (number of tags, characters of the values…) are listed in [Limits of the providers](#limits-of-the-providers).
 
 ## Providers
 
@@ -259,8 +258,13 @@ Limits of the provider are checked before calling its API, and throw a `MailMess
 | `createSesProvider()` | `@dotpress/mailer/ses` | Amazon SES (API v2), through the AWS SDK |
 | `createResendProvider()` | `@dotpress/mailer/resend` | Resend, through its SDK |
 | `createSendgridProvider()` | `@dotpress/mailer/sendgrid` | Twilio SendGrid (Mail Send API v3), through `fetch` |
+| `createPostmarkProvider()` | `@dotpress/mailer/postmark` | Postmark (Email API), through `fetch` |
+| `createBrevoProvider()` | `@dotpress/mailer/brevo` | Brevo (transactional email API v3), through `fetch` |
+| `createMailjetProvider()` | `@dotpress/mailer/mailjet` | Mailjet (Send API v3.1), through `fetch` |
 
-Every provider sends the sender and reply-to addresses, multiple `to`, `cc` and `bcc` recipients, the HTML and text versions, attachments (inline ones included) and additional headers.
+Every provider sends the sender and reply-to addresses, multiple `to`, `cc` and `bcc` recipients, the HTML and text versions, attachments (inline ones included) and additional headers, within the limits of its API: a message that the API cannot accept throws a `MailMessageError` before any request (see [Limits of the providers](#limits-of-the-providers)).
+
+The providers based on an HTTP API (SendGrid, Postmark, Brevo, Mailjet) have no dependency, and take two common options: `baseUrl` (region, proxy, tests) and `fetch` (replaces the global `fetch`). Their errors are thrown as `MailSendError`, with the HTTP `status` and the message of the API.
 
 The console provider prints the text version only with `{ body: true }`: messages often contain secrets (reset links, login codes). Never use it as a fallback when the configuration of the real provider is missing: messages would be lost silently.
 
@@ -352,7 +356,55 @@ const provider = createSendgridProvider({
 
 The provider calls the [Mail Send API](https://www.twilio.com/docs/sendgrid/api-reference/mail-send/mail-send) (v3) with `fetch`: no SDK to install. The message ID is read from the `X-Message-Id` response header, when present. API errors are thrown as `MailSendError`, with the HTTP `status` and the messages of the response (`400 Invalid from email address`). A `fetch` option replaces the global `fetch` (proxy, tests).
 
-SendGrid limits: 1,000 recipients and 30 MB per message.
+### Postmark
+
+```ts
+import { createPostmarkProvider } from '@dotpress/mailer/postmark'
+
+const provider = createPostmarkProvider({
+  serverToken: process.env.POSTMARK_SERVER_TOKEN!, // POSTMARK_API_TEST: test mode
+  messageStream: 'outbound', // optional, the transactional stream by default
+})
+```
+
+The provider calls the [Email API](https://postmarkapp.com/developer/api/email-api). The message ID is the `MessageID` of the response. API errors include the Postmark `ErrorCode` (`422 Invalid email request (ErrorCode 300)`).
+
+### Brevo
+
+```ts
+import { createBrevoProvider } from '@dotpress/mailer/brevo'
+
+const provider = createBrevoProvider({ apiKey: process.env.BREVO_API_KEY! })
+```
+
+The provider calls the [transactional email API](https://developers.brevo.com/reference/sendtransacemail). The message ID is the `messageId` of the response. API errors include the Brevo `code` (`400 invalid_parameter: …`).
+
+### Mailjet
+
+```ts
+import { createMailjetProvider } from '@dotpress/mailer/mailjet'
+
+const provider = createMailjetProvider({
+  apiKey: process.env.MAILJET_API_KEY!,
+  apiSecret: process.env.MAILJET_API_SECRET!,
+})
+```
+
+The provider calls the [Send API v3.1](https://dev.mailjet.com/email/reference/send-emails/). Mailjet returns an identifier per recipient: the message ID is the `MessageUUID` of the first `to` recipient (the numeric `MessageID` when the UUID is missing). Metadata is sent as `EventPayload` (JSON), returned by the event webhooks. A message rejected in a successful response is reported as an error too.
+
+### Limits of the providers
+
+Checked before calling the API; they throw a `MailMessageError`.
+
+| Provider | Limits |
+| --- | --- |
+| SendGrid | 10 tags of 255 characters at most; metadata of 10,000 bytes at most (JSON); requests of 30 MB at most |
+| Amazon SES, Resend | metadata values of 1 to 256 letters, digits, `_` or `-` (use identifiers, not email addresses or dates); a name cannot be both a tag and a metadata key, since both end up in the same list |
+| Postmark | 50 recipients (`to`, `cc` and `bcc`); addresses of 254 characters and a sender of 255 characters at most; subjects of 2,000 characters at most; a single tag; no executable attachments (`.exe`, `.bat`, `.msi`…); requests of 10 MB at most |
+| Brevo | a single reply-to address; no inline attachments; names of 70 characters at most; attachment extensions accepted by Brevo only (`pdf`, `png`, `docx`, `zip`…) |
+| Mailjet | a single reply-to address; requests of 15 MB at most |
+
+Request sizes include the attachments, encoded in base64 (a third larger than the files).
 
 ### Custom providers
 

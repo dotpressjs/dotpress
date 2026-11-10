@@ -161,6 +161,14 @@ describe('SendGrid provider', () => {
       { metadata: { a: 'é'.repeat(4_997) } },
       'SendGrid accepts at most 10000 bytes of metadata (custom_args), got 10002.',
     ],
+    [
+      {
+        attachments: [
+          { filename: 'large.pdf', content: new Uint8Array(22_600_000) },
+        ],
+      },
+      'SendGrid accepts requests of at most 30 MB, got 30.1 MB (attachments are base64-encoded).',
+    ],
   ])('rejects %#', async (extra, text) => {
     const fetchMock = mockFetch()
     await expect(

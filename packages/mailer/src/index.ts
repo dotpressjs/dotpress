@@ -30,6 +30,7 @@ export type {
 export { createConsoleProvider } from './providers/console.js'
 export type { ConsoleProviderOptions } from './providers/console.js'
 export { createMemoryProvider } from './providers/memory.js'
+export type { HttpProviderOptions } from './providers/http.js'
 export type { MemoryProvider } from './providers/memory.js'
 export { renderMail } from './render.js'
 export type { DataOption, RenderedMail, RenderMailOptions } from './render.js'

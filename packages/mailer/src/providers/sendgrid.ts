@@ -1,10 +1,18 @@
 import { base64, utf8 } from '../encoding.js'
-import { MailMessageError, MailSendError } from '../errors.js'
+import { MailMessageError } from '../errors.js'
 import type { MailProvider } from '../mailer.js'
-import { checkKeys, type Address, type MailMessage } from '../message.js'
+import type { Address, MailMessage } from '../message.js'
+import {
+  checkHttpOptions,
+  jsonBody,
+  readJson,
+  responseError,
+  stringOf,
+  type HttpProviderOptions,
+} from './http.js'
 
 /** Options of `createSendgridProvider()`. */
-export interface SendgridProviderOptions {
+export interface SendgridProviderOptions extends HttpProviderOptions {
   /** API key, with the Mail Send permission. */
   apiKey: string
   /**
@@ -12,11 +20,8 @@ export interface SendgridProviderOptions {
    * `https://api.eu.sendgrid.com` for EU regional subusers.
    */
   baseUrl?: string | undefined
-  /** `fetch` implementation. Defaults to the global `fetch`. */
-  fetch?: typeof fetch | undefined
 }
 
-const OPTIONS = new Set(['apiKey', 'baseUrl', 'fetch'])
 const DEFAULT_BASE_URL = 'https://api.sendgrid.com'
 
 interface SendgridAddress {
@@ -30,6 +35,7 @@ const toAddress = ({ name, address }: Address): SendgridAddress =>
 const MAX_CATEGORIES = 10
 const MAX_CATEGORY_LENGTH = 255
 const MAX_CUSTOM_ARGS_BYTES = 10_000
+const MAX_REQUEST_BYTES = 30_000_000
 
 /** Limits of the API on categories (tags) and custom_args (metadata). */
 const checkTags = ({ tags, metadata }: MailMessage) => {
@@ -102,21 +108,14 @@ const toBody = (message: MailMessage) => {
   }
 }
 
-/** Error messages of an API response, if any. */
-const errorDetails = async (response: Response) => {
-  const body = await response.text().catch(() => '')
-  try {
-    const { errors } = JSON.parse(body) as { errors?: unknown }
-    if (Array.isArray(errors)) {
-      const messages = errors
-        .map((error) => (error as { message?: unknown } | null)?.message)
-        .filter((message) => typeof message === 'string' && message !== '')
-      if (messages.length > 0) return messages.join('; ')
-    }
-  } catch {
-    // Not JSON: the status text is used.
-  }
-  return response.statusText
+/** Error messages of an API response (`errors[].message`), if any. */
+const errorDetail = (body: unknown) => {
+  const { errors } = (body ?? {}) as { errors?: unknown }
+  if (!Array.isArray(errors)) return undefined
+  const messages = errors
+    .map((error) => stringOf(error, 'message'))
+    .filter((message) => message !== undefined)
+  return messages.length > 0 ? messages.join('; ') : undefined
 }
 
 /**
@@ -130,46 +129,32 @@ const errorDetails = async (response: Response) => {
 export const createSendgridProvider = (
   options: SendgridProviderOptions
 ): MailProvider => {
-  const {
-    apiKey,
-    baseUrl = DEFAULT_BASE_URL,
-    fetch: fetchFn = globalThis.fetch,
-  } = checkKeys(
+  const { values, baseUrl, fetch } = checkHttpOptions(
     'createSendgridProvider()',
     options,
-    OPTIONS
-  ) as Partial<SendgridProviderOptions>
-  if (typeof apiKey !== 'string' || apiKey === '') {
-    throw new TypeError(
-      'createSendgridProvider(): apiKey must be a non-empty string.'
-    )
-  }
-  if (typeof baseUrl !== 'string' || !/^https?:\/\/[^/]/.test(baseUrl)) {
-    throw new TypeError(
-      'createSendgridProvider(): baseUrl must be an http(s) URL.'
-    )
-  }
-  if (typeof fetchFn !== 'function') {
-    throw new TypeError('createSendgridProvider(): fetch must be a function.')
-  }
-  const url = `${baseUrl.replace(/\/+$/, '')}/v3/mail/send`
+    ['apiKey'],
+    DEFAULT_BASE_URL
+  )
+  const { apiKey } = values
+  const url = `${baseUrl}/v3/mail/send`
 
   return {
     name: 'sendgrid',
     send: async (message) => {
-      const response = await fetchFn(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify(toBody(message)),
+        // 30 MB per message, attachments included.
+        body: jsonBody('SendGrid', toBody(message), MAX_REQUEST_BYTES),
       })
       if (!response.ok) {
-        throw new MailSendError(
+        throw responseError(
           'sendgrid',
-          `${response.status} ${await errorDetails(response)}`.trim(),
-          { status: response.status }
+          response,
+          errorDetail(await readJson(response))
         )
       }
       // 202 Accepted, without body.

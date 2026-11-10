@@ -41,6 +41,18 @@
     "./sendgrid": {
       "types": "./dist/sendgrid.d.ts",
       "default": "./dist/sendgrid.js"
+    },
+    "./postmark": {
+      "types": "./dist/postmark.d.ts",
+      "default": "./dist/postmark.js"
+    },
+    "./brevo": {
+      "types": "./dist/brevo.d.ts",
+      "default": "./dist/brevo.js"
+    },
+    "./mailjet": {
+      "types": "./dist/mailjet.d.ts",
+      "default": "./dist/mailjet.js"
     }
   },
   "engines": {
@@ -109,6 +121,9 @@
     "ses",
     "aws",
     "resend",
-    "sendgrid"
+    "sendgrid",
+    "postmark",
+    "brevo",
+    "mailjet"
   ]
 }

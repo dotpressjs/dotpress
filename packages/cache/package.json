@@ -33,6 +33,9 @@
     "test": "vitest run",
     "test:watch": "vitest watch"
   },
+  "devDependencies": {
+    "zod": "^4.6.7"
+  },
   "keywords": [
     "dotpress",
     "cache",

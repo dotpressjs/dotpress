@@ -6,6 +6,8 @@ export default defineConfig({
     plugin: 'src/plugin.ts',
     smtp: 'src/providers/smtp.ts',
     ses: 'src/providers/ses.ts',
+    resend: 'src/providers/resend.ts',
+    sendgrid: 'src/providers/sendgrid.ts',
   },
   format: ['esm'],
   target: 'es2022',

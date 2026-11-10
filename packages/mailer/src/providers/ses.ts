@@ -5,6 +5,7 @@ import {
   type SendEmailCommandOutput,
   type SESv2ClientConfig,
 } from '@aws-sdk/client-sesv2'
+import { base64, utf8 } from '../encoding.js'
 import { MailSendError } from '../errors.js'
 import type { MailProvider } from '../mailer.js'
 import {
@@ -32,13 +33,6 @@ export interface SesProviderOptions {
 const OPTIONS = new Set(['client', 'clientConfig', 'configurationSetName'])
 
 const UTF8 = 'UTF-8'
-const encoder = new TextEncoder()
-
-const base64 = (bytes: Uint8Array) => {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
 
 /**
  * Address for SES: a display name with non-ASCII characters is encoded
@@ -46,7 +40,7 @@ const base64 = (bytes: Uint8Array) => {
  */
 const toSesAddress = (address: Address) =>
   address.name !== undefined && /[^\x20-\x7e]/.test(address.name)
-    ? `=?UTF-8?B?${base64(encoder.encode(address.name))}?= <${address.address}>`
+    ? `=?UTF-8?B?${base64(address.name)}?= <${address.address}>`
     : formatAddress(address)
 
 /** `SendEmail` input of a message (simple content). */
@@ -77,8 +71,7 @@ const toSendEmailInput = (
       Attachments: message.attachments.map(
         ({ filename, content, contentType, contentId }) => ({
           FileName: filename,
-          RawContent:
-            typeof content === 'string' ? encoder.encode(content) : content,
+          RawContent: typeof content === 'string' ? utf8(content) : content,
           ...(contentType === undefined ? {} : { ContentType: contentType }),
           ...(contentId === undefined
             ? { ContentDisposition: 'ATTACHMENT' as const }

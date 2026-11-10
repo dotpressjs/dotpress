@@ -33,6 +33,14 @@
     "./ses": {
       "types": "./dist/ses.d.ts",
       "default": "./dist/ses.js"
+    },
+    "./resend": {
+      "types": "./dist/resend.d.ts",
+      "default": "./dist/resend.js"
+    },
+    "./sendgrid": {
+      "types": "./dist/sendgrid.d.ts",
+      "default": "./dist/sendgrid.js"
     }
   },
   "engines": {
@@ -50,6 +58,7 @@
     "@dotpress/core": "workspace:^",
     "mjml": "^5.0.0",
     "nodemailer": "^10.0.0",
+    "resend": "^6.0.0",
     "zod": "^4.6.0"
   },
   "peerDependenciesMeta": {
@@ -63,6 +72,9 @@
       "optional": true
     },
     "nodemailer": {
+      "optional": true
+    },
+    "resend": {
       "optional": true
     }
   },
@@ -79,6 +91,7 @@
     "@types/mustache": "^4.2.6",
     "mjml": "^5.4.1",
     "nodemailer": "^10.4.0",
+    "resend": "^6.37.0",
     "smtp-server": "^3.21.3",
     "zod": "^4.6.7"
   },
@@ -94,6 +107,8 @@
     "smtp",
     "nodemailer",
     "ses",
-    "aws"
+    "aws",
+    "resend",
+    "sendgrid"
   ]
 }

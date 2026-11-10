@@ -222,6 +222,10 @@ await mailer.sendMessage({ to, subject: 'Export ready', html: '<p>…</p>' })
 | `createSmtpProvider()` | `@dotpress/mailer/smtp` | any SMTP server, through nodemailer |
 | `createNodemailerProvider()` | `@dotpress/mailer/smtp` | any nodemailer transporter (sendmail, stream…) |
 | `createSesProvider()` | `@dotpress/mailer/ses` | Amazon SES (API v2), through the AWS SDK |
+| `createResendProvider()` | `@dotpress/mailer/resend` | Resend, through its SDK |
+| `createSendgridProvider()` | `@dotpress/mailer/sendgrid` | Twilio SendGrid (Mail Send API v3), through `fetch` |
+
+Every provider sends the sender and reply-to addresses, multiple `to`, `cc` and `bcc` recipients, the HTML and text versions, attachments (inline ones included) and additional headers.
 
 The console provider prints the text version only with `{ body: true }`: messages often contain secrets (reset links, login codes). Never use it as a fallback when the configuration of the real provider is missing: messages would be lost silently.
 
@@ -284,6 +288,36 @@ const provider = createSesProvider({
 Messages are sent with the `SendEmail` operation of the SES API v2 (simple content: subject, HTML and text versions, headers and attachments; `@aws-sdk/client-sesv2` 3.782 or later). Display names with non-ASCII characters are encoded as SES requires. SES errors are thrown as `MailSendError`, with the HTTP `status` and the error name (`MessageRejected: Email address is not verified.`).
 
 On AWS Lambda, the Node.js runtimes include the AWS SDK: it does not need to be bundled, as long as the version of the runtime is 3.782 or later.
+
+### Resend
+
+```sh
+pnpm add resend
+```
+
+```ts
+import { createResendProvider } from '@dotpress/mailer/resend'
+
+const provider = createResendProvider({ apiKey: process.env.RESEND_API_KEY })
+// or createResendProvider({ client: existingResendClient })
+```
+
+Without `apiKey`, the SDK reads the `RESEND_API_KEY` environment variable. Resend errors are thrown as `MailSendError`, with the HTTP `status` and the error name (`validation_error: …`).
+
+### SendGrid
+
+```ts
+import { createSendgridProvider } from '@dotpress/mailer/sendgrid'
+
+const provider = createSendgridProvider({
+  apiKey: process.env.SENDGRID_API_KEY!,
+  // baseUrl: 'https://api.eu.sendgrid.com', // EU regional subusers
+})
+```
+
+The provider calls the [Mail Send API](https://www.twilio.com/docs/sendgrid/api-reference/mail-send/mail-send) (v3) with `fetch`: no SDK to install. The message ID is read from the `X-Message-Id` response header, when present. API errors are thrown as `MailSendError`, with the HTTP `status` and the messages of the response (`400 Invalid from email address`). A `fetch` option replaces the global `fetch` (proxy, tests).
+
+SendGrid limits: 1,000 recipients and 30 MB per message.
 
 ### Custom providers
 

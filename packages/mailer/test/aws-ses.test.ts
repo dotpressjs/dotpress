@@ -8,7 +8,7 @@ import {
   MailSendError,
   type MessageOptions,
 } from '../src/index.js'
-import { createSesProvider, type SesClient } from '../src/providers/ses.js'
+import { createSesProvider, type SesClient } from '../src/providers/aws-ses.js'
 
 const message: MessageOptions = {
   to: ['Ada Lovelace <ada@example.com>', 'grace@example.com'],
@@ -56,7 +56,7 @@ describe('SES provider', () => {
       client,
       configurationSetName: 'transactional',
     })
-    expect(provider.name).toBe('ses')
+    expect(provider.name).toBe('aws-ses')
 
     const result = await mailerWith(provider).sendMessage(message)
     expect(result).toEqual({ messageId: 'ses-1' })
@@ -183,8 +183,8 @@ describe('SES provider', () => {
     expect(error).toBeInstanceOf(MailSendError)
     expect(error).toMatchObject({
       message:
-        'Mail not sent by the ses provider: MessageRejected: Email address is not verified.',
-      provider: 'ses',
+        'Mail not sent by the aws-ses provider: MessageRejected: Email address is not verified.',
+      provider: 'aws-ses',
       status: 400,
       cause: failure,
     })
@@ -206,7 +206,7 @@ describe('SES provider', () => {
       .sendMessage({ to: 'a@example.com', subject: 'Hi', text: 'Hi' })
       .catch((e: unknown) => e)
     expect(error).toMatchObject({
-      message: `Mail not sent by the ses provider: ${text}`,
+      message: `Mail not sent by the aws-ses provider: ${text}`,
       status: undefined,
     })
   })
@@ -361,14 +361,14 @@ describe('SES provider with the AWS SDK client', () => {
     expect(error).toBeInstanceOf(MailSendError)
     expect(error).toMatchObject({
       message:
-        'Mail not sent by the ses provider: MessageRejected: Email address is not verified.',
+        'Mail not sent by the aws-ses provider: MessageRejected: Email address is not verified.',
       status: 400,
     })
   })
 
   it('creates a client from the environment by default', () => {
     const provider = createSesProvider()
-    expect(provider.name).toBe('ses')
+    expect(provider.name).toBe('aws-ses')
     expect(new SESv2Client({})).toBeInstanceOf(SESv2Client)
   })
 })

@@ -234,7 +234,7 @@ export const createSqsTransport = (options: SqsTransportOptions): Transport => {
     ((envelope: Envelope) => envelope.listener)
 
   return {
-    kind: 'sqs',
+    kind: 'aws-sqs',
     send: async (envelopes, { delay }) => {
       if (delay !== undefined && delay > MAX_DELAY_SECONDS) {
         throw new RangeError(
@@ -556,7 +556,7 @@ export const createSqsSource = (options: SqsSourceOptions): Source => {
   const { client } = failure
 
   return {
-    kind: 'sqs',
+    kind: 'aws-sqs',
     consume: async (worker, { signal, logger }) => {
       const context = {
         ...failure,

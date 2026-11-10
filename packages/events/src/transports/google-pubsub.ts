@@ -249,7 +249,7 @@ export const createPubSubTransport = (
   const publish = publisherOf(label, values)
 
   return {
-    kind: 'pubsub',
+    kind: 'google-pubsub',
     send: async (envelopes, { delay }) => {
       if (delay) {
         throw new RangeError(
@@ -555,7 +555,7 @@ export const createPubSubPullSource = (
   }
 
   return {
-    kind: 'pubsub',
+    kind: 'google-pubsub',
     consume: async (worker, { signal, logger }) => {
       const pubsub =
         (client as PubSub | undefined) ??

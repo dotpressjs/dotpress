@@ -14,8 +14,8 @@ import {
   createCloudflareQueueTransport,
   decodePulledBody,
   type CloudflareQueueMessage,
-} from '../src/transports/cloudflare.js'
-import { startCloudflareServer } from './cloudflare-server.js'
+} from '../src/transports/cloudflare-queues.js'
+import { startCloudflareServer } from './cloudflare-queues-server.js'
 import { createLogger, envelopeOf, practitionerCreated } from './support.js'
 
 const listenerOf = (

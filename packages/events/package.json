@@ -29,25 +29,29 @@
       "types": "./dist/plugin.d.ts",
       "default": "./dist/plugin.js"
     },
-    "./sqs": {
-      "types": "./dist/sqs.d.ts",
-      "default": "./dist/sqs.js"
+    "./aws-sqs": {
+      "types": "./dist/aws-sqs.d.ts",
+      "default": "./dist/aws-sqs.js"
     },
     "./bullmq": {
       "types": "./dist/bullmq.d.ts",
       "default": "./dist/bullmq.js"
     },
-    "./cloudflare": {
-      "types": "./dist/cloudflare.d.ts",
-      "default": "./dist/cloudflare.js"
+    "./cloudflare-queues": {
+      "types": "./dist/cloudflare-queues.d.ts",
+      "default": "./dist/cloudflare-queues.js"
     },
     "./pg-boss": {
       "types": "./dist/pg-boss.d.ts",
       "default": "./dist/pg-boss.js"
     },
-    "./pubsub": {
-      "types": "./dist/pubsub.d.ts",
-      "default": "./dist/pubsub.js"
+    "./google-pubsub": {
+      "types": "./dist/google-pubsub.d.ts",
+      "default": "./dist/google-pubsub.js"
+    },
+    "./azure-service-bus": {
+      "types": "./dist/azure-service-bus.d.ts",
+      "default": "./dist/azure-service-bus.js"
     }
   },
   "engines": {
@@ -62,6 +66,7 @@
   },
   "peerDependencies": {
     "@aws-sdk/client-sqs": "^3.572.0",
+    "@azure/service-bus": "^7.9.0",
     "@dotpress/core": "workspace:^",
     "@google-cloud/pubsub": "^6.0.0",
     "bullmq": "^6.0.0",
@@ -72,6 +77,9 @@
   },
   "peerDependenciesMeta": {
     "@aws-sdk/client-sqs": {
+      "optional": true
+    },
+    "@azure/service-bus": {
       "optional": true
     },
     "@dotpress/core": {
@@ -95,6 +103,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-sqs": "^3.1164.0",
+    "@azure/service-bus": "~7.10.0",
     "@dotpress/core": "workspace:*",
     "@dotpress/testing": "workspace:*",
     "@google-cloud/pubsub": "~6.3.2",
@@ -123,6 +132,8 @@
     "postgres",
     "pg-boss",
     "pubsub",
-    "gcp"
+    "gcp",
+    "azure",
+    "service-bus"
   ]
 }

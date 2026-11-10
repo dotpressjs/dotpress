@@ -164,13 +164,12 @@ The code that emits does not change: `events.emit(recordingUploaded, …)` reach
 | --- | --- | --- |
 | `createSyncTransport()` | `@dotpress/events` | runs the listeners inside `emit()`, which waits for them and throws an `EventEmitError` if one fails; delays are ignored. Development, tests, apps without a queue |
 | `createMemoryTransport()` | `@dotpress/events` | in-process queue with retries (3 attempts, 100 ms then doubled; `maxAttempts`, `retryDelay`), `sent`, `drain()`, `clear()`. Development and tests; messages are lost when the process stops |
-| `createSqsTransport()` | `@dotpress/events/sqs` | Amazon SQS (standard and FIFO queues), with a Lambda handler and a long-polling source |
+| `createSqsTransport()` | `@dotpress/events/aws-sqs` | Amazon SQS (standard and FIFO queues), with a Lambda handler and a long-polling source |
 | `createBullmqTransport()` | `@dotpress/events/bullmq` | Redis, through BullMQ: retries with backoff, delays, deduplication |
-| `createCloudflareQueueTransport()` | `@dotpress/events/cloudflare` | Cloudflare Queues, from a Worker (binding) or from anywhere (REST API), with a `queue()` handler and an HTTP pull source |
+| `createCloudflareQueueTransport()` | `@dotpress/events/cloudflare-queues` | Cloudflare Queues, from a Worker (binding) or from anywhere (REST API), with a `queue()` handler and an HTTP pull source |
 | `createPgBossTransport()` | `@dotpress/events/pg-boss` | Postgres, through pg-boss: no other infrastructure than your database |
-| `createPubSubTransport()` | `@dotpress/events/pubsub` | Google Cloud Pub/Sub, over the REST API (any runtime), with a push endpoint and a pull source |
-
-A transport for Azure Service Bus is coming.
+| `createPubSubTransport()` | `@dotpress/events/google-pubsub` | Google Cloud Pub/Sub, over the REST API (any runtime), with a push endpoint and a pull source |
+| `createServiceBusTransport()` | `@dotpress/events/azure-service-bus` | Azure Service Bus queues, with a long-running source and an Azure Functions handler |
 
 ```ts
 // Tests: emit, wait, check
@@ -190,7 +189,7 @@ pnpm add @aws-sdk/client-sqs
 ### Sending
 
 ```ts
-import { createSqsTransport } from '@dotpress/events/sqs'
+import { createSqsTransport } from '@dotpress/events/aws-sqs'
 
 const events = createEventBus({
   transport: createSqsTransport({ queueUrl: process.env.EVENTS_QUEUE_URL! }),
@@ -210,7 +209,7 @@ Messages are sent in batches of 10 (`SendMessageBatch`), with `event` and `liste
 ### Lambda workers
 
 ```ts
-import { createSqsHandler } from '@dotpress/events/sqs'
+import { createSqsHandler } from '@dotpress/events/aws-sqs'
 
 export const handler = createSqsHandler(
   createWorker({ listeners: [sendWelcomeMail, geocodePractitioner], logger }),
@@ -226,7 +225,7 @@ export const handler = createSqsHandler(
 ### Long-running workers
 
 ```ts
-import { createSqsSource } from '@dotpress/events/sqs'
+import { createSqsSource } from '@dotpress/events/aws-sqs'
 
 // worker.ts, for startWorker() or `dotpress-events work ./worker.ts`
 export default {
@@ -349,7 +348,7 @@ No dependency: the transport uses the queue binding inside Workers, and `fetch` 
 ### Sending
 
 ```ts
-import { createCloudflareQueueTransport } from '@dotpress/events/cloudflare'
+import { createCloudflareQueueTransport } from '@dotpress/events/cloudflare-queues'
 
 // Inside a Worker: the producer binding
 import { env } from 'cloudflare:workers'
@@ -373,7 +372,7 @@ const transport = createCloudflareQueueTransport({
 ### Worker consumers
 
 ```ts
-import { createCloudflareQueueHandler } from '@dotpress/events/cloudflare'
+import { createCloudflareQueueHandler } from '@dotpress/events/cloudflare-queues'
 
 export default {
   queue: createCloudflareQueueHandler(createWorker({ listeners, maxAttempts: 5 }), {
@@ -392,7 +391,7 @@ Each message is acknowledged (`ack()`) or retried (`retry()`) on its own: a fail
 To run workers outside Cloudflare (a container, your machine with `dotpress-events work`), enable an HTTP pull consumer on the queue (`wrangler queues consumer http add events`; a queue has either a Worker consumer or a pull consumer):
 
 ```ts
-import { createCloudflarePullSource } from '@dotpress/events/cloudflare'
+import { createCloudflarePullSource } from '@dotpress/events/cloudflare-queues'
 
 export default {
   worker: createWorker({ listeners }),
@@ -455,7 +454,7 @@ Each of these is optional: install only what you use.
 ### Sending
 
 ```ts
-import { createPubSubTransport } from '@dotpress/events/pubsub'
+import { createPubSubTransport } from '@dotpress/events/google-pubsub'
 
 const transport = createPubSubTransport({ topic: 'projects/my-project/topics/events' })
 ```
@@ -500,7 +499,7 @@ gcloud pubsub subscriptions create events-push --topic=events \
 ```
 
 ```ts
-import { createPubSubPushHandler } from '@dotpress/events/pubsub'
+import { createPubSubPushHandler } from '@dotpress/events/google-pubsub'
 
 const push = createPubSubPushHandler(createWorker({ listeners, maxAttempts: 5 }), {
   audience: 'https://api.example.com/pubsub', // the push endpoint, or --push-auth-token-audience
@@ -521,7 +520,7 @@ The handler verifies the token with `jose`: signature with the Google keys, issu
 ### Pull workers
 
 ```ts
-import { createPubSubPullSource } from '@dotpress/events/pubsub'
+import { createPubSubPullSource } from '@dotpress/events/google-pubsub'
 
 // worker.ts, for startWorker() or `dotpress-events work ./worker.ts`
 export default {
@@ -535,6 +534,68 @@ export default {
 ```
 
 The source uses the streaming pull of `@google-cloud/pubsub` (Node.js), which extends the ack deadline of the messages in progress. Credentials come from Application Default Credentials, `clientConfig` (options of `new PubSub()`), or the `client` you pass; the client uses the emulator when `PUBSUB_EMULATOR_HOST` is set. On stop, the source waits for the messages in progress, up to `closeTimeout` (30 seconds by default). Subscription errors are logged.
+
+## Azure Service Bus
+
+```sh
+pnpm add @azure/service-bus
+```
+
+```ts
+import {
+  createServiceBusSource,
+  createServiceBusTransport,
+} from '@dotpress/events/azure-service-bus'
+
+const connection = { connectionString: process.env.SERVICE_BUS_CONNECTION! }
+// Or Microsoft Entra ID:
+// const connection = { client: new ServiceBusClient('my-namespace.servicebus.windows.net', new DefaultAzureCredential()) }
+
+// The code that emits
+const transport = createServiceBusTransport({ ...connection, queue: 'events' })
+const events = createEventBus({ transport, listeners })
+// On shutdown: await transport.close()
+
+// worker.ts, for startWorker() or `dotpress-events work ./worker.ts`
+export default {
+  worker: createWorker({ listeners, maxAttempts: 10 }), // the maxDeliveryCount of the queue
+  source: createServiceBusSource({ ...connection, queue: 'events', maxConcurrentCalls: 4 }),
+}
+```
+
+The SDK speaks AMQP: Node.js only. With a connection string, the transport and the source create their own client (`close()` closes the one of the transport); pass a `client` to share it, or to use Microsoft Entra ID credentials (`@azure/identity`, with the Azure Service Bus Data Sender or Data Receiver role).
+
+Each message carries the envelope as JSON, `subject` (the event) and the application properties `event` and `listener`. Its `messageId` is the message id: with duplicate detection on the queue (`requiresDuplicateDetection`, set when the queue is created; Standard and Premium tiers), emitting again within the detection window is ignored. `delay` schedules the message (`scheduledEnqueueTimeUtc`).
+
+| Limit | Value |
+| --- | --- |
+| Message size | 256 KB in the Standard tier (properties included); in the Premium tier, 1 MB unless raised on the queue (up to 100 MB): larger messages fail (`EventEmitError`) |
+| Batch | filled up to the size the queue accepts, 1 MB at most; larger Premium messages are sent alone |
+| `delay` | no limit |
+
+**Source**: `maxConcurrentCalls` messages at a time (1 by default), in peek-lock mode. The lock of a message in progress is renewed for `maxAutoLockRenewalDurationInMs` (5 minutes by default; the lock itself lasts 1 minute by default, 5 at most). A handled message is completed; a failed one is abandoned, and Service Bus delivers it again at once, until the `maxDeliveryCount` of the queue (10 by default), then moves it to the dead-letter queue (`MaxDeliveryCountExceeded`). Messages that can never be handled are moved to the dead-letter queue at once, with `deadLetterReason` (`invalid-envelope`, `unknown-listener`, `invalid-payload`) and `deadLetterErrorDescription`. On stop, the source waits for the messages in progress, up to `closeTimeout` (30 seconds by default). Receiver errors are logged.
+
+Service Bus has no delay between attempts: a listener that calls a service which is down fails its attempts within seconds. Keep `maxDeliveryCount` high enough, and retry short outages inside the listener if needed.
+
+### Azure Functions
+
+```ts
+import { app } from '@azure/functions'
+import { createServiceBusFunctionHandler } from '@dotpress/events/azure-service-bus'
+
+app.serviceBusQueue('events', {
+  connection: 'SERVICE_BUS_CONNECTION',
+  queueName: 'events',
+  handler: createServiceBusFunctionHandler(createWorker({ listeners, maxAttempts: 10 }), {
+    // optional, see below
+    deadLetter: { connectionString: process.env.SERVICE_BUS_CONNECTION!, queue: 'events-failed' },
+  }),
+})
+```
+
+The handler takes one message per invocation (the default `cardinality: 'one'`). A failure throws: the Functions host abandons the message, delivered again until `maxDeliveryCount`, then moved to the dead-letter queue. `attempt` is the `deliveryCount` of the trigger metadata.
+
+**Messages that can never be handled**: a function cannot move a message to the dead-letter queue (only the preview SDK bindings can). With `deadLetter`, they are sent at once to that queue, with the application properties `reason` and `error`, and the invocation succeeds. Without it, they fail until `maxDeliveryCount`.
 
 ## Workers
 

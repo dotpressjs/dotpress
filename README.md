@@ -49,6 +49,18 @@ docker run -d --rm -p 8085:8085 gcr.io/google.com/cloudsdktool/google-cloud-cli:
 PUBSUB_EMULATOR_HOST=localhost:8085 pnpm test
 ```
 
+The Azure Service Bus tests run against its emulator, with the queues of `packages/events/test/fixtures/azure-service-bus-emulator.json` (the emulator needs a SQL container; not run by the CI):
+
+```sh
+docker network create service-bus
+docker run -d --rm --name sqledge --network service-bus -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Dotpress-Test-1' mcr.microsoft.com/azure-sql-edge:latest
+docker run -d --rm --network service-bus -p 5672:5672 -p 5300:5300 \
+  -v "$PWD/packages/events/test/fixtures/azure-service-bus-emulator.json:/ServiceBus_Emulator/ConfigFiles/Config.json" \
+  -e SQL_SERVER=sqledge -e MSSQL_SA_PASSWORD='Dotpress-Test-1' -e ACCEPT_EULA=Y \
+  mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+SERVICE_BUS_CONNECTION='Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;' pnpm test
+```
+
 Every publishable change must come with a changeset (`pnpm changeset`).
 
 ## License

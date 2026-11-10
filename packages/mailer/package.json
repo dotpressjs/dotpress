@@ -30,9 +30,9 @@
       "types": "./dist/smtp.d.ts",
       "default": "./dist/smtp.js"
     },
-    "./ses": {
-      "types": "./dist/ses.d.ts",
-      "default": "./dist/ses.js"
+    "./aws-ses": {
+      "types": "./dist/aws-ses.d.ts",
+      "default": "./dist/aws-ses.js"
     },
     "./resend": {
       "types": "./dist/resend.d.ts",
@@ -126,7 +126,7 @@
     "typescript",
     "smtp",
     "nodemailer",
-    "ses",
+    "aws-ses",
     "aws",
     "resend",
     "sendgrid",

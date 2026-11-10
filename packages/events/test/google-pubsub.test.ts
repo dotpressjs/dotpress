@@ -23,8 +23,8 @@ import {
   createPubSubPullSource,
   createPubSubPushHandler,
   createPubSubTransport,
-} from '../src/transports/pubsub.js'
-import { startPubSubServer } from './pubsub-server.js'
+} from '../src/transports/google-pubsub.js'
+import { startPubSubServer } from './google-pubsub-server.js'
 import { createLogger, envelopeOf, practitionerCreated } from './support.js'
 
 const listenerOf = (
@@ -92,7 +92,7 @@ describe('Pub/Sub transport', () => {
       getAccessToken: false,
       baseUrl: server.url,
     })
-    expect(transport.kind).toBe('pubsub')
+    expect(transport.kind).toBe('google-pubsub')
     await transport.send([envelopeOf()], { delay: undefined })
     expect(server.calls.at(-1)?.auth).toBeUndefined()
   })
@@ -336,7 +336,7 @@ describe('Pub/Sub transport', () => {
     })
     vi.doMock('google-auth-library', () => ({ GoogleAuth }))
     const { createPubSubTransport: create } =
-      await import('../src/transports/pubsub.js')
+      await import('../src/transports/google-pubsub.js')
     const transport = create({ topic: TOPIC, baseUrl: server.url })
     await transport.send([envelopeOf()], { delay: undefined })
     await transport.send([envelopeOf()], { delay: undefined })
@@ -369,7 +369,7 @@ describe('Pub/Sub transport', () => {
       }
     })
     const { createPubSubTransport: create } =
-      await import('../src/transports/pubsub.js')
+      await import('../src/transports/google-pubsub.js')
     const transport = create({ topic: TOPIC, baseUrl: server.url })
     const error = await transport
       .send([envelopeOf()], { delay: undefined })
@@ -761,7 +761,7 @@ describe('Pub/Sub push handler', () => {
     }))
     vi.doMock('jose', () => ({ createRemoteJWKSet, jwtVerify }))
     const { createPubSubPushHandler: create } =
-      await import('../src/transports/pubsub.js')
+      await import('../src/transports/google-pubsub.js')
     const push = create(
       createWorker({ listeners: [listenerOf('send-welcome-mail', () => {})] }),
       { audience: AUDIENCE }
@@ -785,7 +785,7 @@ describe('Pub/Sub push handler', () => {
       return actual
     })
     const { createPubSubPushHandler: create } =
-      await import('../src/transports/pubsub.js')
+      await import('../src/transports/google-pubsub.js')
     const logger = createLogger()
     const push = create(
       createWorker({ listeners: [listenerOf('send-welcome-mail', () => {})] }),
@@ -1124,7 +1124,7 @@ describe('Pub/Sub pull source', () => {
     })
     vi.doMock('@google-cloud/pubsub', () => ({ PubSub }))
     const { createPubSubPullSource: create } =
-      await import('../src/transports/pubsub.js')
+      await import('../src/transports/google-pubsub.js')
     const running = startWorker(
       createWorker({ listeners: [] }),
       create({ subscription: SUBSCRIPTION, clientConfig: { projectId: 'p' } })

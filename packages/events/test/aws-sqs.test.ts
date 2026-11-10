@@ -23,9 +23,9 @@ import {
   createSqsTransport,
   queueUrlOf,
   type SqsRecord,
-} from '../src/transports/sqs.js'
+} from '../src/transports/aws-sqs.js'
 import { createLogger, envelopeOf, practitionerCreated } from './support.js'
-import { startSqsServer } from './sqs-server.js'
+import { startSqsServer } from './aws-sqs-server.js'
 
 let server: Awaited<ReturnType<typeof startSqsServer>>
 let client: SQSClient
@@ -362,7 +362,7 @@ describe('SQS transport', () => {
         credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
       },
     })
-    expect(transport.kind).toBe('sqs')
+    expect(transport.kind).toBe('aws-sqs')
     await transport.send([envelopeOf()], { delay: undefined })
     expect(queue.queue().messages).toHaveLength(1)
   })
@@ -1168,6 +1168,6 @@ describe('SQS source', () => {
         visibilityTimeout: 43_200,
         checkRedrivePolicy: true,
       }).kind
-    ).toBe('sqs')
+    ).toBe('aws-sqs')
   })
 })

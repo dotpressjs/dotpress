@@ -138,7 +138,7 @@ export const createSesProvider = (
   const ses = client ?? new SESv2Client(clientConfig ?? {})
 
   return {
-    name: 'ses',
+    name: 'aws-ses',
     send: async (message) => {
       // Limits of SES (MailMessageError) are thrown as they are.
       const command = new SendEmailCommand(
@@ -152,7 +152,7 @@ export const createSesProvider = (
           error as { $metadata?: { httpStatusCode?: unknown } } | null
         )?.$metadata?.httpStatusCode
         // SDK errors: "MessageRejected: Email address is not verified."
-        throw new MailSendError('ses', String(error), {
+        throw new MailSendError('aws-ses', String(error), {
           cause: error,
           status: typeof status === 'number' ? status : undefined,
         })

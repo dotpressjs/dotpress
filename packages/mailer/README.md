@@ -257,7 +257,7 @@ The limits of each provider (number of tags, characters of the values…) are li
 | `createConsoleProvider()` | `@dotpress/mailer` | development: prints the sender, recipients, subject, attachments, tags and metadata |
 | `createSmtpProvider()` | `@dotpress/mailer/smtp` | any SMTP server, through nodemailer |
 | `createNodemailerProvider()` | `@dotpress/mailer/smtp` | any nodemailer transporter (sendmail, stream…) |
-| `createSesProvider()` | `@dotpress/mailer/ses` | Amazon SES (API v2), through the AWS SDK |
+| `createSesProvider()` | `@dotpress/mailer/aws-ses` | Amazon SES (API v2), through the AWS SDK |
 | `createResendProvider()` | `@dotpress/mailer/resend` | Resend, through its SDK |
 | `createSendgridProvider()` | `@dotpress/mailer/sendgrid` | Twilio SendGrid (Mail Send API v3), through `fetch` |
 | `createPostmarkProvider()` | `@dotpress/mailer/postmark` | Postmark (Email API), through `fetch` |
@@ -319,7 +319,7 @@ pnpm add @aws-sdk/client-sesv2
 ```
 
 ```ts
-import { createSesProvider } from '@dotpress/mailer/ses'
+import { createSesProvider } from '@dotpress/mailer/aws-ses'
 
 const provider = createSesProvider({
   clientConfig: { region: 'eu-west-3' }, // credentials from the environment

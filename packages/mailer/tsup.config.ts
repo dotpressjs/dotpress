@@ -5,7 +5,7 @@ export default defineConfig({
     index: 'src/index.ts',
     plugin: 'src/plugin.ts',
     smtp: 'src/providers/smtp.ts',
-    ses: 'src/providers/ses.ts',
+    'aws-ses': 'src/providers/aws-ses.ts',
     resend: 'src/providers/resend.ts',
     sendgrid: 'src/providers/sendgrid.ts',
     postmark: 'src/providers/postmark.ts',

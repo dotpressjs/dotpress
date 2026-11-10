@@ -171,7 +171,9 @@ The code that emits does not change: `events.emit(recordingUploaded, …)` reach
 
 | `createCloudflareQueueTransport()` | `@dotpress/events/cloudflare` | Cloudflare Queues, from a Worker (binding) or from anywhere (REST API), with a `queue()` handler and an HTTP pull source |
 
-Transports for Postgres (pg-boss), Google Pub/Sub and Azure Service Bus are coming.
+| `createPgBossTransport()` | `@dotpress/events/pg-boss` | Postgres, through pg-boss: no other infrastructure than your database |
+
+Transports for Google Pub/Sub and Azure Service Bus are coming.
 
 ```ts
 // Tests: emit, wait, check
@@ -408,6 +410,40 @@ export default {
 ```
 
 The source pulls `batchSize` messages (10 by default, up to 100), runs them in parallel, then acknowledges or retries them in one request. The API cannot extend a lease: set `visibilityTimeoutMs` (30 seconds by default, up to 12 hours) above the duration of your slowest listener, or the message is delivered again while it runs. An empty queue is pulled again after `pollInterval` (1 second by default). Errors are logged and retried, after 1 second then up to 30 seconds.
+
+## Postgres (pg-boss)
+
+```sh
+pnpm add pg-boss
+```
+
+```ts
+import { createPgBossSource, createPgBossTransport } from '@dotpress/events/pg-boss'
+
+const boss = process.env.DATABASE_URL! // or pg-boss options, or a started instance
+const queueOptions = { deadLetter: 'events-dlq' } // optional
+
+// The code that emits
+const transport = createPgBossTransport({ boss, queue: 'events', queueOptions })
+const events = createEventBus({ transport, listeners })
+// On shutdown: await transport.close()
+
+// worker.ts, for startWorker() or `dotpress-events work ./worker.ts`
+export default {
+  worker: createWorker({ listeners, maxAttempts: 3 }),
+  source: createPgBossSource({ boss, queue: 'events', queueOptions, batchSize: 5 }),
+}
+```
+
+[pg-boss](https://pgboss.io) keeps the queue in your Postgres database (13 or later; pg-boss needs Node.js 22.12 or later, or Bun). With a connection string or options, the transport and the source create and start their own pg-boss instance (`close()` stops the one of the transport); pass a started instance to share it.
+
+**Queues** are created on first use when they do not exist, with `queueOptions` merged with the defaults: 3 attempts (`retryLimit: 2`), exponential backoff from 1 second (`retryDelay: 1`, `retryBackoff: true`). Existing queues are not changed. With `deadLetter`, the dead-letter queue is created too: failed jobs go there after their last attempt, and messages that can never be handled at once. Set `maxAttempts` of the worker to `retryLimit + 1`.
+
+Each message is a job whose id is the message id: emitting again is ignored by pg-boss, which keeps the first job. `delay` has no upper limit.
+
+**Source**: `batchSize` jobs at a time (1 by default), handled in parallel, each with its own result (`perJobResults`): one failure does not retry the others. `pollingIntervalSeconds` sets the wait on an empty queue (0.5 at least). On stop, the source waits for the jobs in progress, up to `closeTimeout` (30 seconds by default). pg-boss errors are logged.
+
+Emit after the transaction commits, as with the other transports: an event emitted inside a transaction that rolls back describes something that did not happen.
 
 ## Workers
 

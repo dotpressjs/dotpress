@@ -8,6 +8,7 @@ export default defineConfig([
       sqs: 'src/transports/sqs.ts',
       bullmq: 'src/transports/bullmq.ts',
       cloudflare: 'src/transports/cloudflare.ts',
+      'pg-boss': 'src/transports/pg-boss.ts',
     },
     format: ['esm'],
     target: 'es2022',

@@ -37,7 +37,8 @@ Integration tests of the event transports run when their services are available,
 
 ```sh
 docker run -d --rm -p 6379:6379 redis:7-alpine
-REDIS_URL=redis://localhost:6379 pnpm test
+docker run -d --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=events postgres:18-alpine
+REDIS_URL=redis://localhost:6379 DATABASE_URL=postgres://postgres:postgres@localhost:5432/events pnpm test
 ```
 
 Every publishable change must come with a changeset (`pnpm changeset`).

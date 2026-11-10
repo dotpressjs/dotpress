@@ -9,6 +9,7 @@ export default defineConfig([
       bullmq: 'src/transports/bullmq.ts',
       cloudflare: 'src/transports/cloudflare.ts',
       'pg-boss': 'src/transports/pg-boss.ts',
+      pubsub: 'src/transports/pubsub.ts',
     },
     format: ['esm'],
     target: 'es2022',

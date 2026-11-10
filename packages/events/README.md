@@ -164,16 +164,13 @@ The code that emits does not change: `events.emit(recordingUploaded, …)` reach
 | --- | --- | --- |
 | `createSyncTransport()` | `@dotpress/events` | runs the listeners inside `emit()`, which waits for them and throws an `EventEmitError` if one fails; delays are ignored. Development, tests, apps without a queue |
 | `createMemoryTransport()` | `@dotpress/events` | in-process queue with retries (3 attempts, 100 ms then doubled; `maxAttempts`, `retryDelay`), `sent`, `drain()`, `clear()`. Development and tests; messages are lost when the process stops |
-
 | `createSqsTransport()` | `@dotpress/events/sqs` | Amazon SQS (standard and FIFO queues), with a Lambda handler and a long-polling source |
-
 | `createBullmqTransport()` | `@dotpress/events/bullmq` | Redis, through BullMQ: retries with backoff, delays, deduplication |
-
 | `createCloudflareQueueTransport()` | `@dotpress/events/cloudflare` | Cloudflare Queues, from a Worker (binding) or from anywhere (REST API), with a `queue()` handler and an HTTP pull source |
-
 | `createPgBossTransport()` | `@dotpress/events/pg-boss` | Postgres, through pg-boss: no other infrastructure than your database |
+| `createPubSubTransport()` | `@dotpress/events/pubsub` | Google Cloud Pub/Sub, over the REST API (any runtime), with a push endpoint and a pull source |
 
-Transports for Google Pub/Sub and Azure Service Bus are coming.
+A transport for Azure Service Bus is coming.
 
 ```ts
 // Tests: emit, wait, check
@@ -444,6 +441,100 @@ Each message is a job whose id is the message id: emitting again is ignored by p
 **Source**: `batchSize` jobs at a time (1 by default), handled in parallel, each with its own result (`perJobResults`): one failure does not retry the others. `pollingIntervalSeconds` sets the wait on an empty queue (0.5 at least). On stop, the source waits for the jobs in progress, up to `closeTimeout` (30 seconds by default). pg-boss errors are logged.
 
 Emit after the transaction commits, as with the other transports: an event emitted inside a transaction that rolls back describes something that did not happen.
+
+## Google Cloud Pub/Sub
+
+```sh
+pnpm add google-auth-library  # to publish with Application Default Credentials
+pnpm add jose                 # push endpoints: to verify the tokens
+pnpm add @google-cloud/pubsub # pull workers
+```
+
+Each of these is optional: install only what you use.
+
+### Sending
+
+```ts
+import { createPubSubTransport } from '@dotpress/events/pubsub'
+
+const transport = createPubSubTransport({ topic: 'projects/my-project/topics/events' })
+```
+
+The transport publishes over the REST API with `fetch`: it runs on Node.js, Bun, Deno and Cloudflare Workers. Each message carries the attributes `event` and `listener`; a subscription can filter on them (`--message-filter='attributes.listener = "send-welcome-mail"'`) to run some listeners on other workers.
+
+**Authentication**: by default, an OAuth token from Application Default Credentials, through `google-auth-library` (the service account of Cloud Run, GKE or Cloud Functions, `GOOGLE_APPLICATION_CREDENTIALS`, or `gcloud auth application-default login`). The account needs the Pub/Sub Publisher role (`roles/pubsub.publisher`) on the topic. Elsewhere, pass `getAccessToken`, which returns a token with the `https://www.googleapis.com/auth/pubsub` scope. For the emulator: `baseUrl: 'http://localhost:8085', getAccessToken: false`.
+
+| Limit | Value |
+| --- | --- |
+| Request | 10 MB and 1,000 messages: larger emissions are split into several requests |
+| Message size | 10 MB with the base64-encoded envelope (about 7.5 MB of JSON): larger messages fail (`EventEmitError`) |
+| `delay` | not supported by Pub/Sub: an emission with a delay fails (`EventEmitError`, `RangeError`) |
+
+### Subscriptions, retries and dead letters
+
+Subscriptions are your infrastructure. Pub/Sub delivers each message at least once: use `context.id` to ignore duplicates.
+
+```sh
+gcloud pubsub topics create events
+gcloud pubsub topics create events-dlq
+gcloud pubsub subscriptions create events-worker --topic=events \
+  --ack-deadline=60 \
+  --min-retry-delay=10s --max-retry-delay=600s \
+  --dead-letter-topic=events-dlq --max-delivery-attempts=5
+```
+
+With a dead-letter policy, Pub/Sub counts the delivery attempts, and moves the message to the dead-letter topic after `--max-delivery-attempts` (5 to 100); its service account needs the Publisher role on the dead-letter topic and the Subscriber role on the subscription. Set `maxAttempts` of the worker to `--max-delivery-attempts`. Without a dead-letter policy, every delivery counts as the first attempt, and a failing message is delivered again until the retention of the subscription expires (7 days by default).
+
+**Messages that can never be handled** (not an envelope, unknown listener, invalid payload): with the `deadLetter` option of the push handler or `deadLetterTopic` of the pull source, they are published at once to that topic, with the attributes `reason` and `error`, and acknowledged. Without it, they are delivered again until the dead-letter policy moves them.
+
+### Push endpoints
+
+A push subscription POSTs each message to your endpoint, with an OIDC token signed by Google:
+
+```sh
+gcloud pubsub subscriptions create events-push --topic=events \
+  --push-endpoint=https://api.example.com/pubsub \
+  --push-auth-service-account=pubsub-push@my-project.iam.gserviceaccount.com \
+  --ack-deadline=60 \
+  --dead-letter-topic=events-dlq --max-delivery-attempts=5
+```
+
+```ts
+import { createPubSubPushHandler } from '@dotpress/events/pubsub'
+
+const push = createPubSubPushHandler(createWorker({ listeners, maxAttempts: 5 }), {
+  audience: 'https://api.example.com/pubsub', // the push endpoint, or --push-auth-token-audience
+  serviceAccountEmail: 'pubsub-push@my-project.iam.gserviceaccount.com',
+  deadLetter: { topic: 'projects/my-project/topics/events-dlq' }, // optional, see above
+})
+
+// Web-standard runtimes (Cloudflare Workers, Hono, Bun, Deno)
+app.post('/pubsub', (c) => push.fetch(c.req.raw))
+// Other frameworks: the parsed JSON body and the Authorization header
+app.post('/pubsub', async (req, res) => {
+  res.status(await push.handle(req.body, req.headers.authorization)).end()
+})
+```
+
+The handler verifies the token with `jose`: signature with the Google keys, issuer, `audience`, a verified `email`, equal to `serviceAccountEmail` when set. It answers 204 when the message is handled (or moved to `deadLetter`), and 503 to have it delivered again; 401 and 403 for invalid tokens, 400 for bodies that are not push messages (Pub/Sub delivers these again too). Set `verifyToken: false` only behind a proxy that checks the token. Pub/Sub waits for the answer up to the ack deadline of the subscription (10 seconds by default, up to 600): set it above your slowest listener.
+
+### Pull workers
+
+```ts
+import { createPubSubPullSource } from '@dotpress/events/pubsub'
+
+// worker.ts, for startWorker() or `dotpress-events work ./worker.ts`
+export default {
+  worker: createWorker({ listeners, maxAttempts: 5 }),
+  source: createPubSubPullSource({
+    subscription: 'projects/my-project/subscriptions/events-worker',
+    maxMessages: 10, // messages handled at the same time (default)
+    deadLetterTopic: 'projects/my-project/topics/events-dlq', // optional, see above
+  }),
+}
+```
+
+The source uses the streaming pull of `@google-cloud/pubsub` (Node.js), which extends the ack deadline of the messages in progress. Credentials come from Application Default Credentials, `clientConfig` (options of `new PubSub()`), or the `client` you pass; the client uses the emulator when `PUBSUB_EMULATOR_HOST` is set. On stop, the source waits for the messages in progress, up to `closeTimeout` (30 seconds by default). Subscription errors are logged.
 
 ## Workers
 

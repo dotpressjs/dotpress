@@ -41,6 +41,14 @@ docker run -d --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=eve
 REDIS_URL=redis://localhost:6379 DATABASE_URL=postgres://postgres:postgres@localhost:5432/events pnpm test
 ```
 
+The Google Pub/Sub tests also run against its emulator (a large image, not run by the CI); push deliveries reach the test server through `host.docker.internal` (set `PUBSUB_PUSH_HOST` otherwise):
+
+```sh
+docker run -d --rm -p 8085:8085 gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators \
+  gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=test-project
+PUBSUB_EMULATOR_HOST=localhost:8085 pnpm test
+```
+
 Every publishable change must come with a changeset (`pnpm changeset`).
 
 ## License

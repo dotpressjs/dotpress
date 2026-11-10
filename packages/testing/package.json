@@ -1,7 +1,7 @@
 {
   "name": "@dotpress/testing",
   "version": "2.0.0-alpha.0",
-  "description": "Testing helpers for Dotpress, including the adapter conformance suite",
+  "description": "Testing helpers for Dotpress: test app, conformance suite, event and mail assertions",
   "author": "Renaud Guyon",
   "license": "MIT",
   "homepage": "https://dotpress.dev",
@@ -44,6 +44,7 @@
   "keywords": [
     "dotpress",
     "testing",
-    "conformance"
+    "conformance",
+    "assertions"
   ]
 }

@@ -253,7 +253,7 @@ The limits of each provider (number of tags, characters of the values…) are li
 
 | Provider | Import | Use |
 | --- | --- | --- |
-| `createMemoryProvider()` | `@dotpress/mailer` | tests: keeps messages in `outbox.sent` |
+| `createMemoryProvider()` | `@dotpress/mailer` | tests: keeps messages in `outbox.sent`, checked by `expectMailSent()` of `@dotpress/testing` |
 | `createConsoleProvider()` | `@dotpress/mailer` | development: prints the sender, recipients, subject, attachments, tags and metadata |
 | `createSmtpProvider()` | `@dotpress/mailer/smtp` | any SMTP server, through nodemailer |
 | `createNodemailerProvider()` | `@dotpress/mailer/smtp` | any nodemailer transporter (sendmail, stream…) |

@@ -1,7 +1,11 @@
 import { createRouter } from '@dotpress/core'
-import { createTestApp } from '@dotpress/testing'
+import { createTestApp, expectEventEmitted } from '@dotpress/testing'
 import { describe, expect, it } from 'vitest'
-import { createEventBus, defineListener } from '../src/index.js'
+import {
+  createEventBus,
+  createFakeEventBus,
+  defineListener,
+} from '../src/index.js'
 import { eventsPlugin } from '../src/plugin.js'
 import { createRecordingTransport, practitionerCreated } from './support.js'
 
@@ -76,5 +80,36 @@ describe('eventsPlugin()', () => {
       )
     )
     expect(() => eventsPlugin(undefined as never)).toThrow(TypeError)
+  })
+})
+
+describe('eventsPlugin() with a fake event bus', () => {
+  it('records the emissions of the routes, with the request ID', async () => {
+    const events = createFakeEventBus()
+    const router = createRouter()
+    router.defineRoute({
+      method: 'post',
+      path: '/practitioners',
+      handler: async ({ events: bus }) => {
+        await bus.emit(practitionerCreated, { practitionerId: '42' })
+        return { ok: true }
+      },
+    })
+    const { fetch, close } = await createTestApp({
+      routers: [router],
+      plugins: [eventsPlugin(events)],
+    })
+    const res = await fetch('/practitioners', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expectEventEmitted(
+      events,
+      practitionerCreated,
+      { practitionerId: '42' },
+      {
+        times: 1,
+        metadata: { requestId: expect.any(String) },
+      }
+    )
+    await close()
   })
 })

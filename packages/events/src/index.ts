@@ -6,6 +6,8 @@ export type {
   EventBusContext,
   EventBusOptions,
 } from './bus.js'
+export { createFakeEventBus } from './fake.js'
+export type { FakeEventBus, RecordedEmission } from './fake.js'
 export { defineEvent, defineListener } from './define.js'
 export type {
   EventDefinition,

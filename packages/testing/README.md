@@ -1,6 +1,6 @@
 # @dotpress/testing
 
-Testing helpers for [Dotpress](https://dotpress.dev).
+Testing helpers for [Dotpress](https://dotpress.dev): a test app, the adapter conformance suite, and assertions for events and mail.
 
 > 🚧 Dotpress V2 is under active development and not published yet.
 
@@ -57,6 +57,52 @@ const logger = createMemoryLogger()
 await createApp({ adapter, logger })
 expect(logger.entries).toContainEqual({ level: 'error', args: [error, 'Unhandled error while processing request'] })
 ```
+
+## Event assertions
+
+`expectEventEmitted(source, event, payload?, options?)` asserts that an event was emitted, and returns the last matching emission. The source is a fake event bus (`createFakeEventBus()` of `@dotpress/events`: it checks emissions like a real bus, without running listeners), or a memory transport (`createMemoryTransport()`: it only sees the events that have listeners on it).
+
+```ts
+import { createFakeEventBus } from '@dotpress/events'
+import { expectEventEmitted, expectEventNotEmitted } from '@dotpress/testing'
+
+const events = createFakeEventBus()
+await signUp(events, 'ada@example.com')
+
+expectEventEmitted(events, userCreated, { email: 'ada@example.com' })
+expectEventEmitted(events, 'user.created', undefined, { times: 1, metadata: { requestId: 'req-1' } })
+expectEventNotEmitted(events, userDeleted)
+```
+
+- `event`: the definition, or its name.
+- `payload`: objects are matched partially (like `toMatchObject()`), other values exactly; asymmetric matchers are accepted (`expect.any(String)`). Without it, any payload matches.
+- `options`: `times` (exact number of emissions; at least one by default), `metadata` (matched partially), `delay` (fake event bus only).
+
+With the Dotpress plugin, pass the fake bus to `eventsPlugin()`: `ctx.events` records into it, with the `requestId` in the metadata.
+
+## Mail assertions
+
+`expectMailSent(outbox, criteria?, options?)` asserts that a message was sent through the memory provider of the mailer (`createMemoryProvider()` of `@dotpress/mailer`), and returns the last matching message.
+
+```ts
+import { createMailer, createMemoryProvider } from '@dotpress/mailer'
+import { expectMailSent, expectNoMailSent } from '@dotpress/testing'
+
+const outbox = createMemoryProvider()
+const mailer = createMailer({ provider: outbox, from: 'noreply@example.com' })
+await signUp(mailer, 'ada@example.com')
+
+const mail = expectMailSent(outbox, { to: 'ada@example.com', template: welcomeMail, locale: 'en' })
+expect(mail.html).toContain('https://example.com/confirm')
+expectNoMailSent(outbox, { to: 'grace@example.com' })
+```
+
+- `to`, `cc`, `bcc`, `replyTo`: an address or an array of addresses, all among the recipients (any case). `from`: the address of the sender.
+- `template`: the template, or its name.
+- `subject`, `html`, `text`, `locale`, `tags`, `metadata`, `headers`, `attachments`: matched like `toMatchObject()`, with asymmetric matchers (`expect.stringContaining('invoice')`).
+- `options.times`: exact number of messages; at least one by default.
+
+Failed assertions throw an `ExpectationError` that lists what was emitted or sent.
 
 ## License
 

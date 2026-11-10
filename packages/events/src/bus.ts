@@ -90,7 +90,7 @@ const OPTIONS = new Set([
 const METADATA_KEY = /^[A-Za-z0-9._-]{1,128}$/
 const LINE_BREAK = /[\r\n]/
 
-const checkMetadata = (label: string, metadata: unknown) => {
+export const checkMetadata = (label: string, metadata: unknown) => {
   if (metadata === undefined) return {}
   if (
     typeof metadata !== 'object' ||
@@ -117,6 +117,57 @@ const checkMetadata = (label: string, metadata: unknown) => {
 /** Transport name of a listener: its own, the one of its event, or default. */
 export const routeOf = (listener: ListenerDefinition): string =>
   listener.transport ?? listener.event.transport ?? 'default'
+
+/**
+ * Checks an emission like `emit()`: the event, the delay, the metadata,
+ * and the payload, which travels as JSON. Returns the payload received by
+ * the listeners and the metadata of the emission.
+ */
+export const checkEmission = async (
+  event: unknown,
+  payload: unknown,
+  emitOptions: EmitOptions | undefined,
+  contextMetadata: Readonly<Record<string, string>>
+) => {
+  if (!isEvent(event)) {
+    throw new TypeError('emit(): expected an event created by defineEvent().')
+  }
+  const emitLabel = `emit("${event.name}")`
+  const { delay, metadata } = emitOptions ?? {}
+  if (delay !== undefined && (!Number.isInteger(delay) || delay < 0)) {
+    throw new TypeError(
+      `${emitLabel}: delay must be a non-negative integer (seconds).`
+    )
+  }
+  const checked = {
+    ...contextMetadata,
+    ...checkMetadata(emitLabel, metadata),
+  }
+
+  // The payload travels as JSON: listeners receive this value.
+  let json: unknown
+  try {
+    json = JSON.parse(JSON.stringify(payload) ?? 'null')
+  } catch (error) {
+    throw new EventPayloadError(event.name, [
+      {
+        path: [],
+        message: `the payload cannot be serialized as JSON (${error instanceof Error ? error.message : String(error)})`,
+      },
+    ])
+  }
+  const result = await event.schema.safeParseAsync(json)
+  if (!result.success) {
+    throw new EventPayloadError(
+      event.name,
+      result.error.issues.map(({ path, message }) => ({
+        path: path.map((key) => (typeof key === 'symbol' ? String(key) : key)),
+        message,
+      }))
+    )
+  }
+  return { event, json, delay, metadata: checked }
+}
 
 /**
  * Creates an event bus: it validates the emitted events and sends one
@@ -212,43 +263,12 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
     metadata: Readonly<Record<string, string>>
   }): EventBus => {
     const emit: EventBus['emit'] = async (event, payload, emitOptions = {}) => {
-      if (!isEvent(event)) {
-        throw new TypeError(
-          'emit(): expected an event created by defineEvent().'
-        )
-      }
-      const emitLabel = `emit("${event.name}")`
-      const { delay, metadata } = emitOptions ?? {}
-      if (delay !== undefined && (!Number.isInteger(delay) || delay < 0)) {
-        throw new TypeError(
-          `${emitLabel}: delay must be a non-negative integer (seconds).`
-        )
-      }
-
-      // The payload travels as JSON: listeners receive this value.
-      let json: unknown
-      try {
-        json = JSON.parse(JSON.stringify(payload) ?? 'null')
-      } catch (error) {
-        throw new EventPayloadError(event.name, [
-          {
-            path: [],
-            message: `the payload cannot be serialized as JSON (${error instanceof Error ? error.message : String(error)})`,
-          },
-        ])
-      }
-      const result = await event.schema.safeParseAsync(json)
-      if (!result.success) {
-        throw new EventPayloadError(
-          event.name,
-          result.error.issues.map(({ path, message }) => ({
-            path: path.map((key) =>
-              typeof key === 'symbol' ? String(key) : key
-            ),
-            message,
-          }))
-        )
-      }
+      const { json, delay, metadata } = await checkEmission(
+        event,
+        payload,
+        emitOptions,
+        context.metadata
+      )
 
       const emissionId = crypto.randomUUID()
       const targets = listenersOf(event.name)
@@ -266,10 +286,7 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
         event: event.name,
         payload: json,
         emittedAt: new Date().toISOString(),
-        metadata: {
-          ...context.metadata,
-          ...checkMetadata(emitLabel, metadata),
-        },
+        metadata,
       }
       const messages: { ref: MessageRef; envelope: Envelope }[] = []
       for (const listener of targets) {

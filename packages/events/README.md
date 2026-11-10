@@ -180,6 +180,14 @@ await transport.drain()
 expect(transport.sent).toMatchObject([{ event: 'user.created', listener: 'send-welcome-mail' }])
 ```
 
+To test the code that emits without running listeners, use `createFakeEventBus()`: it checks each emission like a real bus (event, payload, delay, metadata) and records it in `emitted`. `expectEventEmitted()` of `@dotpress/testing` reads both:
+
+```ts
+const events = createFakeEventBus()
+await signUp(events, 'ada@example.com')
+expectEventEmitted(events, userCreated, { email: 'ada@example.com' })
+```
+
 ## Amazon SQS
 
 ```sh

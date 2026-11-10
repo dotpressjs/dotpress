@@ -36,6 +36,10 @@
     "./bullmq": {
       "types": "./dist/bullmq.d.ts",
       "default": "./dist/bullmq.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare.d.ts",
+      "default": "./dist/cloudflare.js"
     }
   },
   "engines": {
@@ -85,6 +89,8 @@
     "aws",
     "lambda",
     "bullmq",
-    "redis"
+    "redis",
+    "cloudflare",
+    "workers"
   ]
 }

@@ -7,6 +7,7 @@ export default defineConfig([
       plugin: 'src/plugin.ts',
       sqs: 'src/transports/sqs.ts',
       bullmq: 'src/transports/bullmq.ts',
+      cloudflare: 'src/transports/cloudflare.ts',
     },
     format: ['esm'],
     target: 'es2022',

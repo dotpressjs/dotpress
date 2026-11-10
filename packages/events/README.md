@@ -169,7 +169,9 @@ The code that emits does not change: `events.emit(recordingUploaded, …)` reach
 
 | `createBullmqTransport()` | `@dotpress/events/bullmq` | Redis, through BullMQ: retries with backoff, delays, deduplication |
 
-Transports for Cloudflare Queues, Postgres (pg-boss), Google Pub/Sub and Azure Service Bus are coming.
+| `createCloudflareQueueTransport()` | `@dotpress/events/cloudflare` | Cloudflare Queues, from a Worker (binding) or from anywhere (REST API), with a `queue()` handler and an HTTP pull source |
+
+Transports for Postgres (pg-boss), Google Pub/Sub and Azure Service Bus are coming.
 
 ```ts
 // Tests: emit, wait, check
@@ -323,6 +325,89 @@ Each message becomes a [BullMQ](https://docs.bullmq.io) job named after its list
 **Redis requirements** (BullMQ): Redis 6.2 or later, with `maxmemory-policy=noeviction`. Use `prefix` for the key prefix, not the `keyPrefix` of ioredis. An ioredis instance passed as `connection` to a source needs `maxRetriesPerRequest: null`. Pass `queue` instead of `name` and `connection` to reuse a `Queue` (shared connection, another BullMQ backend).
 
 BullMQ runs on Node.js and Bun.
+
+## Cloudflare Queues
+
+No dependency: the transport uses the queue binding inside Workers, and `fetch` elsewhere.
+
+```jsonc
+// wrangler.jsonc
+{
+  "queues": {
+    "producers": [{ "queue": "events", "binding": "EVENTS_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "events",
+        "max_batch_size": 10,
+        "max_retries": 5,
+        "dead_letter_queue": "events-dlq"
+      }
+    ]
+  }
+}
+```
+
+### Sending
+
+```ts
+import { createCloudflareQueueTransport } from '@dotpress/events/cloudflare'
+
+// Inside a Worker: the producer binding
+import { env } from 'cloudflare:workers'
+const transport = createCloudflareQueueTransport({ queue: () => env.EVENTS_QUEUE })
+
+// Anywhere else (Node.js, Lambda…): the REST API
+const transport = createCloudflareQueueTransport({
+  accountId: process.env.CF_ACCOUNT_ID!,
+  queueId: process.env.CF_QUEUE_ID!, // the queue ID, not its name
+  apiToken: process.env.CF_API_TOKEN!, // Queues Write permission
+})
+```
+
+`queue` also accepts the binding itself. Messages are sent as JSON, in batches of 100 messages and 256 KB at most.
+
+| Limit | Value |
+| --- | --- |
+| Message size | 128 KB, including about 100 bytes of metadata: larger messages fail (`EventEmitError`) |
+| `delay` | 86,400 seconds (24 hours) |
+
+### Worker consumers
+
+```ts
+import { createCloudflareQueueHandler } from '@dotpress/events/cloudflare'
+
+export default {
+  queue: createCloudflareQueueHandler(createWorker({ listeners, maxAttempts: 5 }), {
+    retryDelay: (attempt) => 30 * attempt, // optional, in seconds
+    deadLetterQueue: () => env.EVENTS_DLQ, // optional producer binding, see below
+  }),
+}
+```
+
+Each message is acknowledged (`ack()`) or retried (`retry()`) on its own: a failure does not retry the whole batch. After `max_retries`, Cloudflare moves the message to the `dead_letter_queue` of the consumer (without it, the message is deleted). Set `maxAttempts` of the worker to `max_retries + 1`.
+
+**Messages that can never be handled**: with `deadLetterQueue` (a producer binding to the dead-letter queue), they are sent there at once and acknowledged. Without it, they are retried until `max_retries`.
+
+### Pull consumers
+
+To run workers outside Cloudflare (a container, your machine with `dotpress-events work`), enable an HTTP pull consumer on the queue (`wrangler queues consumer http add events`; a queue has either a Worker consumer or a pull consumer):
+
+```ts
+import { createCloudflarePullSource } from '@dotpress/events/cloudflare'
+
+export default {
+  worker: createWorker({ listeners }),
+  source: createCloudflarePullSource({
+    accountId,
+    queueId,
+    apiToken, // Queues Read and Write permissions
+    visibilityTimeoutMs: 60_000, // lease: longer than your slowest listener
+    deadLetterQueueId, // optional: dead messages are pushed there at once
+  }),
+}
+```
+
+The source pulls `batchSize` messages (10 by default, up to 100), runs them in parallel, then acknowledges or retries them in one request. The API cannot extend a lease: set `visibilityTimeoutMs` (30 seconds by default, up to 12 hours) above the duration of your slowest listener, or the message is delivered again while it runs. An empty queue is pulled again after `pollInterval` (1 second by default). Errors are logged and retried, after 1 second then up to 30 seconds.
 
 ## Workers
 

@@ -53,8 +53,13 @@ export default defineConfig(
   },
   {
     files: RUNTIME_AGNOSTIC_SOURCES,
-    // Node.js-only command of @dotpress/openapi.
-    ignores: ['packages/openapi/src/cli.ts', 'packages/openapi/src/bin.ts'],
+    ignores: [
+      // Node.js-only command of @dotpress/openapi.
+      'packages/openapi/src/cli.ts',
+      'packages/openapi/src/bin.ts',
+      // nodemailer runs on Node.js only.
+      'packages/mailer/src/providers/smtp.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',

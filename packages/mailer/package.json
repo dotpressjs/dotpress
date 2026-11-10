@@ -25,6 +25,14 @@
     "./plugin": {
       "types": "./dist/plugin.d.ts",
       "default": "./dist/plugin.js"
+    },
+    "./smtp": {
+      "types": "./dist/smtp.d.ts",
+      "default": "./dist/smtp.js"
+    },
+    "./ses": {
+      "types": "./dist/ses.d.ts",
+      "default": "./dist/ses.js"
     }
   },
   "engines": {
@@ -38,15 +46,23 @@
     "test:watch": "vitest watch"
   },
   "peerDependencies": {
+    "@aws-sdk/client-sesv2": "^3.782.0",
     "@dotpress/core": "workspace:^",
     "mjml": "^5.0.0",
+    "nodemailer": "^10.0.0",
     "zod": "^4.6.0"
   },
   "peerDependenciesMeta": {
+    "@aws-sdk/client-sesv2": {
+      "optional": true
+    },
     "@dotpress/core": {
       "optional": true
     },
     "mjml": {
+      "optional": true
+    },
+    "nodemailer": {
       "optional": true
     }
   },
@@ -55,12 +71,15 @@
     "mustache": "^4.2.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-sesv2": "^3.1164.0",
     "@dotpress/core": "workspace:*",
     "@dotpress/testing": "workspace:*",
     "@types/html-to-text": "^9.0.4",
     "@types/mjml": "^5.4.2",
     "@types/mustache": "^4.2.6",
     "mjml": "^5.4.1",
+    "nodemailer": "^10.4.0",
+    "smtp-server": "^3.21.3",
     "zod": "^4.6.7"
   },
   "keywords": [
@@ -71,6 +90,10 @@
     "mjml",
     "i18n",
     "templates",
-    "typescript"
+    "typescript",
+    "smtp",
+    "nodemailer",
+    "ses",
+    "aws"
   ]
 }

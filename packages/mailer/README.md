@@ -219,6 +219,9 @@ await mailer.sendMessage({ to, subject: 'Export ready', html: '<p>…</p>' })
 | --- | --- | --- |
 | `createMemoryProvider()` | `@dotpress/mailer` | tests: keeps messages in `outbox.sent` |
 | `createConsoleProvider()` | `@dotpress/mailer` | development: prints the sender, recipients, subject and attachments |
+| `createSmtpProvider()` | `@dotpress/mailer/smtp` | any SMTP server, through nodemailer |
+| `createNodemailerProvider()` | `@dotpress/mailer/smtp` | any nodemailer transporter (sendmail, stream…) |
+| `createSesProvider()` | `@dotpress/mailer/ses` | Amazon SES (API v2), through the AWS SDK |
 
 The console provider prints the text version only with `{ body: true }`: messages often contain secrets (reset links, login codes). Never use it as a fallback when the configuration of the real provider is missing: messages would be lost silently.
 
@@ -233,6 +236,54 @@ expect(outbox.last()).toMatchObject({
 })
 outbox.clear()
 ```
+
+### SMTP
+
+```sh
+pnpm add nodemailer
+```
+
+```ts
+import { createSmtpProvider } from '@dotpress/mailer/smtp'
+
+const provider = createSmtpProvider({
+  host: 'smtp.example.com',
+  port: 465,
+  secure: true,
+  auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASSWORD! },
+  pool: true, // optional: reuses connections
+})
+// or createSmtpProvider('smtps://user:password@smtp.example.com')
+
+// On shutdown, with pool: true:
+provider.close()
+```
+
+The options are those of [nodemailer](https://nodemailer.com/smtp/) (nodemailer 10). Most email services also have an SMTP interface: Amazon SES, Postmark, Mailgun, Brevo, Mailjet… SMTP errors (`cause.responseCode`, like `550`) are thrown as `MailSendError`.
+
+`createNodemailerProvider(transporter, name?)` wraps any nodemailer transporter, for instance `nodemailer.createTransport({ sendmail: true })`.
+
+The SMTP provider runs on Node.js only.
+
+### Amazon SES
+
+```sh
+pnpm add @aws-sdk/client-sesv2
+```
+
+```ts
+import { createSesProvider } from '@dotpress/mailer/ses'
+
+const provider = createSesProvider({
+  clientConfig: { region: 'eu-west-3' }, // credentials from the environment
+  configurationSetName: 'transactional', // optional
+})
+// or createSesProvider({ client: existingSesV2Client })
+```
+
+Messages are sent with the `SendEmail` operation of the SES API v2 (simple content: subject, HTML and text versions, headers and attachments; `@aws-sdk/client-sesv2` 3.782 or later). Display names with non-ASCII characters are encoded as SES requires. SES errors are thrown as `MailSendError`, with the HTTP `status` and the error name (`MessageRejected: Email address is not verified.`).
+
+On AWS Lambda, the Node.js runtimes include the AWS SDK: it does not need to be bundled, as long as the version of the runtime is 3.782 or later.
 
 ### Custom providers
 

@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   createMailer,
+  MailMessageError,
   MailSendError,
   type MessageOptions,
 } from '../src/index.js'
@@ -27,6 +28,12 @@ const message: MessageOptions = {
     { filename: 'logo.png', content: new Uint8Array([9]), contentId: 'logo' },
   ],
   headers: { 'List-Unsubscribe': '<https://example.com/unsubscribe>' },
+}
+
+const minimalMessage: MessageOptions = {
+  to: 'a@example.com',
+  subject: 'Hi',
+  text: 'Hi',
 }
 
 const mockClient = (output: object = { MessageId: 'ses-1' }) => {
@@ -115,9 +122,52 @@ describe('SES provider', () => {
       Text: { Data: 'Hi', Charset: 'UTF-8' },
     })
     expect(input).not.toHaveProperty('ConfigurationSetName')
+    expect(input).not.toHaveProperty('EmailTags')
     expect(input?.FromEmailAddress).toBe(
       '=?UTF-8?B?w4lxdWlwZQ==?= <noreply@example.com>'
     )
+  })
+
+  it('sends tags and metadata as email tags', async () => {
+    const { client, send } = mockClient()
+    await mailerWith(createSesProvider({ client })).sendMessage({
+      ...minimalMessage,
+      tags: ['welcome', 'onboarding'],
+      metadata: { userId: 'u-42', plan: 'pro_2026' },
+    })
+    expect(send.mock.calls[0]?.[0].input.EmailTags).toStrictEqual([
+      { Name: 'welcome', Value: 'true' },
+      { Name: 'onboarding', Value: 'true' },
+      { Name: 'userId', Value: 'u-42' },
+      { Name: 'plan', Value: 'pro_2026' },
+    ])
+  })
+
+  it.each([
+    [
+      { metadata: { email: 'ada@example.com' } },
+      'SES only accepts metadata values of 1 to 256 letters, digits, _ or -: metadata.email is "ada@example.com".',
+    ],
+    [
+      { metadata: { empty: '' } },
+      'SES only accepts metadata values of 1 to 256 letters, digits, _ or -: metadata.empty is "".',
+    ],
+    [
+      { metadata: { long: 'x'.repeat(257) } },
+      `SES only accepts metadata values of 1 to 256 letters, digits, _ or -: metadata.long is "${'x'.repeat(257)}".`,
+    ],
+    [
+      { tags: ['plan'], metadata: { plan: 'pro' } },
+      'SES stores tags and metadata together: "plan" cannot be both a tag and a metadata key.',
+    ],
+  ])('rejects the metadata %j', async (extra, text) => {
+    const { client, send } = mockClient()
+    const error = await mailerWith(createSesProvider({ client }))
+      .sendMessage({ ...minimalMessage, ...extra })
+      .catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(MailMessageError)
+    expect((error as Error).message).toBe(`Invalid mail message: ${text}`)
+    expect(send).not.toHaveBeenCalled()
   })
 
   it('reports SES errors with their HTTP status', async () => {

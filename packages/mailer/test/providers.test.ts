@@ -78,6 +78,8 @@ describe('console provider', () => {
           { filename: 'a.pdf', content: 'A' },
           { filename: 'b.png', content: 'B' },
         ],
+        tags: ['reset', 'security'],
+        metadata: { userId: '42', source: 'web' },
       }
     )
     expect(output).toBe(
@@ -90,6 +92,8 @@ describe('console provider', () => {
         'Reply-To: e@example.com',
         'Subject: Reset your password',
         'Attachments: a.pdf, b.png',
+        'Tags: reset, security',
+        'Metadata: userId=42, source=web',
         '',
         'Open this link [https://example.com/reset?token=secret]',
       ].join('\n')

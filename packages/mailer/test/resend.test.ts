@@ -2,6 +2,7 @@ import type { CreateEmailOptions } from 'resend'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   createMailer,
+  MailMessageError,
   MailSendError,
   type MessageOptions,
 } from '../src/index.js'
@@ -93,6 +94,39 @@ describe('Resend provider', () => {
       subject: 'Hi',
       text: 'Hi',
     })
+  })
+
+  it('sends tags and metadata as Resend tags', async () => {
+    const { client, send } = mockClient()
+    await mailerWith(createResendProvider({ client })).sendMessage({
+      ...minimal,
+      tags: ['welcome'],
+      metadata: { userId: 'u-42' },
+    })
+    expect(send.mock.calls[0]?.[0].tags).toStrictEqual([
+      { name: 'welcome', value: 'true' },
+      { name: 'userId', value: 'u-42' },
+    ])
+  })
+
+  it.each([
+    [
+      { metadata: { date: '2026-11-10T10:00:00Z' } },
+      'Resend only accepts metadata values of 1 to 256 letters, digits, _ or -: metadata.date is "2026-11-10T10:00:00Z".',
+    ],
+    [
+      { tags: ['userId'], metadata: { userId: '42' } },
+      'Resend stores tags and metadata together: "userId" cannot be both a tag and a metadata key.',
+    ],
+  ])('rejects %j', async (extra, text) => {
+    const { client, send } = mockClient()
+    await expect(
+      mailerWith(createResendProvider({ client })).sendMessage({
+        ...minimal,
+        ...extra,
+      })
+    ).rejects.toThrow(new MailMessageError(text))
+    expect(send).not.toHaveBeenCalled()
   })
 
   it('reports API errors with their status', async () => {

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   createMailer,
+  MailMessageError,
   MailSendError,
   type MessageOptions,
 } from '../src/index.js'
@@ -119,6 +120,73 @@ describe('SendGrid provider', () => {
       subject: 'Hi',
       content: [{ type: 'text/plain', value: 'Hi' }],
     })
+  })
+
+  it('sends tags as categories and metadata as custom_args', async () => {
+    const fetchMock = mockFetch()
+    await mailerWith(
+      createSendgridProvider({ apiKey: 'SG.key', fetch: fetchMock })
+    ).sendMessage({
+      ...minimal,
+      tags: Array.from({ length: 10 }, (_, index) => `tag-${index}`),
+      metadata: { userId: '42', email: 'ada@example.com' },
+    })
+    const body = bodyOf(fetchMock) as {
+      categories: unknown
+      personalizations: { custom_args: unknown }[]
+    }
+    expect(body.categories).toHaveLength(10)
+    expect(body.categories).toContain('tag-9')
+    expect(body.personalizations[0]?.custom_args).toStrictEqual({
+      userId: '42',
+      email: 'ada@example.com',
+    })
+  })
+
+  it.each([
+    [
+      { tags: Array.from({ length: 11 }, (_, index) => `t${index}`) },
+      'SendGrid accepts at most 10 tags (categories), got 11.',
+    ],
+    [
+      { tags: ['ok', 'x'.repeat(256)] },
+      `SendGrid accepts tags (categories) of at most 255 characters: "${'x'.repeat(20)}…" has 256.`,
+    ],
+    [
+      { metadata: { a: 'x'.repeat(9_993) } },
+      'SendGrid accepts at most 10000 bytes of metadata (custom_args), got 10001.',
+    ],
+    [
+      // Bytes, not characters: é takes 2 bytes in UTF-8.
+      { metadata: { a: 'é'.repeat(4_997) } },
+      'SendGrid accepts at most 10000 bytes of metadata (custom_args), got 10002.',
+    ],
+  ])('rejects %#', async (extra, text) => {
+    const fetchMock = mockFetch()
+    await expect(
+      mailerWith(
+        createSendgridProvider({ apiKey: 'SG.key', fetch: fetchMock })
+      ).sendMessage({ ...minimal, ...extra })
+    ).rejects.toThrow(new MailMessageError(text))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts tags of 255 characters', async () => {
+    const fetchMock = mockFetch()
+    await mailerWith(
+      createSendgridProvider({ apiKey: 'SG.key', fetch: fetchMock })
+    ).sendMessage({ ...minimal, tags: ['x'.repeat(255)] })
+    expect((bodyOf(fetchMock) as { categories: unknown }).categories).toEqual([
+      'x'.repeat(255),
+    ])
+  })
+
+  it('accepts 10000 bytes of metadata', async () => {
+    const fetchMock = mockFetch()
+    await mailerWith(
+      createSendgridProvider({ apiKey: 'SG.key', fetch: fetchMock })
+    ).sendMessage({ ...minimal, metadata: { a: 'x'.repeat(9_992) } })
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 
   it('uses reply_to_list for several reply-to addresses', async () => {

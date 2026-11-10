@@ -1,4 +1,4 @@
-import { MailSendError } from './errors.js'
+import { MailerError, MailSendError } from './errors.js'
 import {
   checkKeys,
   parseAddress,
@@ -28,7 +28,8 @@ export interface ProviderResult {
 
 /**
  * Sends messages: SMTP server, email API, test outbox… Throw a
- * `MailSendError` on failure; other errors are wrapped in one.
+ * `MailSendError` on failure, or a `MailMessageError` for a message the
+ * provider cannot send; other errors are wrapped in a `MailSendError`.
  */
 export interface MailProvider {
   /** Name used in errors and logs, like `smtp`. */
@@ -116,6 +117,8 @@ const ENVELOPE_OPTIONS = [
   'from',
   'attachments',
   'headers',
+  'tags',
+  'metadata',
   'subject',
 ]
 const SEND_OPTIONS = new Set([...ENVELOPE_OPTIONS, 'locale', 'data'])
@@ -191,7 +194,8 @@ export const createMailer = (options: MailerOptions): Mailer => {
       try {
         result = await provider.send(message)
       } catch (error) {
-        if (error instanceof MailSendError) throw error
+        // Send errors, and limits of the provider (MailMessageError).
+        if (error instanceof MailerError) throw error
         throw new MailSendError(
           provider.name,
           error instanceof Error ? error.message : String(error),

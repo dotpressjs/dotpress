@@ -8,6 +8,7 @@ import {
 import { base64, utf8 } from '../encoding.js'
 import { MailSendError } from '../errors.js'
 import type { MailProvider } from '../mailer.js'
+import { keyValueTags } from './key-value-tags.js'
 import {
   checkKeys,
   formatAddress,
@@ -42,6 +43,19 @@ const toSesAddress = (address: Address) =>
   address.name !== undefined && /[^\x20-\x7e]/.test(address.name)
     ? `=?UTF-8?B?${base64(address.name)}?= <${address.address}>`
     : formatAddress(address)
+
+/** Tags and metadata as `EmailTags`. */
+const emailTags = (message: MailMessage) => {
+  const tags = keyValueTags(message, 'SES')
+  return tags.length > 0
+    ? {
+        EmailTags: tags.map(({ name, value }) => ({
+          Name: name,
+          Value: value,
+        })),
+      }
+    : {}
+}
 
 /** `SendEmail` input of a message (simple content). */
 const toSendEmailInput = (
@@ -83,6 +97,7 @@ const toSendEmailInput = (
   ...(configurationSetName === undefined
     ? {}
     : { ConfigurationSetName: configurationSetName }),
+  ...emailTags(message),
 })
 
 /**
@@ -125,11 +140,13 @@ export const createSesProvider = (
   return {
     name: 'ses',
     send: async (message) => {
+      // Limits of SES (MailMessageError) are thrown as they are.
+      const command = new SendEmailCommand(
+        toSendEmailInput(message, configurationSetName)
+      )
       let output: SendEmailCommandOutput
       try {
-        output = await ses.send(
-          new SendEmailCommand(toSendEmailInput(message, configurationSetName))
-        )
+        output = await ses.send(command)
       } catch (error) {
         const status = (
           error as { $metadata?: { httpStatusCode?: unknown } } | null

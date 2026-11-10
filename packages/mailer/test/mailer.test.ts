@@ -137,8 +137,24 @@ describe('mailer.send()', () => {
       text: 'Bonjour Ada',
       attachments: [],
       headers: {},
+      tags: [],
+      metadata: {},
       template: 'welcome',
       locale: 'fr',
+    })
+  })
+
+  it('keeps the tags and the metadata', async () => {
+    const { mailer, outbox } = setup()
+    await mailer.send(welcome, {
+      to: 'a@example.com',
+      tags: ['welcome', 'onboarding'],
+      metadata: { userId: '42' },
+      data: { name: 'Ada' },
+    })
+    expect(outbox.last()).toMatchObject({
+      tags: ['welcome', 'onboarding'],
+      metadata: { userId: '42' },
     })
   })
 
@@ -169,6 +185,8 @@ describe('mailer.send()', () => {
       to: 'a@example.com',
       attachments: [{ filename: 'a.txt', content: 'A' }],
       headers: { 'X-A': 'a' },
+      tags: ['a'],
+      metadata: { a: 'b' },
       data: { name: 'Ada' },
     })
     const message = outbox.last()
@@ -181,6 +199,8 @@ describe('mailer.send()', () => {
       'replyTo',
       'attachments',
       'headers',
+      'tags',
+      'metadata',
     ] as const) {
       expect(Object.isFrozen(message?.[key])).toBe(true)
     }
@@ -356,6 +376,11 @@ describe('provider results and errors', () => {
     await expect(send(failing('timeout'))).rejects.toThrow(
       new MailSendError('failing', 'timeout')
     )
+  })
+
+  it('rethrows message errors of the provider', async () => {
+    const error = new MailMessageError('the provider accepts one tag.')
+    await expect(send(failing(error))).rejects.toBe(error)
   })
 
   it('rethrows send errors of the provider', async () => {

@@ -196,6 +196,8 @@ await mailer.send(invoiceMail, {
     { filename: 'logo.png', content: logoBytes, contentId: 'logo' }, // <img src="cid:logo">
   ],
   headers: { 'List-Unsubscribe': '<https://acme.com/unsubscribe?u=42>' },
+  tags: ['invoice'], // see Tags and metadata
+  metadata: { invoiceId: 'F-2026-001' },
 })
 ```
 
@@ -203,7 +205,7 @@ await mailer.send(invoiceMail, {
 - **Attachments**: `content` is a `Uint8Array` (a Node.js `Buffer` works) or a string. `contentId` makes the attachment inline.
 - **Headers**: additional headers only. `From`, `To`, `Subject`, `Content-Type` and the other headers set by the mailer are rejected.
 
-Recipients, attachments and headers are checked before rendering: invalid values (an address without `@`, a line break in a name or a header) throw a `MailMessageError`.
+Recipients, attachments, headers, tags and metadata are checked before rendering: invalid values (an address without `@`, a line break in a name or a header) throw a `MailMessageError`.
 
 ### `mailer.sendMessage(options)`
 
@@ -213,12 +215,45 @@ Sends a message rendered elsewhere: the same options, with `subject`, and `html`
 await mailer.sendMessage({ to, subject: 'Export ready', html: '<p>…</p>' })
 ```
 
+### Tags and metadata
+
+Most providers can group messages in their statistics (**tags**), and return key/value pairs in their webhooks to link an event (delivery, bounce, click…) to your app (**metadata**).
+
+```ts
+await mailer.send(invoiceMail, {
+  to,
+  data,
+  tags: ['invoice', 'billing'],
+  metadata: { invoiceId: 'F-2026-001', userId: '42' },
+})
+```
+
+- **Tags** and **metadata keys** have 1 to 256 letters, digits, `_` or `-`: the strictest rule among providers, so they are valid everywhere. Duplicate tags are removed.
+- **Metadata values** are strings on one line.
+
+Each provider translates them to its own API. A provider without tags or metadata ignores them: switching providers never breaks a call, only the grouping is lost.
+
+| Provider | `tags` | `metadata` |
+| --- | --- | --- |
+| SendGrid | `categories` | `custom_args` |
+| Amazon SES | `EmailTags`, with the value `true` | `EmailTags` |
+| Resend | `tags`, with the value `true` | `tags` |
+| SMTP, nodemailer, console (printed) | ignored | ignored |
+| memory | kept in the message | kept in the message |
+
+Limits of the provider are checked before calling its API, and throw a `MailMessageError`:
+
+| Provider | Limits |
+| --- | --- |
+| SendGrid | 10 tags, of 255 characters at most; metadata of 10,000 bytes at most (JSON) |
+| Amazon SES, Resend | metadata values of 1 to 256 letters, digits, `_` or `-` (use identifiers, not email addresses or dates); a name cannot be both a tag and a metadata key, since both end up in the same list |
+
 ## Providers
 
 | Provider | Import | Use |
 | --- | --- | --- |
 | `createMemoryProvider()` | `@dotpress/mailer` | tests: keeps messages in `outbox.sent` |
-| `createConsoleProvider()` | `@dotpress/mailer` | development: prints the sender, recipients, subject and attachments |
+| `createConsoleProvider()` | `@dotpress/mailer` | development: prints the sender, recipients, subject, attachments, tags and metadata |
 | `createSmtpProvider()` | `@dotpress/mailer/smtp` | any SMTP server, through nodemailer |
 | `createNodemailerProvider()` | `@dotpress/mailer/smtp` | any nodemailer transporter (sendmail, stream…) |
 | `createSesProvider()` | `@dotpress/mailer/ses` | Amazon SES (API v2), through the AWS SDK |
@@ -321,9 +356,9 @@ SendGrid limits: 1,000 recipients and 30 MB per message.
 
 ### Custom providers
 
-A provider has a `name` and a `send(message)` method, which returns `{ messageId }` or nothing. The message is normalized and frozen: `from`, `to`, `cc`, `bcc`, `replyTo` (`{ name?, address }`), `subject`, `html` (undefined for a text-only message), `text`, `attachments`, `headers`, plus `template` and `locale` for logs. `formatAddress()` formats an address for a header (`"Ada" <ada@example.com>`).
+A provider has a `name` and a `send(message)` method, which returns `{ messageId }` or nothing. The message is normalized and frozen: `from`, `to`, `cc`, `bcc`, `replyTo` (`{ name?, address }`), `subject`, `html` (undefined for a text-only message), `text`, `attachments`, `headers`, `tags`, `metadata`, plus `template` and `locale` for logs. `formatAddress()` formats an address for a header (`"Ada" <ada@example.com>`).
 
-Throw a `MailSendError` with the HTTP `status` of the API, if any. Other errors are wrapped in a `MailSendError`.
+Throw a `MailSendError` with the HTTP `status` of the API, if any, and a `MailMessageError` for a message the provider cannot send (a limit of its API). Other errors are wrapped in a `MailSendError`.
 
 ## Dotpress plugin
 
@@ -361,7 +396,7 @@ MJML is loaded on the first render of an MJML template (about 100 to 300 ms), an
 | `TypeError` | invalid options of `defineTemplate()`, `defineLayout()`, `createMailer()`, `mailer.send()`… |
 | `MailDataError` | data rejected by the schema (`template`, `issues`) |
 | `MailRenderError` | MJML missing or invalid, unknown translation key, no available locale, invalid Mustache, failing source function (`template`, `cause`) |
-| `MailMessageError` | invalid address, attachment or header |
+| `MailMessageError` | invalid address, attachment, header, tag or metadata, or a limit of the provider |
 | `MailSendError` | the provider failed (`provider`, `status`, `cause`) |
 
 The other error classes extend `MailerError`.

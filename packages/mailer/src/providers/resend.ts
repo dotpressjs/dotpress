@@ -7,6 +7,7 @@ import { base64 } from '../encoding.js'
 import { MailSendError } from '../errors.js'
 import type { MailProvider } from '../mailer.js'
 import { checkKeys, formatAddress, type MailMessage } from '../message.js'
+import { keyValueTags } from './key-value-tags.js'
 
 /** A Resend client, or any object with the same `emails.send()` method. */
 export interface ResendClient {
@@ -29,6 +30,12 @@ const OPTIONS = new Set(['apiKey', 'baseUrl', 'client'])
 
 const isNonEmptyString = (value: unknown) =>
   typeof value === 'string' && value !== ''
+
+/** Tags and metadata as Resend tags. */
+const tagsOf = (message: MailMessage) => {
+  const tags = keyValueTags(message, 'Resend')
+  return tags.length > 0 ? { tags } : {}
+}
 
 /** Payload of the Resend API. */
 const toPayload = (message: MailMessage): CreateEmailOptions => ({
@@ -58,6 +65,7 @@ const toPayload = (message: MailMessage): CreateEmailOptions => ({
   ...(Object.keys(message.headers).length > 0
     ? { headers: { ...message.headers } }
     : {}),
+  ...tagsOf(message),
 })
 
 /**

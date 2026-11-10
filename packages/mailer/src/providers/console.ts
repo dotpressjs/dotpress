@@ -48,6 +48,15 @@ export const createConsoleProvider = (
             .join(', ')}`
         )
       }
+      if (message.tags.length > 0) {
+        lines.push(`Tags: ${message.tags.join(', ')}`)
+      }
+      const metadata = Object.entries(message.metadata)
+      if (metadata.length > 0) {
+        lines.push(
+          `Metadata: ${metadata.map(([key, value]) => `${key}=${value}`).join(', ')}`
+        )
+      }
       if (body) lines.push('', message.text)
       write(lines.join('\n'))
     },

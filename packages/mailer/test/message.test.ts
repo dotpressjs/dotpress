@@ -264,3 +264,61 @@ describe('headers', () => {
     await invalid(message, expected)
   })
 })
+
+describe('tags and metadata', () => {
+  it('keeps unique tags, in order', async () => {
+    const { send } = setup()
+    const message = await send({
+      tags: ['welcome', 'user_42', 'A-b', 'welcome', 'x'.repeat(256)],
+      metadata: { userId: '42', 'invoice-id': 'F 2026/001 é' },
+    })
+    expect(message?.tags).toStrictEqual([
+      'welcome',
+      'user_42',
+      'A-b',
+      'x'.repeat(256),
+    ])
+    expect(message?.metadata).toStrictEqual({
+      userId: '42',
+      'invoice-id': 'F 2026/001 é',
+    })
+  })
+
+  it('has no tags nor metadata by default', async () => {
+    const { send } = setup()
+    expect(await send({})).toMatchObject({ tags: [], metadata: {} })
+  })
+
+  it.each([
+    [{ tags: 'welcome' }, 'tags must be a list.'],
+    [
+      { tags: ['ok', 'with space'] },
+      'tags[1] must have 1 to 256 letters, digits, _ or -: "with space".',
+    ],
+    [{ tags: [''] }, 'tags[0] must have 1 to 256 letters, digits, _ or -: "".'],
+    [
+      { tags: ['x'.repeat(257)] },
+      `tags[0] must have 1 to 256 letters, digits, _ or -: "${'x'.repeat(257)}".`,
+    ],
+    [
+      { tags: ['é'] },
+      'tags[0] must have 1 to 256 letters, digits, _ or -: "é".',
+    ],
+    [{ tags: [1] }, 'tags[0] must have 1 to 256 letters, digits, _ or -: 1.'],
+    [{ metadata: [] }, 'metadata must be an object.'],
+    [{ metadata: 'a=b' }, 'metadata must be an object.'],
+    [
+      { metadata: { 'user id': '1' } },
+      'metadata keys must have 1 to 256 letters, digits, _ or -: "user id".',
+    ],
+    [
+      { metadata: { '': '1' } },
+      'metadata keys must have 1 to 256 letters, digits, _ or -: "".',
+    ],
+    [{ metadata: { a: 1 } }, 'metadata.a must be a string on one line.'],
+    [{ metadata: { a: 'x\ny' } }, 'metadata.a must be a string on one line.'],
+    [{ metadata: { a: 'x\ry' } }, 'metadata.a must be a string on one line.'],
+  ])('rejects %j', async (message, expected) => {
+    await invalid(message, expected)
+  })
+})

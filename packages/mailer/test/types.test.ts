@@ -119,6 +119,13 @@ describe('types', () => {
       await mailer.send(template, { to: 'a@example.com', data: { name: 1 } })
       // @ts-expect-error: V1 option
       await mailer.send(plain, { to: 'a@example.com', recipient: 'a' })
+      await mailer.send(plain, {
+        to: 'a@example.com',
+        tags: ['welcome'],
+        metadata: { userId: '42' },
+      })
+      // @ts-expect-error: metadata values are strings
+      await mailer.send(plain, { to: 'a@example.com', metadata: { id: 42 } })
       // @ts-expect-error: subject is required
       await mailer.sendMessage({ to: 'a@example.com', text: 'Hi' })
     })

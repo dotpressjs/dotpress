@@ -1,5 +1,5 @@
-import { base64 } from '../encoding.js'
-import { MailSendError } from '../errors.js'
+import { base64, utf8 } from '../encoding.js'
+import { MailMessageError, MailSendError } from '../errors.js'
 import type { MailProvider } from '../mailer.js'
 import { checkKeys, type Address, type MailMessage } from '../message.js'
 
@@ -27,18 +27,48 @@ interface SendgridAddress {
 const toAddress = ({ name, address }: Address): SendgridAddress =>
   name ? { email: address, name } : { email: address }
 
+const MAX_CATEGORIES = 10
+const MAX_CATEGORY_LENGTH = 255
+const MAX_CUSTOM_ARGS_BYTES = 10_000
+
+/** Limits of the API on categories (tags) and custom_args (metadata). */
+const checkTags = ({ tags, metadata }: MailMessage) => {
+  if (tags.length > MAX_CATEGORIES) {
+    throw new MailMessageError(
+      `SendGrid accepts at most ${MAX_CATEGORIES} tags (categories), got ${tags.length}.`
+    )
+  }
+  const long = tags.find((tag) => tag.length > MAX_CATEGORY_LENGTH)
+  if (long !== undefined) {
+    throw new MailMessageError(
+      `SendGrid accepts tags (categories) of at most ${MAX_CATEGORY_LENGTH} characters: "${long.slice(0, 20)}…" has ${long.length}.`
+    )
+  }
+  const size = utf8(JSON.stringify(metadata)).byteLength
+  if (size > MAX_CUSTOM_ARGS_BYTES) {
+    throw new MailMessageError(
+      `SendGrid accepts at most ${MAX_CUSTOM_ARGS_BYTES} bytes of metadata (custom_args), got ${size}.`
+    )
+  }
+  return { tags, metadata }
+}
+
 /**
  * Body of the Mail Send API (v3), see
  * https://www.twilio.com/docs/sendgrid/api-reference/mail-send/mail-send
  */
 const toBody = (message: MailMessage) => {
   const { to, cc, bcc, replyTo, html, text, attachments, headers } = message
+  const { tags, metadata } = checkTags(message)
   return {
     personalizations: [
       {
         to: to.map(toAddress),
         ...(cc.length > 0 ? { cc: cc.map(toAddress) } : {}),
         ...(bcc.length > 0 ? { bcc: bcc.map(toAddress) } : {}),
+        ...(Object.keys(metadata).length > 0
+          ? { custom_args: { ...metadata } }
+          : {}),
       },
     ],
     from: toAddress(message.from),
@@ -68,6 +98,7 @@ const toBody = (message: MailMessage) => {
         }
       : {}),
     ...(Object.keys(headers).length > 0 ? { headers: { ...headers } } : {}),
+    ...(tags.length > 0 ? { categories: [...tags] } : {}),
   }
 }
 

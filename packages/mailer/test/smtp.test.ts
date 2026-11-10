@@ -254,6 +254,35 @@ describe('nodemailer provider', () => {
     expect(result.messageId).toMatch(/^<.+>$/)
   })
 
+  it('ignores tags and metadata (no SMTP equivalent)', async () => {
+    let sent: Record<string, unknown> | undefined
+    const provider = createNodemailerProvider({
+      sendMail: async (options) => {
+        sent = options as Record<string, unknown>
+        return {}
+      },
+    })
+    await createMailer({ provider, from: 'noreply@example.com' }).sendMessage({
+      to: 'a@example.com',
+      subject: 'Hi',
+      text: 'Hi',
+      tags: ['welcome'],
+      metadata: { userId: '42' },
+    })
+    expect(Object.keys(sent ?? {}).sort()).toEqual([
+      'attachments',
+      'bcc',
+      'cc',
+      'from',
+      'headers',
+      'html',
+      'replyTo',
+      'subject',
+      'text',
+      'to',
+    ])
+  })
+
   it('ignores message IDs that are not strings', async () => {
     const provider = createNodemailerProvider({
       sendMail: async () => ({ messageId: 42 }),

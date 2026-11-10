@@ -48,6 +48,10 @@ export interface MailMessage {
   readonly attachments: readonly MailAttachment[]
   /** Additional headers, like `List-Unsubscribe`. */
   readonly headers: Readonly<Record<string, string>>
+  /** Labels to group messages in the statistics of the provider. */
+  readonly tags: readonly string[]
+  /** Key/value pairs returned by the webhooks of the provider. */
+  readonly metadata: Readonly<Record<string, string>>
   /** Name of the template, if the message was rendered from one. */
   readonly template: string | undefined
   /** Rendered locale, if any. */
@@ -66,6 +70,17 @@ export interface EnvelopeOptions {
   attachments?: readonly MailAttachment[] | undefined
   /** Additional headers, like `List-Unsubscribe`. */
   headers?: Readonly<Record<string, string>> | undefined
+  /**
+   * Labels to group messages in the statistics of the provider: letters,
+   * digits, `_` and `-`. Ignored by providers without tags.
+   */
+  tags?: readonly string[] | undefined
+  /**
+   * Key/value pairs returned by the webhooks of the provider, to link an
+   * event to the app. Keys: letters, digits, `_` and `-`. Ignored by
+   * providers without metadata.
+   */
+  metadata?: Readonly<Record<string, string>> | undefined
 }
 
 /** Envelope of a message, validated. */
@@ -77,6 +92,8 @@ export interface Envelope {
   readonly replyTo: readonly Address[]
   readonly attachments: readonly MailAttachment[]
   readonly headers: Readonly<Record<string, string>>
+  readonly tags: readonly string[]
+  readonly metadata: Readonly<Record<string, string>>
 }
 
 const fail = (message: string): never => {
@@ -91,6 +108,8 @@ const EMAIL = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+$/
 const NAMED = /^([\s\S]*?)\s*<([^<>]*)>$/
 const LINE_BREAK = /[\r\n]/
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+// The strictest rule of the providers (SES, Resend): valid everywhere.
+const TAG = /^[A-Za-z0-9_-]{1,256}$/
 
 // Set by the mailer or the provider.
 const RESERVED_HEADERS = new Set([
@@ -206,6 +225,40 @@ const parseHeaders = (value: unknown): Record<string, string> => {
   return headers
 }
 
+const parseTags = (value: unknown): string[] => {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) fail('tags must be a list.')
+  const tags = new Set<string>()
+  for (const [index, tag] of (value as unknown[]).entries()) {
+    if (typeof tag !== 'string' || !TAG.test(tag)) {
+      fail(
+        `tags[${index}] must have 1 to 256 letters, digits, _ or -: ${JSON.stringify(tag)}.`
+      )
+    }
+    tags.add(tag as string)
+  }
+  return [...tags]
+}
+
+const parseMetadata = (value: unknown): Record<string, string> => {
+  if (value === undefined) return {}
+  if (!isRecord(value)) fail('metadata must be an object.')
+
+  const metadata: Record<string, string> = {}
+  for (const [key, item] of Object.entries(value as object)) {
+    if (!TAG.test(key)) {
+      fail(
+        `metadata keys must have 1 to 256 letters, digits, _ or -: ${JSON.stringify(key)}.`
+      )
+    }
+    if (typeof item !== 'string' || LINE_BREAK.test(item)) {
+      fail(`metadata.${key} must be a string on one line.`)
+    }
+    metadata[key] = item as string
+  }
+  return metadata
+}
+
 /** Single-line subject. */
 export const toSubject = (subject: string) =>
   subject.replace(/\s*[\r\n]+\s*/g, ' ').trim()
@@ -235,6 +288,8 @@ export const parseEnvelope = (
         : parseRecipients(options.replyTo, 'replyTo'),
     attachments: parseAttachments(options.attachments),
     headers: parseHeaders(options.headers),
+    tags: parseTags(options.tags),
+    metadata: parseMetadata(options.metadata),
   }
 }
 

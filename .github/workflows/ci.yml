@@ -17,7 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         node: [22, 24, 26]
-    # Integration tests of the event transports (skipped without them).
+    # Integration tests of the event transports and cache stores (skipped
+    # without them).
     services:
       redis:
         image: redis:7-alpine
@@ -25,6 +26,15 @@ jobs:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
@@ -42,6 +52,7 @@ jobs:
           --health-retries 10
     env:
       REDIS_URL: redis://localhost:6379
+      VALKEY_URL: redis://localhost:6380
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/events
     steps:
       - uses: actions/checkout@v7

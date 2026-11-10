@@ -19,8 +19,12 @@ export class MemoBatchError extends CacheError {
   }
 }
 
-/** Operation of a cache store: `invalidate` writes the tokens of tags. */
-export type StoreOperation = 'get' | 'set' | 'delete' | 'invalidate'
+/**
+ * Operation of a cache store: `invalidate` writes the tokens of tags,
+ * `lock` and `unlock` hold the distributed lock of a load.
+ */
+export type StoreOperation =
+  'get' | 'set' | 'delete' | 'invalidate' | 'lock' | 'unlock'
 
 /** A cache store failed or did not answer in time (`failOpen: false`). */
 export class CacheStoreError extends CacheError {

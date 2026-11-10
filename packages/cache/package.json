@@ -29,6 +29,10 @@
     "./als": {
       "types": "./dist/als.d.ts",
       "default": "./dist/als.js"
+    },
+    "./redis": {
+      "types": "./dist/redis.d.ts",
+      "default": "./dist/redis.js"
     }
   },
   "engines": {
@@ -52,6 +56,8 @@
   "devDependencies": {
     "@dotpress/core": "workspace:*",
     "@dotpress/testing": "workspace:*",
+    "ioredis": "~6.0.0",
+    "redis": "~6.3.1",
     "zod": "^4.6.7"
   },
   "keywords": [
@@ -63,6 +69,8 @@
     "single-flight",
     "typescript",
     "plugin",
-    "asynclocalstorage"
+    "asynclocalstorage",
+    "redis",
+    "valkey"
   ]
 }

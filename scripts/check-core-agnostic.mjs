@@ -30,9 +30,13 @@ const importsOf = async (root, file, seen = new Set()) => {
     /(?:from|import)\s*\(?\s*["']([^"']+)["']/g
   )) {
     if (specifier.startsWith('./')) {
-      const chunk = new URL(specifier, new URL(file, root)).href.slice(
+      const resolved = new URL(specifier, new URL(file, root)).href.slice(
         root.href.length
       )
+      // Declaration chunks are imported as `.js` from `.d.ts` files.
+      const chunk = file.endsWith('.d.ts')
+        ? resolved.replace(/\.js$/, '.d.ts')
+        : resolved
       imports.push(...(await importsOf(root, chunk, seen)))
     } else {
       imports.push({ file, specifier })

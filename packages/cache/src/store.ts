@@ -21,6 +21,14 @@ export interface CacheStore {
   set(key: string, value: string, ttl: number): Promise<void>
   /** Removes a key; missing keys are ignored. */
   delete(key: string): Promise<void>
+  /**
+   * Takes a lock for `ttl` milliseconds: returns its token, or undefined
+   * when another holder has it. Optional: the `lock` option of the cache
+   * needs it.
+   */
+  lock?(key: string, ttl: number): Promise<string | undefined>
+  /** Releases a lock, if the token still holds it. */
+  unlock?(key: string, token: string): Promise<void>
 }
 
 /** Checks a store option. */
@@ -75,6 +83,7 @@ export const createMemoryStore = (
 
   // Insertion order of a Map: the first entry is the least recently used.
   const entries = new Map<string, { value: string; expiresAt: number }>()
+  const locks = new Map<string, { token: string; expiresAt: number }>()
 
   const read = (key: string) => {
     const entry = entries.get(key)
@@ -103,8 +112,19 @@ export const createMemoryStore = (
     delete: async (key: string) => {
       entries.delete(key)
     },
+    lock: async (key: string, ttl: number) => {
+      const held = locks.get(key)
+      if (held && held.expiresAt > Date.now()) return undefined
+      const token = crypto.randomUUID()
+      locks.set(key, { token, expiresAt: Date.now() + ttl })
+      return token
+    },
+    unlock: async (key: string, token: string) => {
+      if (locks.get(key)?.token === token) locks.delete(key)
+    },
     clear: () => {
       entries.clear()
+      locks.clear()
     },
   })
 }

@@ -71,6 +71,13 @@ export interface CachePolicy {
    * background.
    */
   hardTimeout?: Duration | undefined
+  /**
+   * Distributed single flight: before loading a missing value, takes a
+   * lock in the store (Redis…) for at most this duration; the other
+   * instances wait for the value meanwhile, then load it themselves.
+   * Ignored by stores without locks. Disabled by default.
+   */
+  lock?: Duration | undefined
 }
 
 /** Options of `defineCacheEntry()`. */
@@ -128,6 +135,7 @@ const POLICY = [
   'staleWhileRevalidate',
   'timeout',
   'hardTimeout',
+  'lock',
 ] as const
 const ENTRY_OPTIONS = new Set([
   'name',
@@ -145,7 +153,10 @@ const policyOf = (label: string, values: Record<string, unknown>): Policy => {
     const value = values[option]
     if (value === undefined) continue
     policy[option] =
-      option === 'ttl' || option === 'timeout' || option === 'hardTimeout'
+      option === 'ttl' ||
+      option === 'timeout' ||
+      option === 'hardTimeout' ||
+      option === 'lock'
         ? positive(`${label}: ${option}`, value)
         : toMilliseconds(`${label}: ${option}`, value)
   }
@@ -386,6 +397,8 @@ const encoder = new TextEncoder()
 
 // Tokens of tags outlive the values that use them: 30 days at least.
 const TAG_LIFETIME = 30 * 86_400_000
+// While another instance holds the lock, the value is read again so often.
+const LOCK_POLL = 50
 
 /** SHA-256 of a text, in hexadecimal. */
 const sha256 = async (text: string) => {
@@ -490,6 +503,7 @@ export const createCache = (options: CacheOptions): Cache => {
       staleWhileRevalidate: value('staleWhileRevalidate') ?? 0,
       timeout: value('timeout'),
       hardTimeout: value('hardTimeout'),
+      lock: value('lock'),
     }
   }
 
@@ -794,7 +808,10 @@ export const createCache = (options: CacheOptions): Cache => {
       return checked
     }
 
-    /** Loads and writes a value, once per key at a time. */
+    /**
+     * Loads and writes a value, once per key at a time, and once for every
+     * instance with the `lock` option.
+     */
     const load = (
       config: EntryConfig,
       key: string,
@@ -804,10 +821,54 @@ export const createCache = (options: CacheOptions): Cache => {
       const running = loading.get(key)
       if (running) return running
       const loaded = (async () => {
-        const value: unknown = await loader()
-        const written = await write(config, key, args, value)
-        backoffs.delete(key)
-        return written ? written.value : value
+        const policy = policyFor(config)
+        const lockKey = `${key}:lock`
+        let token: string | undefined
+        if (policy.lock !== undefined && store.lock) {
+          const lock = store.lock.bind(store)
+          const ttl = policy.lock
+          // null: the store failed, load without lock.
+          const taken = await guard<string | undefined | null>(
+            'lock',
+            lockKey,
+            config.name,
+            () => lock(lockKey, ttl),
+            null
+          )
+          if (taken === undefined) {
+            // Another instance loads it: wait for its value.
+            const until = Date.now() + ttl
+            while (Date.now() < until) {
+              await new Promise((resolve) => setTimeout(resolve, LOCK_POLL))
+              const found = await lookup(config, policy, key)
+              if (found?.fresh) return found.value
+            }
+            logger.warn(
+              { entry: config.name, key, lock: ttl },
+              'Cache lock not released in time: loading anyway'
+            )
+          } else if (taken !== null) {
+            token = taken
+          }
+        }
+        try {
+          const value: unknown = await loader()
+          const written = await write(config, key, args, value)
+          backoffs.delete(key)
+          return written ? written.value : value
+        } finally {
+          if (token !== undefined && store.unlock) {
+            const unlock = store.unlock.bind(store)
+            const held = token
+            await guard(
+              'unlock',
+              lockKey,
+              config.name,
+              () => unlock(lockKey, held),
+              undefined
+            )
+          }
+        }
       })()
       loading.set(key, loaded)
       void loaded.then(

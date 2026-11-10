@@ -34,12 +34,13 @@ pnpm typecheck
 pnpm check:core  # core, openapi and the main entry of adapter-hono must stay runtime-agnostic
 ```
 
-Integration tests of the event transports run when their services are available, and are skipped otherwise:
+Integration tests of the event transports and the cache stores run when their services are available, and are skipped otherwise:
 
 ```sh
 docker run -d --rm -p 6379:6379 redis:7-alpine
+docker run -d --rm -p 6380:6379 valkey/valkey:8-alpine
 docker run -d --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=events postgres:18-alpine
-REDIS_URL=redis://localhost:6379 DATABASE_URL=postgres://postgres:postgres@localhost:5432/events pnpm test
+REDIS_URL=redis://localhost:6379 VALKEY_URL=redis://localhost:6380 DATABASE_URL=postgres://postgres:postgres@localhost:5432/events pnpm test
 ```
 
 The Google Pub/Sub tests also run against its emulator (a large image, not run by the CI); push deliveries reach the test server through `host.docker.internal` (set `PUBSUB_PUSH_HOST` otherwise):

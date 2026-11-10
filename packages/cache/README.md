@@ -122,6 +122,7 @@ export const catalogCache = defineCacheEntry({
 | `staleWhileRevalidate` | 0 (disabled) | During this time, `getOrSet` returns the expired value at once and reloads it in the background (once per key). Failed refreshes are logged. |
 | `timeout` | none | With an expired value in its grace period, a load slower than this returns that value (`warn` log); the load goes on and caches its result. |
 | `hardTimeout` | none | A load slower than this fails with a `CacheTimeoutError`, or returns the expired value of the grace period. The load goes on and caches its result. |
+| `lock` | none | Distributed single flight (stores with locks, like Redis): before loading a missing value, the instance takes a lock for at most this duration; the other instances wait for the value meanwhile (reading it every 50 ms), then load it themselves if the lock was not released. Set it above the duration of the loader. |
 
 Values stay in the store for `ttl` plus the longer of `grace` and `staleWhileRevalidate`. Without a grace period, a failing loader fails the call, as without cache.
 
@@ -167,8 +168,29 @@ const cache = createCache({
 | Store | Import | Use |
 | --- | --- | --- |
 | `createMemoryStore({ maxEntries })` | `@dotpress/cache` | memory of the process: one instance, development, tests. Least recently used entries are removed beyond `maxEntries` (10,000 by default) |
+| `createRedisStore({ client })` | `@dotpress/cache/redis` | Redis or Valkey, with a node-redis or ioredis client |
 
-A store implements `CacheStore`: `name`, `get(key)`, `set(key, value, ttl)` (strings, `ttl` in milliseconds), `delete(key)`, and optionally `getMany(keys)` (one round trip for the tokens of tags) and `maxKeyLength` (bytes).
+A store implements `CacheStore`: `name`, `get(key)`, `set(key, value, ttl)` (strings, `ttl` in milliseconds), `delete(key)`, and optionally `getMany(keys)` (one round trip for the tokens of tags), `lock(key, ttl)` / `unlock(key, token)` (the `lock` option) and `maxKeyLength` (bytes).
+
+### Redis and Valkey
+
+```ts
+import { createClient } from 'redis' // or: import { Redis } from 'ioredis'
+import { createRedisStore } from '@dotpress/cache/redis'
+
+const client = createClient({ url: process.env.REDIS_URL })
+client.on('error', (error) => logger.error({ error }, 'Redis error'))
+await client.connect()
+
+const cache = createCache({ store: createRedisStore({ client }), prefix: 'app', storeTimeout: '200ms' })
+// On shutdown: await client.close()
+```
+
+The store uses the client of the app, which connects and closes it: [node-redis](https://github.com/redis/node-redis) (`redis`, v4 or later; the client recommended by Redis), or [ioredis](https://github.com/redis/ioredis) (`new Redis(url)`; also used by BullMQ). It works with Redis and [Valkey](https://valkey.io), and any server of the same protocol (Dragonfly, KeyDB…). Commands: `GET`, `MGET` (tags), `SET … PX`, `DEL`, and for the `lock` option `SET … NX PX` and a Lua script that releases a lock only with its token (no `DELEX`, which needs Redis 8.4).
+
+- Cluster clients (`createCluster()`, `new Cluster()`) are refused for now: use a standalone server, or the primary of a replicated one.
+- Set `storeTimeout`: while the client reconnects, its commands wait, and the cache would wait with them.
+- Valkey on a managed service (ElastiCache, Memorystore, Upstash with its Redis protocol endpoint) works the same way.
 
 ## Dotpress plugin
 

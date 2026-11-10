@@ -1,18 +1,24 @@
 # @dotpress/mailer
 
-Typed, multilingual email templates for [Dotpress](https://dotpress.dev), written in [MJML](https://mjml.io) or HTML, with shared layouts. Works without a Dotpress app: in a script, a worker or a Lambda function.
+Typed, multilingual email templates for [Dotpress](https://dotpress.dev), written in [MJML](https://mjml.io) or HTML, with shared layouts, and interchangeable providers to send them. Works without a Dotpress app: in a script, a worker or a Lambda function.
 
 > 🚧 Dotpress V2 is under active development and not published yet.
 
 ```sh
 pnpm add @dotpress/mailer zod
 pnpm add mjml # for MJML templates
+pnpm add @dotpress/core # for mailerPlugin
 ```
 
 ## Quick start
 
 ```ts
-import { defineLayout, defineTemplate, renderMail } from '@dotpress/mailer'
+import {
+  createConsoleProvider,
+  createMailer,
+  defineLayout,
+  defineTemplate,
+} from '@dotpress/mailer'
 import { z } from 'zod'
 
 export const baseLayout = defineLayout({
@@ -57,9 +63,15 @@ export const resetPassword = defineTemplate({
 </mj-section>`,
 })
 
-const { subject, html, text } = await renderMail(resetPassword, {
-  locale: 'fr-CA', // fr-CA → fr → defaultLocale
+const mailer = createMailer({
+  provider: createConsoleProvider(), // prints messages, for development
+  from: 'Acme <noreply@acme.com>',
   defaultLocale: 'en',
+})
+
+await mailer.send(resetPassword, {
+  to: 'Ada Lovelace <ada@example.com>',
+  locale: 'fr-CA', // fr-CA → fr → defaultLocale
   data: { firstName: 'Ada', resetUrl: 'https://app.acme.com/reset?token=…' },
 })
 ```
@@ -142,9 +154,9 @@ The subject is rendered by Mustache without HTML escaping, then line breaks are 
 
 Without a `text` source, the text version is converted from the HTML version by [html-to-text](https://github.com/html-to-text/node-html-to-text): lines wrapped at 78 characters, links followed by their URL, images and hidden elements (like the MJML preview text) left out.
 
-## Rendering
+## Rendering without sending
 
-`renderMail(template, { locale, defaultLocale, data })` returns `{ template, locale, subject, html, text }`. It is useful to preview templates, and to test them:
+`mailer.render(template, { locale, data })` returns `{ template, locale, subject, html, text }`, with the default locale of the mailer. `renderMail(template, { locale, defaultLocale, data })` does the same without a mailer. Both are useful to preview templates, and to test them:
 
 ```ts
 for (const locale of resetPassword.locales) {
@@ -152,6 +164,106 @@ for (const locale of resetPassword.locales) {
   expect(mail.html).toContain('reset?token=')
 }
 ```
+
+## Sending
+
+```ts
+const mailer = createMailer({
+  provider, // see Providers
+  from: 'Acme <noreply@acme.com>', // default sender
+  replyTo: 'support@acme.com', // optional default
+  defaultLocale: 'en',
+  logger, // optional: logs each sent message
+})
+```
+
+### `mailer.send(template, options)`
+
+Renders a template and sends it. Returns `{ messageId }`, the identifier given by the provider (if any).
+
+```ts
+await mailer.send(invoiceMail, {
+  to: ['ada@example.com', { name: 'Grace Hopper', address: 'grace@example.com' }],
+  cc: 'accounting@example.com',
+  bcc: ['archive@example.com'],
+  replyTo: 'billing@acme.com', // overrides the default
+  from: 'Acme Billing <billing@acme.com>', // overrides the default
+  subject: 'Your invoice', // overrides the template subject
+  locale: user.locale,
+  data: { invoiceNumber: 'F-2026-001' },
+  attachments: [
+    { filename: 'invoice.pdf', content: pdfBytes, contentType: 'application/pdf' },
+    { filename: 'logo.png', content: logoBytes, contentId: 'logo' }, // <img src="cid:logo">
+  ],
+  headers: { 'List-Unsubscribe': '<https://acme.com/unsubscribe?u=42>' },
+})
+```
+
+- **Addresses**: `'ada@example.com'`, `'Ada Lovelace <ada@example.com>'` or `{ name, address }`, alone or in a list. `to` needs at least one address.
+- **Attachments**: `content` is a `Uint8Array` (a Node.js `Buffer` works) or a string. `contentId` makes the attachment inline.
+- **Headers**: additional headers only. `From`, `To`, `Subject`, `Content-Type` and the other headers set by the mailer are rejected.
+
+Recipients, attachments and headers are checked before rendering: invalid values (an address without `@`, a line break in a name or a header) throw a `MailMessageError`.
+
+### `mailer.sendMessage(options)`
+
+Sends a message rendered elsewhere: the same options, with `subject`, and `html`, `text` or both. Without `text`, the text version is converted from `html`.
+
+```ts
+await mailer.sendMessage({ to, subject: 'Export ready', html: '<p>…</p>' })
+```
+
+## Providers
+
+| Provider | Import | Use |
+| --- | --- | --- |
+| `createMemoryProvider()` | `@dotpress/mailer` | tests: keeps messages in `outbox.sent` |
+| `createConsoleProvider()` | `@dotpress/mailer` | development: prints the sender, recipients, subject and attachments |
+
+The console provider prints the text version only with `{ body: true }`: messages often contain secrets (reset links, login codes). Never use it as a fallback when the configuration of the real provider is missing: messages would be lost silently.
+
+```ts
+const outbox = createMemoryProvider()
+const mailer = createMailer({ provider: outbox, from: 'noreply@example.com' })
+
+await signUp('ada@example.com')
+expect(outbox.last()).toMatchObject({
+  to: [{ address: 'ada@example.com' }],
+  template: 'welcome',
+})
+outbox.clear()
+```
+
+### Custom providers
+
+A provider has a `name` and a `send(message)` method, which returns `{ messageId }` or nothing. The message is normalized and frozen: `from`, `to`, `cc`, `bcc`, `replyTo` (`{ name?, address }`), `subject`, `html` (undefined for a text-only message), `text`, `attachments`, `headers`, plus `template` and `locale` for logs. `formatAddress()` formats an address for a header (`"Ada" <ada@example.com>`).
+
+Throw a `MailSendError` with the HTTP `status` of the API, if any. Other errors are wrapped in a `MailSendError`.
+
+## Dotpress plugin
+
+```ts
+import { mailerPlugin } from '@dotpress/mailer/plugin'
+
+await createApp({ adapter, plugins: [mailerPlugin(mailer)] })
+
+defineRoute({
+  method: 'post',
+  path: '/invitations',
+  handler: async ({ mailer, body }) => {
+    await mailer.send(invitation, { to: body.email, data: { team: body.team } })
+    return { sent: true }
+  },
+})
+```
+
+`ctx.mailer` logs sent messages with the request logger, so logs carry the request ID. Using `ctx.mailer` without the plugin throws an explicit error. The plugin is in its own entry point: the main one does not depend on `@dotpress/core`.
+
+Sending is not retried and not queued: for that, send from a job or a queue consumer.
+
+## Logs
+
+With a `logger` (a Dotpress or Pino logger, or any object with an `info(data, message)` method), each sent message is logged at the `info` level as `Mail sent`, with the provider, the template, the message ID and the number of recipients. Addresses are not logged. Failures are thrown, not logged.
 
 ## Performance
 
@@ -161,11 +273,13 @@ MJML is loaded on the first render of an MJML template (about 100 to 300 ms), an
 
 | Error | When |
 | --- | --- |
-| `TypeError` | invalid `defineTemplate()` or `defineLayout()` options |
+| `TypeError` | invalid options of `defineTemplate()`, `defineLayout()`, `createMailer()`, `mailer.send()`… |
 | `MailDataError` | data rejected by the schema (`template`, `issues`) |
 | `MailRenderError` | MJML missing or invalid, unknown translation key, no available locale, invalid Mustache, failing source function (`template`, `cause`) |
+| `MailMessageError` | invalid address, attachment or header |
+| `MailSendError` | the provider failed (`provider`, `status`, `cause`) |
 
-Both error classes extend `MailerError`.
+The other error classes extend `MailerError`.
 
 ## License
 

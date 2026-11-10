@@ -1,12 +1,18 @@
 import mustache from 'mustache'
 import { MailDataError, MailRenderError } from './errors.js'
 import { resolveLocale, type Translations } from './locales.js'
+import { toSubject } from './message.js'
 import {
   definitionOf,
   type MailTemplate,
   type TemplateDefinition,
   type TranslateContext,
 } from './template.js'
+
+/** `data` option: required when the template has a schema. */
+export type DataOption<TData> = [TData] extends [undefined]
+  ? { data?: undefined }
+  : { data: TData }
 
 /** Options of `renderMail()`. */
 export type RenderMailOptions<TData> = {
@@ -17,7 +23,7 @@ export type RenderMailOptions<TData> = {
   locale?: string | undefined
   /** Locale used when the requested one is not available. */
   defaultLocale?: string | undefined
-} & ([TData] extends [undefined] ? { data?: undefined } : { data: TData })
+} & DataOption<TData>
 
 /** A rendered email. */
 export interface RenderedMail {
@@ -129,8 +135,8 @@ const compileMjml = async (name: string, source: string) => {
   }
 }
 
-/** Converts the HTML version to text. */
-const toText = async (html: string) => {
+/** Converts an HTML version to text. */
+export const toText = async (html: string) => {
   const { convert } = await loadHtmlToText()
   return convert(html, {
     wordwrap: 78,
@@ -349,16 +355,15 @@ export const renderMail = async <TData>(
     escapeHtml
   )
 
-  // A subject is a single line.
-  const subject = renderMustache(
-    name,
-    'subject',
-    subjectSource(definition, locale),
-    data,
-    noEscape
+  const subject = toSubject(
+    renderMustache(
+      name,
+      'subject',
+      subjectSource(definition, locale),
+      data,
+      noEscape
+    )
   )
-    .replace(/\s*[\r\n]+\s*/g, ' ')
-    .trim()
 
   const text = definition.text
     ? renderMustache(

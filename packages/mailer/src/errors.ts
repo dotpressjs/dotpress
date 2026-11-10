@@ -41,3 +41,36 @@ export class MailRenderError extends MailerError {
     super(`Cannot render mail template "${template}": ${message}`, options)
   }
 }
+
+/** Invalid message: address, attachment, header or option. */
+export class MailMessageError extends MailerError {
+  override name = 'MailMessageError'
+
+  constructor(message: string) {
+    super(`Invalid mail message: ${message}`)
+  }
+}
+
+/** Options of `MailSendError`. */
+export interface MailSendErrorOptions extends ErrorOptions {
+  /** HTTP status of the provider API, if any. */
+  status?: number | undefined
+}
+
+/** The provider failed to send a message. */
+export class MailSendError extends MailerError {
+  override name = 'MailSendError'
+  /** HTTP status of the provider API, if any. */
+  readonly status: number | undefined
+
+  constructor(
+    /** Name of the provider. */
+    readonly provider: string,
+    message: string,
+    options: MailSendErrorOptions = {}
+  ) {
+    const { status, ...errorOptions } = options
+    super(`Mail not sent by the ${provider} provider: ${message}`, errorOptions)
+    this.status = status
+  }
+}

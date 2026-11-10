@@ -1,6 +1,8 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 import {
+  createMailer,
+  createMemoryProvider,
   defineLayout,
   defineTemplate,
   renderMail,
@@ -87,6 +89,39 @@ describe('types', () => {
         subject: { de: 'Hallo' },
         mjml: '',
       }))
+  })
+
+  it('types the options of mailer.send()', () => {
+    const mailer = createMailer({
+      provider: createMemoryProvider(),
+      from: 'noreply@example.com',
+    })
+    const template = defineTemplate({
+      name: 'welcome',
+      schema: z.object({ name: z.string() }),
+      subject: 'Hi',
+      html: '',
+    })
+    const plain = defineTemplate({ name: 'plain', subject: 'Hi', html: '' })
+
+    void (async () => {
+      const result = await mailer.send(template, {
+        to: ['a@example.com', { name: 'B', address: 'b@example.com' }],
+        data: { name: 'Ada' },
+      })
+      expectTypeOf(result.messageId).toEqualTypeOf<string | undefined>()
+      await mailer.send(plain, { to: 'a@example.com' })
+      // @ts-expect-error: to is required
+      await mailer.send(plain, {})
+      // @ts-expect-error: data is required
+      await mailer.send(template, { to: 'a@example.com' })
+      // @ts-expect-error: wrong data
+      await mailer.send(template, { to: 'a@example.com', data: { name: 1 } })
+      // @ts-expect-error: V1 option
+      await mailer.send(plain, { to: 'a@example.com', recipient: 'a' })
+      // @ts-expect-error: subject is required
+      await mailer.sendMessage({ to: 'a@example.com', text: 'Hi' })
+    })
   })
 
   it('requires exactly one source', () => {

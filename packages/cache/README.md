@@ -169,6 +169,7 @@ const cache = createCache({
 | --- | --- | --- |
 | `createMemoryStore({ maxEntries })` | `@dotpress/cache` | memory of the process: one instance, development, tests. Least recently used entries are removed beyond `maxEntries` (10,000 by default) |
 | `createRedisStore({ client })` | `@dotpress/cache/redis` | Redis or Valkey, with a node-redis or ioredis client |
+| `createUpstashStore({ url, token })` | `@dotpress/cache/upstash` | Upstash Redis over its REST API: every runtime, edge included |
 
 A store implements `CacheStore`: `name`, `get(key)`, `set(key, value, ttl)` (strings, `ttl` in milliseconds), `delete(key)`, and optionally `getMany(keys)` (one round trip for the tokens of tags), `lock(key, ttl)` / `unlock(key, token)` (the `lock` option) and `maxKeyLength` (bytes).
 
@@ -191,6 +192,22 @@ The store uses the client of the app, which connects and closes it: [node-redis]
 - Cluster clients (`createCluster()`, `new Cluster()`) are refused for now: use a standalone server, or the primary of a replicated one.
 - Set `storeTimeout`: while the client reconnects, its commands wait, and the cache would wait with them.
 - Valkey on a managed service (ElastiCache, Memorystore, Upstash with its Redis protocol endpoint) works the same way.
+
+### Upstash
+
+```ts
+import { createUpstashStore } from '@dotpress/cache/upstash'
+
+const store = createUpstashStore({
+  url: env.UPSTASH_REDIS_REST_URL,
+  token: env.UPSTASH_REDIS_REST_TOKEN, // the standard token: the read-only one cannot write
+})
+const cache = createCache({ store, prefix: 'app', storeTimeout: '500ms' })
+```
+
+The store calls the [REST API](https://upstash.com/docs/redis/features/restapi) of [Upstash Redis](https://upstash.com/docs/redis) with `fetch`: no dependency, no connection to open or close, and it runs on Cloudflare Workers, Vercel, Deno, Bun and Node.js. Each operation is one HTTPS request (`GET`, `MGET` for tags, `SET … PX`, `DEL`, and `SET … NX PX` plus a Lua script for the `lock` option). Errors of the API (`401`, `400 ERR …`) are store failures: logged, and the cache fails open. A request is limited to 10 MB on the free and pay-as-you-go plans. The `fetch` option replaces the global `fetch`.
+
+The `@upstash/redis` SDK is not needed: by default it applies `JSON.parse` to every reply, which would change the values of the cache.
 
 ## Dotpress plugin
 

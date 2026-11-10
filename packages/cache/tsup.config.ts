@@ -6,6 +6,7 @@ export default defineConfig({
     plugin: 'src/plugin.ts',
     als: 'src/als.ts',
     redis: 'src/stores/redis.ts',
+    upstash: 'src/stores/upstash.ts',
   },
   format: ['esm'],
   target: 'es2022',

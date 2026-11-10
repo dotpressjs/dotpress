@@ -33,6 +33,10 @@
     "./redis": {
       "types": "./dist/redis.d.ts",
       "default": "./dist/redis.js"
+    },
+    "./upstash": {
+      "types": "./dist/upstash.d.ts",
+      "default": "./dist/upstash.js"
     }
   },
   "engines": {
@@ -71,6 +75,7 @@
     "plugin",
     "asynclocalstorage",
     "redis",
-    "valkey"
+    "valkey",
+    "upstash"
   ]
 }

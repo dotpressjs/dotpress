@@ -24,6 +24,7 @@ import {
   type PluginAPI,
   type PluginCors,
   type RequestHook,
+  type RequestWrapper,
   type ResponseHook,
 } from './plugins.js'
 import { getRequestSource, type DotpressRequest } from './request.js'
@@ -125,6 +126,7 @@ interface PluginRegistry {
   >
   readonly errorHooks: ErrorHook[]
   readonly requestHooks: RequestHook[]
+  readonly requestWrappers: RequestWrapper[]
   readonly responseHooks: ResponseHook[]
   readonly initHooks: LifecycleHook[]
   readonly readyHooks: LifecycleHook[]
@@ -138,6 +140,7 @@ const createPluginRegistry = (): PluginRegistry => ({
   contextFactories: new Map(),
   errorHooks: [],
   requestHooks: [],
+  requestWrappers: [],
   responseHooks: [],
   initHooks: [],
   readyHooks: [],
@@ -269,6 +272,14 @@ const setupPlugins = async (
         }),
         onRequest: register('hooks.onRequest', (hook: RequestHook) => {
           registry.requestHooks.push(hook)
+        }),
+        wrapRequest: register('hooks.wrapRequest', (hook: RequestWrapper) => {
+          if (typeof hook !== 'function') {
+            throw new TypeError(
+              `Plugin "${plugin.name}": hooks.wrapRequest() expects a function.`
+            )
+          }
+          registry.requestWrappers.push(hook)
         }),
         onResponse: register('hooks.onResponse', (hook: ResponseHook) => {
           registry.responseHooks.push(hook)
@@ -406,6 +417,7 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
       ])
     ),
     requestHooks: [...registry.requestHooks],
+    requestWrappers: [...registry.requestWrappers],
     responseHooks: [...registry.responseHooks],
     cors,
     allowedMethods: (path: string) =>

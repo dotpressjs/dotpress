@@ -11,6 +11,7 @@ Works without a Dotpress app: in a script, a worker or a Lambda function.
 
 ```sh
 pnpm add @dotpress/cache
+pnpm add @dotpress/core # for cachePlugin
 ```
 
 ## Memo
@@ -168,6 +169,59 @@ const cache = createCache({
 | `createMemoryStore({ maxEntries })` | `@dotpress/cache` | memory of the process: one instance, development, tests. Least recently used entries are removed beyond `maxEntries` (10,000 by default) |
 
 A store implements `CacheStore`: `name`, `get(key)`, `set(key, value, ttl)` (strings, `ttl` in milliseconds), `delete(key)`, and optionally `getMany(keys)` (one round trip for the tokens of tags) and `maxKeyLength` (bytes).
+
+## Dotpress plugin
+
+```ts
+import { cachePlugin } from '@dotpress/cache/plugin'
+
+await createApp({ adapter, plugins: [cachePlugin({ cache })] })
+
+const authenticate = defineMiddleware(async (ctx) => {
+  ctx.session = await ctx.memo(loadSession, ctx.req.headers.authorization)
+})
+
+defineRoute({
+  path: '/me',
+  middlewares: [authenticate],
+  handler: async ({ memo, cache, session }) => {
+    const user = await memo(loadUser, session.userId) // loaded once per request
+    const plan = await cache.getOrSet(planCache, user.planId, () => billing.getPlan(user.planId))
+    return { user, plan }
+  },
+})
+```
+
+- `ctx.memo`: a new memo for each request, created on first use.
+- `ctx.cache` (with `cache`): the cache, logging with the request logger (request ID).
+
+### Memo without passing the context
+
+Services deep in the code do not always receive `ctx`. With `memoScope: asyncLocalMemo`, each request runs in the scope of its memo ([`AsyncLocalStorage`](https://nodejs.org/api/async_context.html): Node.js, Bun, Deno, and Cloudflare Workers with the `nodejs_compat` flag), and a memoized loader works anywhere during the request:
+
+```ts
+import { asyncLocalMemo, memoized } from '@dotpress/cache/als'
+
+await createApp({ adapter, plugins: [cachePlugin({ cache, memoScope: asyncLocalMemo })] })
+
+export const getUser = memoized(loadUser)
+
+// A service, called by a middleware, a handler or another service
+export const canEdit = async (userId: string, doc: Doc) => (await getUser(userId)).role === 'admin'
+```
+
+Outside a request (an event listener, a job, a script), open a scope with `runWithMemo()`; `currentMemo()` returns the memo of the scope (for `set` and `delete`). Outside a scope, both throw an explicit error: there is no global memo.
+
+```ts
+import { runWithMemo } from '@dotpress/cache/als'
+
+export default defineListener(orderPaid, {
+  name: 'send-invoice',
+  handle: ({ payload }) => runWithMemo(() => sendInvoice(payload.orderId)), // one memo per message
+})
+```
+
+Without `/als`, create a memo per message: `const memo = createMemo()`.
 
 ## Errors
 

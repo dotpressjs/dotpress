@@ -305,6 +305,12 @@ importers:
 
   packages/cache:
     devDependencies:
+      '@dotpress/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dotpress/testing':
+        specifier: workspace:*
+        version: link:../testing
       zod:
         specifier: ^4.6.7
         version: 4.6.7

@@ -21,6 +21,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    },
+    "./als": {
+      "types": "./dist/als.d.ts",
+      "default": "./dist/als.js"
     }
   },
   "engines": {
@@ -33,7 +41,17 @@
     "test": "vitest run",
     "test:watch": "vitest watch"
   },
+  "peerDependencies": {
+    "@dotpress/core": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@dotpress/core": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@dotpress/core": "workspace:*",
+    "@dotpress/testing": "workspace:*",
     "zod": "^4.6.7"
   },
   "keywords": [
@@ -43,6 +61,8 @@
     "dataloader",
     "batching",
     "single-flight",
-    "typescript"
+    "typescript",
+    "plugin",
+    "asynclocalstorage"
   ]
 }

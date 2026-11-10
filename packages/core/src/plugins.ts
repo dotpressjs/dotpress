@@ -46,6 +46,17 @@ export type RequestHook = (
   ctx: RequestContext
 ) => MiddlewareResult | Promise<MiddlewareResult>
 
+/**
+ * Hook that runs the rest of a request (request hooks, middlewares,
+ * validation, handler and its error handling) inside `next()`: to open a
+ * scope around it, like an `AsyncLocalStorage` store or a tracing span. It
+ * must call `next()` and return its result.
+ */
+export type RequestWrapper = <T>(
+  ctx: RequestContext,
+  next: () => Promise<T>
+) => Promise<T>
+
 export interface ResponseEvent {
   readonly request: NormalizedRequest
   readonly response: NormalizedResponse
@@ -94,6 +105,11 @@ export interface PluginHooks {
   /** After the routes are mounted on the adapter, before `listen()`. */
   onReady(hook: LifecycleHook): void
   onRequest(hook: RequestHook): void
+  /**
+   * Runs every request matching a route inside the hook (see
+   * `RequestWrapper`). The hooks of the first plugins run outermost.
+   */
+  wrapRequest(hook: RequestWrapper): void
   onResponse(hook: ResponseHook): void
   /** When `app.close()` is called, after the server is stopped. */
   onClose(hook: LifecycleHook): void

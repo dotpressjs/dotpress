@@ -64,6 +64,8 @@ export default defineConfig(
       // Node.js-only command of @dotpress/events.
       'packages/events/src/cli.ts',
       'packages/events/src/bin.ts',
+      // AsyncLocalStorage (node:async_hooks), outside the main entry.
+      'packages/cache/src/als.ts',
     ],
     rules: {
       'no-restricted-imports': [

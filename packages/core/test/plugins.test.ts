@@ -214,6 +214,191 @@ describe('plugins', () => {
       expect(handler).not.toHaveBeenCalled()
     })
 
+    describe('wrapRequest', () => {
+      /** A scope like AsyncLocalStorage, for one request at a time. */
+      const createScope = () => {
+        let current: string[] | undefined
+        return {
+          get: () => current,
+          run: async <T>(names: string[], next: () => Promise<T>) => {
+            const previous = current
+            current = names
+            try {
+              return await next()
+            } finally {
+              current = previous
+            }
+          },
+        }
+      }
+      type Scope = ReturnType<typeof createScope>
+      const scoped = (name: string, store: Scope) =>
+        definePlugin({
+          name,
+          setup(api) {
+            api.hooks.wrapRequest((_ctx, next) =>
+              store.run([...(store.get() ?? []), name], next)
+            )
+          },
+        })
+
+      it('runs request hooks, middlewares and the handler inside the hooks', async () => {
+        const store = createScope()
+        const seen: unknown[] = []
+        const track: Middleware = () => {
+          seen.push(store.get())
+        }
+        const { inject } = await createTestApp(
+          (router) => {
+            router.defineRoute({
+              path: '/scoped',
+              middlewares: [track],
+              handler: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 1))
+                return { scope: store.get() }
+              },
+            })
+          },
+          {
+            plugins: [
+              scoped('outer', store),
+              scoped('inner', store),
+              definePlugin({
+                name: 'hook',
+                setup(api) {
+                  api.hooks.onRequest(track)
+                },
+              }),
+            ],
+          }
+        )
+        const res = await inject({ url: '/scoped' })
+        expect(res.body).toEqual({ scope: ['outer', 'inner'] })
+        expect(seen).toEqual([
+          ['outer', 'inner'],
+          ['outer', 'inner'],
+        ])
+        expect(store.get()).toBeUndefined()
+      })
+
+      it('handles errors inside the hooks', async () => {
+        const store = createScope()
+        const scopes: unknown[] = []
+        const onError = vi.fn(() => {
+          scopes.push(store.get())
+        })
+        const { inject } = await createTestApp(
+          (router) => {
+            router.defineRoute({
+              path: '/fails',
+              handler: () => {
+                throw new Error('boom')
+              },
+            })
+          },
+          { plugins: [scoped('scope', store)], onError }
+        )
+        expect((await inject({ url: '/fails' })).status).toBe(500)
+        expect(scopes).toEqual([['scope']])
+      })
+
+      it('runs the request once when next() is called twice', async () => {
+        const handler = vi.fn(() => ({ ok: true }))
+        const { inject } = await createTestApp(
+          (router) => {
+            router.defineRoute({ path: '/twice', handler })
+          },
+          {
+            plugins: [
+              definePlugin({
+                name: 'twice',
+                setup(api) {
+                  api.hooks.wrapRequest(async (_ctx, next) => {
+                    await next()
+                    return next()
+                  })
+                },
+              }),
+            ],
+          }
+        )
+        expect((await inject({ url: '/twice' })).body).toEqual({ ok: true })
+        expect(handler).toHaveBeenCalledOnce()
+      })
+
+      it('fails requests whose hook does not call next() or throws', async () => {
+        const handler = vi.fn(() => null)
+        const logger = silentLogger()
+        const { inject } = await createTestApp(
+          (router) => {
+            router.defineRoute({ path: '/skipped', handler })
+          },
+          {
+            logger,
+            plugins: [
+              definePlugin({
+                name: 'skips',
+                setup(api) {
+                  api.hooks.wrapRequest((async () => undefined) as never)
+                },
+              }),
+            ],
+          }
+        )
+        expect((await inject({ url: '/skipped' })).status).toBe(500)
+        expect(handler).not.toHaveBeenCalled()
+        expect(logger.entries).toContainEqual({
+          level: 'error',
+          args: [
+            new Error('A wrapRequest hook must call next().'),
+            expect.any(String),
+          ],
+        })
+
+        const failing = await createTestApp(
+          (router) => {
+            router.defineRoute({ path: '/throws', handler })
+          },
+          {
+            plugins: [
+              definePlugin({
+                name: 'throws',
+                setup(api) {
+                  api.hooks.wrapRequest(() => {
+                    throw new Error('no scope')
+                  })
+                },
+              }),
+            ],
+          }
+        )
+        const res = await failing.inject({ url: '/throws' })
+        expect(res.status).toBe(500)
+        expect(res.headers['x-request-id']).toEqual(expect.any(String))
+      })
+
+      it('refuses hooks that are not functions', async () => {
+        await expect(
+          createApp({
+            adapter: memoryAdapter(),
+            logger: silentLogger(),
+            plugins: [
+              definePlugin({
+                name: 'broken',
+                setup(api) {
+                  api.hooks.wrapRequest('scope' as never)
+                },
+              }),
+            ],
+          })
+        ).rejects.toThrow(
+          new TypeError(
+            'Plugin "broken": hooks.wrapRequest() expects a function.'
+          )
+        )
+      })
+    })
+
     it('applies app filters, plugin filters, then router filters', async () => {
       const { inject } = await createTestApp(
         (router) => {

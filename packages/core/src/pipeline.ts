@@ -28,6 +28,7 @@ import {
   getDeclaredContextKeys,
   type BaseContextKey,
   type RequestHook,
+  type RequestWrapper,
   type ResponseEvent,
   type ResponseHook,
 } from './plugins.js'
@@ -73,6 +74,8 @@ export interface PipelineConfig {
     (ctx: RequestContext) => unknown
   >
   readonly requestHooks: readonly RequestHook[]
+  /** `hooks.wrapRequest()`, outermost first. */
+  readonly requestWrappers: readonly RequestWrapper[]
   readonly responseHooks: readonly ResponseHook[]
   /** `cors` option of `createApp()`. */
   readonly cors: CorsPolicy | undefined
@@ -580,6 +583,13 @@ export const compileRoute = (
   ): Promise<NormalizedResponse> => {
     let ctx: RequestContext | undefined
     const state = createResponseState()
+    const fail = async (error: unknown) => {
+      const headers = isHttpError(error) ? state.toHeaders() : undefined
+      return withRequestId(
+        await handleError(error, logger, ctx, headers),
+        requestId
+      )
+    }
 
     try {
       const req = createRequest(request, { rawBody: route.rawBody })
@@ -600,42 +610,64 @@ export const compileRoute = (
       decorateContext(created, config)
       setContext(created)
 
-      for (const middleware of middlewares) {
-        const output = await middleware(created)
+      const pipeline = async (): Promise<NormalizedResponse> => {
+        try {
+          for (const middleware of middlewares) {
+            const output = await middleware(created)
 
-        if (output === undefined) continue
+            if (output === undefined) continue
 
-        if (isHttpError(output) || isResponseResult(output)) {
+            if (isHttpError(output) || isResponseResult(output)) {
+              return withRequestId(
+                await toResponse(created, state, output),
+                requestId
+              )
+            }
+
+            throw new TypeError(
+              'A middleware must return nothing, an HttpError or a response helper result.'
+            )
+          }
+
+          const invalid = await validateRequest(req)
+          if (invalid) {
+            return withRequestId(
+              errorToResponse(invalid, state.toHeaders()),
+              requestId
+            )
+          }
+
+          const result = await route.handler(
+            created as Parameters<RouteRecord['handler']>[0]
+          )
+
           return withRequestId(
-            await toResponse(created, state, output),
+            await toResponse(created, state, result),
             requestId
           )
+        } catch (error) {
+          // Inside the wrappers: errors are handled within their scope.
+          return fail(error)
         }
-
-        throw new TypeError(
-          'A middleware must return nothing, an HttpError or a response helper result.'
-        )
       }
 
-      const invalid = await validateRequest(req)
-      if (invalid) {
-        return withRequestId(
-          errorToResponse(invalid, state.toHeaders()),
-          requestId
-        )
-      }
-
-      const result = await route.handler(
-        created as Parameters<RouteRecord['handler']>[0]
+      // The first wrapper is the outermost.
+      const wrapped = config.requestWrappers.reduceRight<
+        () => Promise<NormalizedResponse>
+      >(
+        (next, wrap) => async () => {
+          let called: Promise<NormalizedResponse> | undefined
+          await wrap(created, () => (called ??= next()))
+          if (!called) {
+            throw new Error('A wrapRequest hook must call next().')
+          }
+          return called
+        },
+        pipeline
       )
-
-      return withRequestId(await toResponse(created, state, result), requestId)
+      return await wrapped()
     } catch (error) {
-      const headers = isHttpError(error) ? state.toHeaders() : undefined
-      return withRequestId(
-        await handleError(error, logger, ctx, headers),
-        requestId
-      )
+      return fail(error)
     }
   }
 

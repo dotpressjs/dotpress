@@ -107,6 +107,7 @@ export {
   type PluginCors,
   type PluginHooks,
   type RequestHook,
+  type RequestWrapper,
   type ResponseEvent,
   type ResponseHook,
 } from './plugins.js'

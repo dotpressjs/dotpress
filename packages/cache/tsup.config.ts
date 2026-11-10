@@ -7,6 +7,7 @@ export default defineConfig({
     als: 'src/als.ts',
     redis: 'src/stores/redis.ts',
     upstash: 'src/stores/upstash.ts',
+    'cloudflare-kv': 'src/stores/cloudflare-kv.ts',
   },
   format: ['esm'],
   target: 'es2022',

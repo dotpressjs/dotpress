@@ -37,6 +37,10 @@
     "./upstash": {
       "types": "./dist/upstash.d.ts",
       "default": "./dist/upstash.js"
+    },
+    "./cloudflare-kv": {
+      "types": "./dist/cloudflare-kv.d.ts",
+      "default": "./dist/cloudflare-kv.js"
     }
   },
   "engines": {
@@ -61,6 +65,7 @@
     "@dotpress/core": "workspace:*",
     "@dotpress/testing": "workspace:*",
     "ioredis": "~6.0.0",
+    "miniflare": "~4.20260730.0",
     "redis": "~6.3.1",
     "zod": "^4.6.7"
   },
@@ -76,6 +81,9 @@
     "asynclocalstorage",
     "redis",
     "valkey",
-    "upstash"
+    "upstash",
+    "cloudflare",
+    "workers",
+    "kv"
   ]
 }

@@ -3,3 +3,9 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # Not needed: optional native speed-up of BullMQ (msgpackr), version
+  # notice of protobufjs (Pub/Sub client), binary of workerd (Miniflare
+  # tests), installed through its platform packages.
+  msgpackr-extract: false
+  protobufjs: false
+  workerd: false

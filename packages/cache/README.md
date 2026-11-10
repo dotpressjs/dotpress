@@ -170,6 +170,7 @@ const cache = createCache({
 | `createMemoryStore({ maxEntries })` | `@dotpress/cache` | memory of the process: one instance, development, tests. Least recently used entries are removed beyond `maxEntries` (10,000 by default) |
 | `createRedisStore({ client })` | `@dotpress/cache/redis` | Redis or Valkey, with a node-redis or ioredis client |
 | `createUpstashStore({ url, token })` | `@dotpress/cache/upstash` | Upstash Redis over its REST API: every runtime, edge included |
+| `createCloudflareKvStore({ kv })` | `@dotpress/cache/cloudflare-kv` | Workers KV, through the binding of a Worker: values read often and changed rarely |
 
 A store implements `CacheStore`: `name`, `get(key)`, `set(key, value, ttl)` (strings, `ttl` in milliseconds), `delete(key)`, and optionally `getMany(keys)` (one round trip for the tokens of tags), `lock(key, ttl)` / `unlock(key, token)` (the `lock` option) and `maxKeyLength` (bytes).
 
@@ -208,6 +209,33 @@ const cache = createCache({ store, prefix: 'app', storeTimeout: '500ms' })
 The store calls the [REST API](https://upstash.com/docs/redis/features/restapi) of [Upstash Redis](https://upstash.com/docs/redis) with `fetch`: no dependency, no connection to open or close, and it runs on Cloudflare Workers, Vercel, Deno, Bun and Node.js. Each operation is one HTTPS request (`GET`, `MGET` for tags, `SET … PX`, `DEL`, and `SET … NX PX` plus a Lua script for the `lock` option). Errors of the API (`401`, `400 ERR …`) are store failures: logged, and the cache fails open. A request is limited to 10 MB on the free and pay-as-you-go plans. The `fetch` option replaces the global `fetch`.
 
 The `@upstash/redis` SDK is not needed: by default it applies `JSON.parse` to every reply, which would change the values of the cache.
+
+### Cloudflare Workers KV
+
+```jsonc
+// wrangler.jsonc
+{ "kv_namespaces": [{ "binding": "CACHE", "id": "<namespace id>" }] }
+```
+
+```ts
+import { env } from 'cloudflare:workers'
+import { createCloudflareKvStore } from '@dotpress/cache/cloudflare-kv'
+
+const cache = createCache({ store: createCloudflareKvStore({ kv: () => env.CACHE }), prefix: 'app' })
+```
+
+`kv` is the binding, or a function that returns it (resolved on use). [Workers KV](https://developers.cloudflare.com/kv) suits values read often and changed rarely (configuration, catalogs, rendered pages); keep in mind its limits:
+
+| Limit | Effect |
+| --- | --- |
+| Eventual consistency | A write, deletion or invalidation can take 60 seconds or more to reach other locations: other locations serve the previous value meanwhile. |
+| Expiration of 60 seconds at least | Shorter `ttl` are kept in the value: the cache expires them on time, KV removes them after 60 seconds. |
+| One write per second per key | Faster writes fail with a 429: a store failure (logged, fails open). Tags write a token per tag on `invalidateTags()`. |
+| Keys of 512 bytes | Longer keys are hashed. |
+| No locks | The `lock` option is ignored: single flight stays per instance. |
+| Free plan: 1,000 writes per day | Cache misses write: count them before choosing KV. |
+
+`cacheTtl` (30 seconds at least) keeps read values in the cache of the location for longer: faster reads, but changes are seen even later. Tokens of tags are read in bulk (100 keys per read).
 
 ## Dotpress plugin
 

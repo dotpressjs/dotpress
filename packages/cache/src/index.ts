@@ -4,7 +4,9 @@ export type {
   CacheEntry,
   CacheEntryOptions,
   CacheErrorInfo,
+  CacheEvent,
   CacheOptions,
+  CachePolicy,
   CacheSchema,
   CacheSerializer,
   CacheValue,
@@ -14,6 +16,7 @@ export type { Duration } from './duration.js'
 export {
   CacheError,
   CacheStoreError,
+  CacheTimeoutError,
   MemoBatchError,
   type StoreOperation,
 } from './errors.js'

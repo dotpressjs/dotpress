@@ -12,6 +12,11 @@ export interface CacheStore {
   readonly maxKeyLength?: number | undefined
   /** Value of a key, or undefined when it is missing or expired. */
   get(key: string): Promise<string | undefined>
+  /**
+   * Values of several keys, in their order: one round trip for the tags of
+   * an entry. Optional: the cache calls `get` for each key without it.
+   */
+  getMany?(keys: readonly string[]): Promise<(string | undefined)[]>
   /** Sets a value that expires after `ttl` milliseconds (at least 1). */
   set(key: string, value: string, ttl: number): Promise<void>
   /** Removes a key; missing keys are ignored. */
@@ -71,19 +76,22 @@ export const createMemoryStore = (
   // Insertion order of a Map: the first entry is the least recently used.
   const entries = new Map<string, { value: string; expiresAt: number }>()
 
+  const read = (key: string) => {
+    const entry = entries.get(key)
+    if (!entry) return undefined
+    entries.delete(key)
+    if (entry.expiresAt <= Date.now()) return undefined
+    entries.set(key, entry)
+    return entry.value
+  }
+
   return Object.freeze({
     name: 'memory',
     get size() {
       return entries.size
     },
-    get: async (key: string) => {
-      const entry = entries.get(key)
-      if (!entry) return undefined
-      entries.delete(key)
-      if (entry.expiresAt <= Date.now()) return undefined
-      entries.set(key, entry)
-      return entry.value
-    },
+    get: async (key: string) => read(key),
+    getMany: async (keys: readonly string[]) => keys.map(read),
     set: async (key: string, value: string, ttl: number) => {
       entries.delete(key)
       entries.set(key, { value, expiresAt: Date.now() + ttl })

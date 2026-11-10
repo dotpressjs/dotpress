@@ -19,8 +19,8 @@ export class MemoBatchError extends CacheError {
   }
 }
 
-/** Operation of a cache store. */
-export type StoreOperation = 'get' | 'set' | 'delete'
+/** Operation of a cache store: `invalidate` writes the tokens of tags. */
+export type StoreOperation = 'get' | 'set' | 'delete' | 'invalidate'
 
 /** A cache store failed or did not answer in time (`failOpen: false`). */
 export class CacheStoreError extends CacheError {
@@ -37,6 +37,27 @@ export class CacheStoreError extends CacheError {
     super(
       `Cache store "${store}" failed to ${operation} "${key}": ${options.cause instanceof Error ? options.cause.message : String(options.cause)}`,
       options
+    )
+  }
+}
+
+/**
+ * The loader of `getOrSet()` did not finish within `hardTimeout`, and no
+ * stale value could be served. The load goes on, and caches its value.
+ */
+export class CacheTimeoutError extends CacheError {
+  override name = 'CacheTimeoutError'
+
+  constructor(
+    /** Name of the entry. */
+    readonly entry: string,
+    /** Key of the store. */
+    readonly key: string,
+    /** Timeout, in milliseconds. */
+    readonly timeout: number
+  ) {
+    super(
+      `Cache entry "${entry}": the loader of "${key}" did not finish within ${timeout} milliseconds.`
     )
   }
 }

@@ -61,6 +61,21 @@ describe('createMemoryStore()', () => {
     expect(await store.get('k1')).toBe('v')
   })
 
+  it('reads several keys at once', async () => {
+    vi.useFakeTimers({ now: 0 })
+    const store = createMemoryStore({ maxEntries: 2 })
+    await store.set('a', '1', 1000)
+    await store.set('b', '2', 500)
+    vi.setSystemTime(600)
+    expect(await store.getMany?.(['b', 'a', 'c'])).toEqual([
+      undefined,
+      '1',
+      undefined,
+    ])
+    await store.set('c', '3', 1000)
+    expect(await store.getMany?.(['a', 'c'])).toEqual(['1', '3'])
+  })
+
   it('clears every entry', async () => {
     const store = createMemoryStore()
     await store.set('a', '1', 1000)

@@ -1,5 +1,9 @@
 import { toMilliseconds, type Duration } from './duration.js'
-import { CacheStoreError, type StoreOperation } from './errors.js'
+import {
+  CacheStoreError,
+  CacheTimeoutError,
+  type StoreOperation,
+} from './errors.js'
 import { keyOf } from './keys.js'
 import { checkLogger, silentLogger, type CacheLogger } from './logger.js'
 import { isStore, type CacheStore } from './store.js'
@@ -33,8 +37,47 @@ export interface CacheEntry<A extends readonly unknown[], T> {
 /** Value of an entry: `unknown` without schema. */
 export type CacheValue<T> = T extends Untyped ? unknown : T
 
+/**
+ * Lifetime and resilience of values: options of an entry, or defaults of
+ * the cache.
+ */
+export interface CachePolicy {
+  /** Lifetime of the values. Defaults to 1 hour. */
+  ttl?: Duration | undefined
+  /**
+   * Stale-if-error: how long after expiry a value can still be served when
+   * the loader fails (or times out). Defaults to 0 (disabled).
+   */
+  grace?: Duration | undefined
+  /**
+   * After a failed load served from the grace period, the loader is not
+   * called again before this delay: the stale value is served. Defaults to
+   * 10 seconds.
+   */
+  graceBackoff?: Duration | undefined
+  /**
+   * How long after expiry a value is still served while a background load
+   * refreshes it. Defaults to 0 (disabled).
+   */
+  staleWhileRevalidate?: Duration | undefined
+  /**
+   * Soft timeout: a load slower than this serves the stale value of the
+   * grace period, if any, and goes on in the background.
+   */
+  timeout?: Duration | undefined
+  /**
+   * Hard timeout: a load slower than this fails (`CacheTimeoutError`), or
+   * serves the stale value of the grace period, if any. It goes on in the
+   * background.
+   */
+  hardTimeout?: Duration | undefined
+}
+
 /** Options of `defineCacheEntry()`. */
-export interface CacheEntryOptions<A extends readonly unknown[], T> {
+export interface CacheEntryOptions<
+  A extends readonly unknown[],
+  T,
+> extends CachePolicy {
   /**
    * Name of the entry, in keys and logs: letters, digits, `.`, `_` and
    * `-`.
@@ -51,27 +94,63 @@ export interface CacheEntryOptions<A extends readonly unknown[], T> {
    * `z.coerce.date()`.
    */
   schema?: CacheSchema<T> | undefined
-  /** Lifetime of the values. Defaults to the `ttl` of the cache. */
-  ttl?: Duration | undefined
   /**
    * Version of the values, in the key: increase it when their shape
    * changes, to ignore the values written before. Defaults to 1.
    */
   version?: number | undefined
+  /**
+   * Tags of the arguments: `invalidateTags()` expires every value with one
+   * of them.
+   */
+  tags?: ((...args: A) => readonly string[]) | undefined
 }
+
+/** A policy in milliseconds; undefined when not set. */
+type Policy = { [K in keyof CachePolicy]: number | undefined }
 
 interface EntryConfig {
   name: string
   version: number
   key: ((...args: readonly unknown[]) => unknown) | undefined
   schema: CacheSchema<unknown> | undefined
-  ttl: number | undefined
+  tags: ((...args: readonly unknown[]) => readonly string[]) | undefined
+  policy: Policy
 }
 
 const entries = new WeakMap<object, EntryConfig>()
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
-const ENTRY_OPTIONS = new Set(['name', 'key', 'schema', 'ttl', 'version'])
+const POLICY = [
+  'ttl',
+  'grace',
+  'graceBackoff',
+  'staleWhileRevalidate',
+  'timeout',
+  'hardTimeout',
+] as const
+const ENTRY_OPTIONS = new Set([
+  'name',
+  'key',
+  'schema',
+  'version',
+  'tags',
+  ...POLICY,
+])
+
+/** Reads the durations of a policy (`ttl` and timeouts at least 1 ms). */
+const policyOf = (label: string, values: Record<string, unknown>): Policy => {
+  const policy: Policy = {}
+  for (const option of POLICY) {
+    const value = values[option]
+    if (value === undefined) continue
+    policy[option] =
+      option === 'ttl' || option === 'timeout' || option === 'hardTimeout'
+        ? positive(`${label}: ${option}`, value)
+        : toMilliseconds(`${label}: ${option}`, value)
+  }
+  return policy
+}
 
 /**
  * Defines a kind of cached value: its key, its lifetime, and optionally
@@ -104,7 +183,7 @@ export function defineCacheEntry(options: unknown): {
     throw new TypeError(`${label}: expected an object of options.`)
   }
   const values = options as Record<string, unknown>
-  const { name, key, schema, ttl, version = 1 } = values
+  const { name, key, schema, tags, version = 1 } = values
   if (typeof name !== 'string' || !NAME.test(name)) {
     throw new TypeError(
       `${label}: name must have 1 to 128 letters, digits, ".", "_" or "-", starting with a letter or a digit.`
@@ -131,6 +210,9 @@ export function defineCacheEntry(options: unknown): {
   if (!Number.isInteger(version) || (version as number) < 0) {
     throw new TypeError(`${named}: version must be a non-negative integer.`)
   }
+  if (tags !== undefined && typeof tags !== 'function') {
+    throw new TypeError(`${named}: tags must be a function.`)
+  }
 
   const entry = Object.freeze({ name, version: version as number })
   entries.set(entry, {
@@ -138,7 +220,8 @@ export function defineCacheEntry(options: unknown): {
     version: version as number,
     key: key as EntryConfig['key'],
     schema: schema as CacheSchema<unknown> | undefined,
-    ttl: ttl === undefined ? undefined : positive(`${named}: ttl`, ttl),
+    tags: tags as EntryConfig['tags'],
+    policy: policyOf(named, values),
   })
   return entry
 }
@@ -164,13 +247,25 @@ export interface CacheErrorInfo {
   readonly entry: string
 }
 
-/** Options of `createCache()`. */
-export interface CacheOptions {
+/** Something that happened to a value, for `onEvent`. */
+export interface CacheEvent {
+  /**
+   * `hit`: fresh value; `miss`: loaded; `stale`: a value past its `ttl`
+   * served, for the `reason`.
+   */
+  readonly type: 'hit' | 'miss' | 'stale'
+  readonly reason?: 'revalidate' | 'error' | 'timeout' | 'backoff'
+  /** Name of the entry. */
+  readonly entry: string
+  /** Key of the store. */
+  readonly key: string
+}
+
+/** Options of `createCache()`: the policy is the default of the entries. */
+export interface CacheOptions extends CachePolicy {
   store: CacheStore
   /** Prefix of every key, like the name of the app. */
   prefix?: string | undefined
-  /** Lifetime of the entries without `ttl`. Defaults to 1 hour. */
-  ttl?: Duration | undefined
   /** Defaults to JSON. */
   serializer?: CacheSerializer | undefined
   logger?: CacheLogger | undefined
@@ -189,11 +284,19 @@ export interface CacheOptions {
   failOpen?: boolean | undefined
   /** A store operation slower than this counts as a failure. */
   storeTimeout?: Duration | undefined
+  /**
+   * Called for each hit, miss and stale value served: metrics. Its errors
+   * are logged and ignored.
+   */
+  onEvent?: ((event: CacheEvent) => void) | undefined
 }
 
 /** A cache, created by `createCache()`. */
 export interface Cache {
-  /** The value of the arguments, or undefined when missing or expired. */
+  /**
+   * The fresh value of the arguments, or undefined when missing, expired
+   * or invalidated.
+   */
   get<A extends readonly unknown[], T>(
     entry: CacheEntry<A, T>,
     ...args: A
@@ -210,7 +313,8 @@ export interface Cache {
   ): Promise<void>
   /**
    * The value of the arguments, loaded by the last argument when missing
-   * and cached. Calls made while it loads share the load.
+   * and cached. Calls made while it loads share the load. Applies the
+   * grace period, stale-while-revalidate and timeouts of the entry.
    */
   getOrSet<A extends readonly unknown[], R>(
     entry: CacheEntry<A, Untyped>,
@@ -220,6 +324,11 @@ export interface Cache {
     entry: CacheEntry<A, T>,
     ...argsAndLoader: [...A, () => T | Promise<T>]
   ): Promise<T>
+  /**
+   * Expires every value with one of the tags (they can still be served by
+   * the grace period when the loader fails).
+   */
+  invalidateTags(tags: readonly string[]): Promise<void>
   /** The same cache, logging with another logger. */
   withLogger(logger: CacheLogger): Cache
 }
@@ -233,6 +342,8 @@ const CACHE_OPTIONS = new Set([
   'onError',
   'failOpen',
   'storeTimeout',
+  'onEvent',
+  ...POLICY,
 ])
 
 const jsonSerializer: CacheSerializer = {
@@ -240,12 +351,16 @@ const jsonSerializer: CacheSerializer = {
   deserialize: (text) => JSON.parse(text) as unknown,
 }
 
-/** Stored form of a value: `{ v, c (created), e (expires), d (data) }`. */
+/**
+ * Stored form of a value: `{ v, c (created), e (expires), d (data),
+ * t (token of each tag) }`.
+ */
 interface StoredEntry {
   v: 1
   c: number
   e: number
   d: string
+  t?: Record<string, string>
 }
 
 const parseStored = (text: string): StoredEntry | undefined => {
@@ -255,7 +370,9 @@ const parseStored = (text: string): StoredEntry | undefined => {
       stored?.v === 1 &&
       typeof stored.c === 'number' &&
       typeof stored.e === 'number' &&
-      typeof stored.d === 'string'
+      typeof stored.d === 'string' &&
+      (stored.t === undefined ||
+        (typeof stored.t === 'object' && stored.t !== null))
     ) {
       return stored as StoredEntry
     }
@@ -266,6 +383,9 @@ const parseStored = (text: string): StoredEntry | undefined => {
 }
 
 const encoder = new TextEncoder()
+
+// Tokens of tags outlive the values that use them: 30 days at least.
+const TAG_LIFETIME = 30 * 86_400_000
 
 /** SHA-256 of a text, in hexadecimal. */
 const sha256 = async (text: string) => {
@@ -300,6 +420,7 @@ export const createCache = (options: CacheOptions): Cache => {
     prefix,
     serializer = jsonSerializer,
     onError,
+    onEvent,
     failOpen = true,
   } = options
   if (!isStore(store)) {
@@ -310,7 +431,10 @@ export const createCache = (options: CacheOptions): Cache => {
   if (prefix !== undefined && (typeof prefix !== 'string' || prefix === '')) {
     throw new TypeError(`${label}: prefix must be a non-empty string.`)
   }
-  const ttl = positive(`${label}: ttl`, options.ttl ?? '1h')
+  const defaults = policyOf(
+    label,
+    options as unknown as Record<string, unknown>
+  )
   if (
     typeof serializer?.serialize !== 'function' ||
     typeof serializer.deserialize !== 'function'
@@ -321,6 +445,9 @@ export const createCache = (options: CacheOptions): Cache => {
   }
   if (onError !== undefined && typeof onError !== 'function') {
     throw new TypeError(`${label}: onError must be a function.`)
+  }
+  if (onEvent !== undefined && typeof onEvent !== 'function') {
+    throw new TypeError(`${label}: onEvent must be a function.`)
   }
   if (typeof failOpen !== 'boolean') {
     throw new TypeError(`${label}: failOpen must be a boolean.`)
@@ -334,8 +461,10 @@ export const createCache = (options: CacheOptions): Cache => {
       ? silentLogger
       : checkLogger(label, options.logger)
 
-  // Loads in progress, by key of the store, shared by every logger.
+  // Shared by every logger of the cache: loads in progress, and the end of
+  // the backoff of the keys whose loader failed.
   const loading = new Map<string, Promise<unknown>>()
+  const backoffs = new Map<string, number>()
 
   const configOf = (method: string, entry: unknown) => {
     const config =
@@ -350,6 +479,28 @@ export const createCache = (options: CacheOptions): Cache => {
     return config
   }
 
+  /** Policy of an entry, with the defaults of the cache. */
+  const policyFor = (config: EntryConfig) => {
+    const value = (option: keyof CachePolicy) =>
+      config.policy[option] ?? defaults[option]
+    return {
+      ttl: value('ttl') ?? 3_600_000,
+      grace: value('grace') ?? 0,
+      graceBackoff: value('graceBackoff') ?? 10_000,
+      staleWhileRevalidate: value('staleWhileRevalidate') ?? 0,
+      timeout: value('timeout'),
+      hardTimeout: value('hardTimeout'),
+    }
+  }
+
+  /** A key of the store, hashed when longer than the store accepts. */
+  const fit = async (base: string, part: string) => {
+    const key = `${base}:${part}`
+    return encoder.encode(key).length > (store.maxKeyLength ?? Infinity)
+      ? `${base}:#${await sha256(part)}`
+      : key
+  }
+
   /** Key of the store for the arguments of an entry. */
   const keyFor = async (config: EntryConfig, args: readonly unknown[]) => {
     const raw = config.key
@@ -357,28 +508,46 @@ export const createCache = (options: CacheOptions): Cache => {
       : args.length === 1
         ? args[0]
         : args
-    const part =
-      !config.key && args.length === 0
-        ? undefined
-        : typeof raw === 'string'
-          ? raw
-          : keyOf(`Cache entry "${config.name}"`, raw)
     const base = [prefix, config.name, `v${config.version}`]
       .filter((item) => item !== undefined)
       .join(':')
-    if (part === undefined) return base
-    const key = `${base}:${part}`
-    return encoder.encode(key).length > (store.maxKeyLength ?? Infinity)
-      ? `${base}:#${await sha256(part)}`
-      : key
+    if (!config.key && args.length === 0) return base
+    return fit(
+      base,
+      typeof raw === 'string' ? raw : keyOf(`Cache entry "${config.name}"`, raw)
+    )
+  }
+
+  /** Checks the tags returned by an entry, or given to invalidate. */
+  const checkTags = (label: string, tags: unknown) => {
+    if (
+      !Array.isArray(tags) ||
+      !tags.every((tag) => typeof tag === 'string' && tag !== '')
+    ) {
+      throw new TypeError(
+        `${label}: tags must be an array of non-empty strings.`
+      )
+    }
+    return [...new Set(tags as string[])]
+  }
+
+  /** Keys of the tokens of tags (`_` cannot start the name of an entry). */
+  const tagKeysOf = (tags: readonly string[]) => {
+    const base = prefix === undefined ? '_tag' : `${prefix}:_tag`
+    return Promise.all(
+      tags.map(async (tag) => ({ tag, key: await fit(base, tag) }))
+    )
   }
 
   const create = (logger: CacheLogger): Cache => {
+    const describe = (error: unknown) =>
+      error instanceof Error ? error.message : String(error)
+
     /** Runs a store operation: failures are logged, and fail open. */
     const guard = async <R>(
       operation: StoreOperation,
       key: string,
-      config: EntryConfig,
+      entry: string,
       run: () => Promise<R>,
       fallback: R
     ): Promise<R> => {
@@ -407,23 +576,21 @@ export const createCache = (options: CacheOptions): Cache => {
           store: store.name,
           operation,
           key,
-          entry: config.name,
+          entry,
           error: error.message,
         }
-        // A failed deletion may leave an outdated value.
-        if (operation === 'delete') logger.error(data, 'Cache store failed')
-        else logger.warn(data, 'Cache store failed')
+        // A failed deletion or invalidation may leave outdated values.
+        if (operation === 'delete' || operation === 'invalidate') {
+          logger.error(data, 'Cache store failed')
+        } else {
+          logger.warn(data, 'Cache store failed')
+        }
         if (onError) {
           try {
-            await onError(error, { operation, key, entry: config.name })
+            await onError(error, { operation, key, entry })
           } catch (hookError) {
             logger.error(
-              {
-                error:
-                  hookError instanceof Error
-                    ? hookError.message
-                    : String(hookError),
-              },
+              { error: describe(hookError) },
               'Cache onError hook failed'
             )
           }
@@ -435,19 +602,48 @@ export const createCache = (options: CacheOptions): Cache => {
       }
     }
 
-    /** Reads a valid, fresh value: `{ value }`, or undefined. */
-    const read = async (config: EntryConfig, key: string) => {
-      const text = await guard(
+    /** Reports an event to the log (debug) and `onEvent`. */
+    const report = (event: CacheEvent) => {
+      const { type, reason, entry, key } = event
+      logger.debug?.(
+        { entry, key, ...(reason ? { reason } : {}) },
+        type === 'hit'
+          ? 'Cache hit'
+          : type === 'miss'
+            ? 'Cache miss'
+            : 'Cache served a stale value'
+      )
+      if (!onEvent) return
+      try {
+        onEvent(event)
+      } catch (error) {
+        logger.error({ error: describe(error) }, 'Cache onEvent hook failed')
+      }
+    }
+
+    /**
+     * Current tokens of tags (undefined for a missing tag), or undefined
+     * when the store cannot read them.
+     */
+    const tokensOf = async (
+      entry: string,
+      tagKeys: readonly { tag: string; key: string }[]
+    ) => {
+      const keys = tagKeys.map(({ key }) => key)
+      const values = await guard<(string | undefined)[] | undefined>(
         'get',
-        key,
-        config,
-        () => store.get(key),
+        keys.join(' '),
+        entry,
+        () =>
+          store.getMany
+            ? store.getMany(keys)
+            : Promise.all(keys.map((key) => store.get(key))),
         undefined
       )
-      if (text === undefined) return undefined
-      const stored = parseStored(text)
-      if (!stored || stored.e <= Date.now()) return undefined
-      return decode(config, key, stored.d)
+      return values?.map((token, index) => ({
+        tag: (tagKeys[index] as { tag: string }).tag,
+        token,
+      }))
     }
 
     /** Deserializes and validates a value: `{ value }`, or undefined. */
@@ -457,11 +653,7 @@ export const createCache = (options: CacheOptions): Cache => {
         value = serializer.deserialize(data)
       } catch (error) {
         logger.warn(
-          {
-            entry: config.name,
-            key,
-            error: error instanceof Error ? error.message : String(error),
-          },
+          { entry: config.name, key, error: describe(error) },
           'Cache value cannot be deserialized'
         )
         return undefined
@@ -472,12 +664,60 @@ export const createCache = (options: CacheOptions): Cache => {
     }
 
     /**
+     * Reads a stored value: its value, expiry, and whether its tags are
+     * still valid. Undefined when missing, invalid, or past every stale
+     * window.
+     */
+    const lookup = async (
+      config: EntryConfig,
+      policy: ReturnType<typeof policyFor>,
+      key: string
+    ) => {
+      const text = await guard(
+        'get',
+        key,
+        config.name,
+        () => store.get(key),
+        undefined
+      )
+      if (text === undefined) return undefined
+      const stored = parseStored(text)
+      const now = Date.now()
+      if (
+        !stored ||
+        stored.e + Math.max(policy.grace, policy.staleWhileRevalidate) <= now
+      ) {
+        return undefined
+      }
+      const decoded = await decode(config, key, stored.d)
+      if (!decoded) return undefined
+      const tags = Object.entries(stored.t ?? {})
+      let tagsValid = true
+      if (tags.length > 0) {
+        const current = await tokensOf(
+          config.name,
+          await tagKeysOf(tags.map(([tag]) => tag))
+        )
+        // Unreadable tokens: the value may have been invalidated.
+        tagsValid =
+          current?.every(({ tag, token }) => token === stored.t?.[tag]) ?? false
+      }
+      return {
+        value: decoded.value,
+        expiresAt: stored.e,
+        fresh: stored.e > now && tagsValid,
+        tagsValid,
+      }
+    }
+
+    /**
      * Writes a value, after checking that it reads back: returns the value
      * as read later, or undefined when it cannot be cached.
      */
     const write = async (
       config: EntryConfig,
       key: string,
+      args: readonly unknown[],
       value: unknown
     ): Promise<{ value: unknown } | undefined> => {
       if (value === undefined) return undefined
@@ -487,11 +727,7 @@ export const createCache = (options: CacheOptions): Cache => {
         if (typeof data !== 'string') throw new TypeError('not a string')
       } catch (error) {
         logger.warn(
-          {
-            entry: config.name,
-            key,
-            error: error instanceof Error ? error.message : String(error),
-          },
+          { entry: config.name, key, error: describe(error) },
           'Cache value cannot be serialized'
         )
         return undefined
@@ -506,41 +742,130 @@ export const createCache = (options: CacheOptions): Cache => {
         )
         return undefined
       }
+      const policy = policyFor(config)
+      const lifetime =
+        policy.ttl + Math.max(policy.grace, policy.staleWhileRevalidate)
       const now = Date.now()
-      const lifetime = config.ttl ?? ttl
-      const stored: StoredEntry = { v: 1, c: now, e: now + lifetime, d: data }
+      const stored: StoredEntry = {
+        v: 1,
+        c: now,
+        e: now + policy.ttl,
+        d: data,
+      }
+      if (config.tags) {
+        const tags = checkTags(
+          `defineCacheEntry("${config.name}")`,
+          config.tags(...args)
+        )
+        if (tags.length > 0) {
+          const tagKeys = await tagKeysOf(tags)
+          const current = await tokensOf(config.name, tagKeys)
+          // Unreadable tokens: creating new ones would invalidate every
+          // value of these tags, so the value is not cached.
+          if (!current) return checked
+          stored.t = {}
+          for (const [index, { tag, token }] of current.entries()) {
+            if (token !== undefined) {
+              stored.t[tag] = token
+              continue
+            }
+            // First value with this tag: its token is created.
+            const created = crypto.randomUUID()
+            const tagKey = (tagKeys[index] as { key: string }).key
+            await guard(
+              'set',
+              tagKey,
+              config.name,
+              () =>
+                store.set(tagKey, created, Math.max(lifetime, TAG_LIFETIME)),
+              undefined
+            )
+            stored.t[tag] = created
+          }
+        }
+      }
       await guard(
         'set',
         key,
-        config,
+        config.name,
         () => store.set(key, JSON.stringify(stored), lifetime),
         undefined
       )
       return checked
     }
 
+    /** Loads and writes a value, once per key at a time. */
+    const load = (
+      config: EntryConfig,
+      key: string,
+      args: readonly unknown[],
+      loader: () => unknown
+    ) => {
+      const running = loading.get(key)
+      if (running) return running
+      const loaded = (async () => {
+        const value: unknown = await loader()
+        const written = await write(config, key, args, value)
+        backoffs.delete(key)
+        return written ? written.value : value
+      })()
+      loading.set(key, loaded)
+      void loaded.then(
+        () => loading.delete(key),
+        () => loading.delete(key)
+      )
+      return loaded
+    }
+
+    /** Logs the failure of a load that nobody waits for anymore. */
+    const inBackground = (
+      config: EntryConfig,
+      key: string,
+      loaded: Promise<unknown>
+    ) => {
+      loaded.catch((error: unknown) => {
+        logger.warn(
+          { entry: config.name, key, error: describe(error) },
+          'Cache refresh failed'
+        )
+      })
+    }
+
+    /** Rejects after `ms` (never when undefined), until cleared. */
+    const deadline = (ms: number | undefined, error: () => unknown) => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const promise = new Promise<never>((_, reject) => {
+        if (ms !== undefined) timer = setTimeout(() => reject(error()), ms)
+      })
+      return { promise, clear: () => clearTimeout(timer) }
+    }
+
     const cache: Cache = {
       get: (async (entry: unknown, ...args: unknown[]) => {
         const config = configOf('get', entry)
         const key = await keyFor(config, args)
-        const found = await read(config, key)
-        logger.debug?.(
-          { entry: config.name, key },
-          found ? 'Cache hit' : 'Cache miss'
-        )
-        return found?.value
+        const found = await lookup(config, policyFor(config), key)
+        report({ type: found?.fresh ? 'hit' : 'miss', entry: config.name, key })
+        return found?.fresh ? found.value : undefined
       }) as Cache['get'],
 
       set: (async (entry: unknown, ...argsAndValue: unknown[]) => {
         const config = configOf('set', entry)
-        const key = await keyFor(config, argsAndValue.slice(0, -1))
-        await write(config, key, argsAndValue.at(-1))
+        const args = argsAndValue.slice(0, -1)
+        const key = await keyFor(config, args)
+        await write(config, key, args, argsAndValue.at(-1))
       }) as Cache['set'],
 
       delete: (async (entry: unknown, ...args: unknown[]) => {
         const config = configOf('delete', entry)
         const key = await keyFor(config, args)
-        await guard('delete', key, config, () => store.delete(key), undefined)
+        await guard(
+          'delete',
+          key,
+          config.name,
+          () => store.delete(key),
+          undefined
+        )
       }) as Cache['delete'],
 
       getOrSet: (async (entry: unknown, ...argsAndLoader: unknown[]) => {
@@ -551,27 +876,101 @@ export const createCache = (options: CacheOptions): Cache => {
             'cache.getOrSet(): the last argument must be the function that loads the value.'
           )
         }
-        const key = await keyFor(config, argsAndLoader.slice(0, -1))
-        const found = await read(config, key)
-        if (found) {
-          logger.debug?.({ entry: config.name, key }, 'Cache hit')
+        const args = argsAndLoader.slice(0, -1)
+        const key = await keyFor(config, args)
+        const policy = policyFor(config)
+        const found = await lookup(config, policy, key)
+        const event = { entry: config.name, key }
+        if (found?.fresh) {
+          report({ type: 'hit', ...event })
           return found.value
         }
-        const running = loading.get(key)
-        if (running) return running
-        logger.debug?.({ entry: config.name, key }, 'Cache miss')
-        const load = (async () => {
-          const value: unknown = await (loader as () => unknown)()
-          const written = await write(config, key, value)
-          return written ? written.value : value
-        })()
-        loading.set(key, load)
+        const now = Date.now()
+
+        // Stale-while-revalidate: serve, and refresh in the background.
+        if (
+          found?.tagsValid &&
+          found.expiresAt + policy.staleWhileRevalidate > now
+        ) {
+          report({ type: 'stale', reason: 'revalidate', ...event })
+          inBackground(
+            config,
+            key,
+            load(config, key, args, loader as () => unknown)
+          )
+          return found.value
+        }
+
+        // Grace period: stale value served if the loader fails. Without it,
+        // an invalidated value is never served.
+        const stale =
+          found && policy.grace > 0 && found.expiresAt + policy.grace > now
+            ? found
+            : undefined
+        if (stale && (backoffs.get(key) ?? 0) > now) {
+          report({ type: 'stale', reason: 'backoff', ...event })
+          return stale.value
+        }
+
+        report({ type: 'miss', ...event })
+        const loaded = load(config, key, args, loader as () => unknown)
+        const slow = Symbol('slow')
+        const soft = deadline(stale ? policy.timeout : undefined, () => slow)
+        const hard = deadline(
+          policy.hardTimeout,
+          () =>
+            new CacheTimeoutError(
+              config.name,
+              key,
+              policy.hardTimeout as number
+            )
+        )
         try {
-          return await load
+          return await Promise.race([loaded, soft.promise, hard.promise])
+        } catch (error) {
+          // The load goes on, and caches its value.
+          if (error === slow || error instanceof CacheTimeoutError) {
+            inBackground(config, key, loaded)
+          }
+          if (!stale) throw error
+          if (error === slow) {
+            logger.warn(
+              { ...event, timeout: policy.timeout },
+              'Cache served a stale value: the loader is slow'
+            )
+            report({ type: 'stale', reason: 'timeout', ...event })
+            return stale.value
+          }
+          backoffs.set(key, Date.now() + policy.graceBackoff)
+          logger.warn(
+            { ...event, error: describe(error) },
+            'Cache served a stale value: the loader failed'
+          )
+          report({ type: 'stale', reason: 'error', ...event })
+          return stale.value
         } finally {
-          loading.delete(key)
+          soft.clear()
+          hard.clear()
         }
       }) as Cache['getOrSet'],
+
+      invalidateTags: async (tags) => {
+        const tagKeys = await tagKeysOf(
+          checkTags('cache.invalidateTags()', tags)
+        )
+        await Promise.all(
+          tagKeys.map(({ tag, key }) =>
+            guard(
+              'invalidate',
+              key,
+              `tag:${tag}`,
+              () => store.set(key, crypto.randomUUID(), TAG_LIFETIME),
+              undefined
+            )
+          )
+        )
+        logger.debug?.({ tags }, 'Cache tags invalidated')
+      },
 
       withLogger: (other) => create(checkLogger('withLogger()', other)),
     }

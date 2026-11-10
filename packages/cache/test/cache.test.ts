@@ -176,6 +176,10 @@ describe('cache.getOrSet()', () => {
     expect(await cache.get(userCache, '42')).toEqual(ada)
     await store.memory.set('user:v1:42', entry(1000), 60_000)
     expect(await cache.get(userCache, '42')).toBeUndefined()
+    // Still readable for the grace period, but not fresh.
+    expect(
+      await createCache({ store, grace: '1h' }).get(userCache, '42')
+    ).toBeUndefined()
   })
 
   it('needs a loader', async () => {
@@ -239,6 +243,8 @@ describe('schema', () => {
       '{"v":1,"c":"0","e":9999999999999,"d":"1"}',
       '{"v":1,"c":0,"e":"9999999999999","d":"1"}',
       '{"v":1,"c":0,"e":9999999999999,"d":1}',
+      '{"v":1,"c":0,"e":9999999999999,"d":"1","t":null}',
+      '{"v":1,"c":0,"e":9999999999999,"d":"1","t":"x"}',
     ]) {
       await store.memory.set('settings:v1', text, 60_000)
       expect(
@@ -644,8 +650,8 @@ describe('defineCacheEntry()', () => {
       )
     }
     expect(define({ name: 'x'.repeat(128) })).not.toThrow()
-    expect(define({ name: 'user', grace: 1 })).toThrow(
-      'defineCacheEntry("user"): unknown option "grace".'
+    expect(define({ name: 'user', stale: 1 })).toThrow(
+      'defineCacheEntry("user"): unknown option "stale".'
     )
     expect(define({ name: 'user', key: 'id' })).toThrow(
       'defineCacheEntry("user"): key must be a function.'

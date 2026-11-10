@@ -17,6 +17,7 @@ A lightweight, decorator-free TypeScript framework for building end-to-end typed
 | [`@dotpress/openapi`](packages/openapi) | OpenAPI 3.1 documents and Scalar API reference | 2.0 alpha |
 | [`@dotpress/mailer`](packages/mailer) | Typed, multilingual email templates (MJML or HTML) | 2.0 alpha |
 | [`@dotpress/events`](packages/events) | Typed events and listeners, run by workers through interchangeable transports | 2.0 alpha |
+| [`@dotpress/cache`](packages/cache) | Request memoization with batching, and a resilient cache with interchangeable stores | 2.0 alpha (in progress) |
 
 The V1 framework (`dotpress` on npm) is frozen in 1.x.
 

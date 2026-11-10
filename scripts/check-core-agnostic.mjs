@@ -11,6 +11,8 @@ const PACKAGES = {
     imports: new Set(['hono', '@dotpress/core']),
     entryOnly: true,
   },
+  // Main entry only: the stores of Node.js clients have their own entries.
+  cache: { imports: new Set(), entryOnly: true },
 }
 const FORBIDDEN_DEPENDENCIES =
   /^(express|hono|fastify|@hono\/|@fastify\/|@types\/(express|node)$)/
@@ -94,7 +96,7 @@ for (const [name, { imports: allowedImports, entryOnly }] of Object.entries(
     for (const error of errors) console.error(`  - ${error}`)
   } else {
     console.log(
-      `@dotpress/${name}${entryOnly ? ' (main entry)' : ''} only depends on ${[...allowedImports].join(', ')}.`
+      `@dotpress/${name}${entryOnly ? ' (main entry)' : ''} ${allowedImports.size === 0 ? 'has no dependency' : `only depends on ${[...allowedImports].join(', ')}`}.`
     )
   }
 }

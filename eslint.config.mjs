@@ -13,6 +13,7 @@ const RUNTIME_AGNOSTIC_SOURCES = [
   'packages/openapi/src/**/*.ts',
   'packages/mailer/src/**/*.ts',
   'packages/events/src/**/*.ts',
+  'packages/cache/src/**/*.ts',
 ]
 
 const NODE_MESSAGE =

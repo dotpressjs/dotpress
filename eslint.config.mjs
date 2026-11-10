@@ -11,6 +11,7 @@ const RUNTIME_AGNOSTIC_SOURCES = [
   'packages/core/src/**/*.ts',
   'packages/auth/src/**/*.ts',
   'packages/openapi/src/**/*.ts',
+  'packages/mailer/src/**/*.ts',
 ]
 
 const NODE_MESSAGE =

@@ -53,6 +53,14 @@
     "./mailjet": {
       "types": "./dist/mailjet.d.ts",
       "default": "./dist/mailjet.js"
+    },
+    "./mailgun": {
+      "types": "./dist/mailgun.d.ts",
+      "default": "./dist/mailgun.js"
+    },
+    "./scaleway": {
+      "types": "./dist/scaleway.d.ts",
+      "default": "./dist/scaleway.js"
     }
   },
   "engines": {
@@ -124,6 +132,8 @@
     "sendgrid",
     "postmark",
     "brevo",
-    "mailjet"
+    "mailjet",
+    "mailgun",
+    "scaleway"
   ]
 }

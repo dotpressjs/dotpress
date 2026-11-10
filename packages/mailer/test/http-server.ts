@@ -7,6 +7,8 @@ export interface ReceivedRequest {
   url: string | undefined
   headers: IncomingHttpHeaders
   body: string
+  /** Raw body (binary parts of multipart bodies). */
+  raw: Buffer
 }
 
 export interface Reply {
@@ -24,11 +26,13 @@ export const startHttpServer = async (
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
     req.on('end', () => {
+      const raw = Buffer.concat(chunks)
       const request = {
         method: req.method,
         url: req.url,
         headers: req.headers,
-        body: Buffer.concat(chunks).toString('utf8'),
+        body: raw.toString('utf8'),
+        raw,
       }
       requests.push(request)
       const { status, headers = {}, body = '' } = reply(request)

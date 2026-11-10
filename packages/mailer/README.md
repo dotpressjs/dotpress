@@ -239,6 +239,8 @@ Each provider translates them to its own API. A provider without tags or metadat
 | Postmark | `Tag` (a single tag) | `Metadata` |
 | Brevo | `tags` | ignored |
 | Mailjet | ignored | `EventPayload` (JSON) |
+| Mailgun | `o:tag` | `v:` variables |
+| Scaleway | ignored | ignored |
 | Amazon SES | `EmailTags`, with the value `true` | `EmailTags` |
 | Resend | `tags`, with the value `true` | `tags` |
 | SMTP, nodemailer | ignored | ignored |
@@ -261,10 +263,12 @@ The limits of each provider (number of tags, characters of the values…) are li
 | `createPostmarkProvider()` | `@dotpress/mailer/postmark` | Postmark (Email API), through `fetch` |
 | `createBrevoProvider()` | `@dotpress/mailer/brevo` | Brevo (transactional email API v3), through `fetch` |
 | `createMailjetProvider()` | `@dotpress/mailer/mailjet` | Mailjet (Send API v3.1), through `fetch` |
+| `createMailgunProvider()` | `@dotpress/mailer/mailgun` | Mailgun (messages API), through `fetch` |
+| `createScalewayProvider()` | `@dotpress/mailer/scaleway` | Scaleway Transactional Email, through `fetch` |
 
 Every provider sends the sender and reply-to addresses, multiple `to`, `cc` and `bcc` recipients, the HTML and text versions, attachments (inline ones included) and additional headers, within the limits of its API: a message that the API cannot accept throws a `MailMessageError` before any request (see [Limits of the providers](#limits-of-the-providers)).
 
-The providers based on an HTTP API (SendGrid, Postmark, Brevo, Mailjet) have no dependency, and take two common options: `baseUrl` (region, proxy, tests) and `fetch` (replaces the global `fetch`). Their errors are thrown as `MailSendError`, with the HTTP `status` and the message of the API.
+The providers based on an HTTP API (SendGrid, Postmark, Brevo, Mailjet, Mailgun, Scaleway) have no dependency, and take two common options: `baseUrl` (region, proxy, tests) and `fetch` (replaces the global `fetch`). Their errors are thrown as `MailSendError`, with the HTTP `status` and the message of the API.
 
 The console provider prints the text version only with `{ body: true }`: messages often contain secrets (reset links, login codes). Never use it as a fallback when the configuration of the real provider is missing: messages would be lost silently.
 
@@ -392,6 +396,34 @@ const provider = createMailjetProvider({
 
 The provider calls the [Send API v3.1](https://dev.mailjet.com/email/reference/send-emails/). Mailjet returns an identifier per recipient: the message ID is the `MessageUUID` of the first `to` recipient (the numeric `MessageID` when the UUID is missing). Metadata is sent as `EventPayload` (JSON), returned by the event webhooks. A message rejected in a successful response is reported as an error too.
 
+### Mailgun
+
+```ts
+import { createMailgunProvider } from '@dotpress/mailer/mailgun'
+
+const provider = createMailgunProvider({
+  apiKey: process.env.MAILGUN_API_KEY!, // or a sending key of the domain
+  domain: 'mg.example.com',
+  // baseUrl: 'https://api.eu.mailgun.net', // domains of the EU region
+})
+```
+
+The provider calls the [messages API](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/messages/post-v3--domain-name--messages) with `multipart/form-data` (`FormData`). Reply-to addresses and additional headers are sent as `h:` options, tags as `o:tag` and metadata as `v:` variables. Mailgun references inline images by file name: an inline attachment is sent with its `contentId` as file name, so `<img src="cid:logo">` works as with the other providers. The message ID is the `id` of the response.
+
+### Scaleway
+
+```ts
+import { createScalewayProvider } from '@dotpress/mailer/scaleway'
+
+const provider = createScalewayProvider({
+  secretKey: process.env.SCW_SECRET_KEY!,
+  projectId: process.env.SCW_DEFAULT_PROJECT_ID!,
+  region: 'fr-par', // default
+})
+```
+
+The provider calls the Transactional Email API (`v1alpha1`), with the request format of the official Scaleway SDK. The API has no reply-to field: reply-to addresses are sent as a `Reply-To` additional header. Scaleway returns an email per recipient: the message ID is the `id` of the first one, usable with the API to get the status of the email. Tags and metadata are ignored.
+
 ### Limits of the providers
 
 Checked before calling the API; they throw a `MailMessageError`.
@@ -403,6 +435,8 @@ Checked before calling the API; they throw a `MailMessageError`.
 | Postmark | 50 recipients (`to`, `cc` and `bcc`); addresses of 254 characters and a sender of 255 characters at most; subjects of 2,000 characters at most; a single tag; no executable attachments (`.exe`, `.bat`, `.msi`…); requests of 10 MB at most |
 | Brevo | a single reply-to address; no inline attachments; names of 70 characters at most; attachment extensions accepted by Brevo only (`pdf`, `png`, `docx`, `zip`…) |
 | Mailjet | a single reply-to address; requests of 15 MB at most |
+| Mailgun | 16 KB at most (16,384 bytes) for the reply-to addresses, additional headers, tags and metadata together |
+| Scaleway | no inline attachments; subjects of 998 characters at most; no empty header values |
 
 Request sizes include the attachments, encoded in base64 (a third larger than the files).
 

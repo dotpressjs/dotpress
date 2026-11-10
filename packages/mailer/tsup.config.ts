@@ -11,6 +11,8 @@ export default defineConfig({
     postmark: 'src/providers/postmark.ts',
     brevo: 'src/providers/brevo.ts',
     mailjet: 'src/providers/mailjet.ts',
+    mailgun: 'src/providers/mailgun.ts',
+    scaleway: 'src/providers/scaleway.ts',
   },
   format: ['esm'],
   target: 'es2022',

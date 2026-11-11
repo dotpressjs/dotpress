@@ -23,7 +23,7 @@ The V1 framework (`dotpress` on npm) is frozen in 1.x.
 
 ## Development
 
-Requirements: Node ≥ 22.18, pnpm 12.
+Requirements: Node ≥ 22.18, pnpm 12 (the packages themselves run on Node.js 22.12 or later).
 
 ```sh
 pnpm install
@@ -32,6 +32,7 @@ pnpm test
 pnpm lint
 pnpm typecheck
 pnpm check:core  # core, openapi and the main entry of adapter-hono must stay runtime-agnostic
+pnpm check:packages  # manifests, publint and Are the Types Wrong? (after the build)
 ```
 
 Integration tests of the event transports and the cache stores run when their services are available, and are skipped otherwise ([serverless-redis-http](https://github.com/hiett/serverless-redis-http) serves the Upstash REST API in front of Redis):

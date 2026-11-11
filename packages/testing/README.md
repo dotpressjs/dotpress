@@ -2,7 +2,7 @@
 
 Testing helpers for [Dotpress](https://dotpress.dev): a test app, the adapter conformance suite, and assertions for events and mail.
 
-> 🚧 Dotpress V2 is under active development and not published yet.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ## Adapter conformance suite
 

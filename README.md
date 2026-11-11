@@ -2,7 +2,7 @@
 
 A lightweight, decorator-free TypeScript framework for building end-to-end typed backend APIs.
 
-> 🚧 This monorepo is being migrated to Dotpress V2.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0. Install the packages without tag, except `@dotpress/auth@alpha` (without tag, `@dotpress/auth` is the 1.x).
 
 ## Packages
 

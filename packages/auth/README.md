@@ -2,10 +2,10 @@
 
 JWT authentication plugin for [Dotpress](https://dotpress.dev): login, token rotation, cookie sessions, and typed `ctx.user`. Works with any ORM through a small data provider, and on any adapter.
 
-> 🚧 Dotpress V2 is under active development and not published yet.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0. Until then, install this package with the `alpha` tag: without it, `@dotpress/auth` is the 1.x.
 
 ```sh
-pnpm add @dotpress/auth @dotpress/core zod
+pnpm add @dotpress/auth@alpha @dotpress/core zod
 ```
 
 ## Quick start

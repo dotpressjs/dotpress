@@ -2,7 +2,7 @@
 
 Typed, multilingual email templates for [Dotpress](https://dotpress.dev), written in [MJML](https://mjml.io) or HTML, with shared layouts, and interchangeable providers to send them. Works without a Dotpress app: in a script, a worker or a Lambda function.
 
-> 🚧 Dotpress V2 is under active development and not published yet.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ```sh
 pnpm add @dotpress/mailer zod

@@ -2,7 +2,7 @@
 
 Typed events for [Dotpress](https://dotpress.dev): emit a fact, and let listeners react to it in workers, through interchangeable transports. The code that emits never knows where or how the listeners run. Works without a Dotpress app: in a script, a worker or a Lambda function.
 
-> 🚧 Dotpress V2 is under active development and not published yet.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ```sh
 pnpm add @dotpress/events zod

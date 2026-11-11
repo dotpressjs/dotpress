@@ -2,7 +2,7 @@
 
 OpenAPI 3.1 documents generated from the routes of a Dotpress app, with a [Scalar](https://scalar.com) API reference. No annotations: paths, parameters, bodies and responses come from the Zod schemas of the routes, security from their middlewares.
 
-> 🚧 Dotpress V2 is under active development and not published yet.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ```ts
 import { createApp } from '@dotpress/core'

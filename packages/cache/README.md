@@ -7,7 +7,7 @@ Caching for [Dotpress](https://dotpress.dev), at two levels:
 
 Works without a Dotpress app: in a script, a worker or a Lambda function.
 
-> 🚧 Dotpress V2 is under active development and not published yet.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ```sh
 pnpm add @dotpress/cache

@@ -4,7 +4,7 @@ Lightweight, decorator-free TypeScript framework for end-to-end typed HTTP APIs.
 
 The core is independent of the HTTP server: it compiles your routes into a request pipeline that an adapter (Express, Hono, Fastify…) mounts on its server. It only relies on Web-standard APIs.
 
-> 🚧 Dotpress V2 is under active development and not published yet.
+> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ```ts
 import { createApp, defineRoute, notFoundError, sse } from '@dotpress/core'

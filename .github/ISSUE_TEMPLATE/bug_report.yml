@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please search the existing issues first. Report vulnerabilities privately (see the security policy), not here.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happens, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: The smallest code or repository that reproduces the issue, and the steps to run it.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: The `@dotpress/*` packages and their versions, the adapter and its framework (Express, Fastify, Hono…), Node.js or another runtime, and the platform (AWS Lambda, Cloudflare Workers…).
+      placeholder: |
+        @dotpress/core 2.0.0, @dotpress/adapter-hono 2.0.0, hono 4.13.9
+        Node.js 24.11, AWS Lambda
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and errors
+      description: Error messages and stack traces, if any.
+      render: text

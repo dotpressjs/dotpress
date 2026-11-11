@@ -43,6 +43,7 @@ beforeAll(async () => {
 })
 afterAll(() => server.close())
 afterEach(() => {
+  server.reset()
   vi.doUnmock('google-auth-library')
   vi.doUnmock('jose')
   vi.doUnmock('@google-cloud/pubsub')

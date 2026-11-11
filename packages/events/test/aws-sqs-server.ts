@@ -208,6 +208,9 @@ export const startSqsServer = async () => {
       })()
     })
   })
+  // Never closes idle connections itself: undici could reuse a connection
+  // as the server closes it ("fetch failed", seen on Node.js 22 in CI).
+  server.keepAliveTimeout = 0
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 
@@ -217,6 +220,8 @@ export const startSqsServer = async () => {
     queue: (name: string) => queueOf(`${url}/123456789012/${name}`),
     calls,
     /** The next call of this action (on this queue, if given) fails. */
+    /** Forgets the failures that no request consumed. */
+    reset: () => failures.clear(),
     failNext: (
       action: string,
       type: string,

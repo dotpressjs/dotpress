@@ -1,6 +1,7 @@
 import { SQSClient } from '@aws-sdk/client-sqs'
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -47,6 +48,7 @@ afterAll(async () => {
 beforeEach(() => {
   server.calls.length = 0
 })
+afterEach(() => server.reset())
 
 let queueCount = 0
 /** A fresh queue. */

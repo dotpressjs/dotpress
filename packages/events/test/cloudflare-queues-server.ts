@@ -129,6 +129,9 @@ export const startCloudflareServer = async ({ base64 = true } = {}) => {
       }
     })
   })
+  // Never closes idle connections itself: undici could reuse a connection
+  // as the server closes it ("fetch failed", seen on Node.js 22 in CI).
+  server.keepAliveTimeout = 0
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/client/v4`
 
@@ -136,6 +139,8 @@ export const startCloudflareServer = async ({ base64 = true } = {}) => {
     url,
     queue: queueOf,
     calls,
+    /** Forgets the failures that no request consumed. */
+    reset: () => failures.clear(),
     /** The next call of this action (batch, pull, ack) on this queue fails. */
     failNext: (queueId: string, action: string, status: number, body: string) =>
       failures.set(`${queueId}/${action}`, { status, body }),

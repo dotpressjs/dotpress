@@ -289,11 +289,15 @@ describe('SES provider with the AWS SDK client', () => {
         res.end(JSON.stringify({ MessageId: 'aws-message-1' }))
       })
     })
+    // Never closes idle connections itself: undici could reuse a connection
+    // as the server closes it ("fetch failed", seen on Node.js 22 in CI).
+    server.keepAliveTimeout = 0
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   })
 
   afterAll(async () => {
+    server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   })
 

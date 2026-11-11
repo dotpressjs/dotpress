@@ -40,10 +40,17 @@ export const startHttpServer = async (
       res.end(body)
     })
   })
+  // Never closes idle connections itself: undici could reuse a connection
+  // as the server closes it ("fetch failed", seen on Node.js 22 in CI).
+  server.keepAliveTimeout = 0
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     requests,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections()
+        server.close(() => resolve())
+      }),
   }
 }

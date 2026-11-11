@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import {
   createEventBus,
   createWorker,
@@ -455,6 +463,7 @@ describe('Cloudflare Queues pull source', () => {
     server = await startCloudflareServer()
   })
   afterAll(() => server.close())
+  afterEach(() => server.reset())
 
   const setup = (
     listeners: ReturnType<typeof listenerOf>[],

@@ -20,10 +20,12 @@
     "format:check": "prettier --check .",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "release:dry-run": "node scripts/release-dry-run.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "~0.18.5",
+    "@changesets/changelog-github": "~1.0.1",
     "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.5",

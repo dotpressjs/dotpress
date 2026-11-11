@@ -1,0 +1,18 @@
+# Local npm registry of the release dry run (scripts/release-dry-run.mjs).
+storage: /verdaccio/storage/data
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+packages:
+  # Our packages: local only, seeded with their published versions.
+  '@dotpress/*':
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+  '**':
+    access: $all
+    proxy: npmjs
+log: { type: stdout, format: pretty, level: warn }

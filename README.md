@@ -34,6 +34,7 @@ pnpm typecheck
 pnpm check:core  # core, openapi and the main entry of adapter-hono must stay runtime-agnostic
 pnpm check:packages  # manifests, publint and Are the Types Wrong? (after the build)
 pnpm test:packed     # installs the packed packages in a new project, and checks them as a consumer
+pnpm release:dry-run # replays the release on a local Verdaccio registry (CI; needs a clean working tree)
 ```
 
 Integration tests of the event transports and the cache stores run when their services are available, and are skipped otherwise ([serverless-redis-http](https://github.com/hiett/serverless-redis-http) serves the Upstash REST API in front of Redis):

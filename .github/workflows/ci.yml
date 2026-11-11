@@ -106,3 +106,34 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: pnpm test:packed
+
+  release-dry-run:
+    # The release of the Release workflow, replayed on a local registry
+    # (Verdaccio): versions, dist-tags, @dotpress/auth 1.x kept as latest.
+    name: Release dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The changelogs link each changeset to its commit.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start a local registry
+        run: |
+          docker run -d --name verdaccio -p 4873:4873 \
+            -v "$PWD/scripts/verdaccio.yaml:/verdaccio/conf/config.yaml:ro" \
+            verdaccio/verdaccio:6.11.1
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:4873/-/ping && exit 0
+            sleep 1
+          done
+          docker logs verdaccio
+          exit 1
+      - run: pnpm release:dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

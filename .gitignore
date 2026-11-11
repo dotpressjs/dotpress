@@ -11,6 +11,3 @@ coverage/
 .vscode/
 .serverless/
 .claude/settings.local.json
-
-# Internal working documents (French), never published
-docs/

@@ -80,3 +80,29 @@ jobs:
       - run: pnpm check:packages
       - run: pnpm typecheck
       - run: pnpm test
+
+  packed:
+    # The packages as they would be published, installed in a new project
+    # with npm: nothing is published.
+    name: Packed packages (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Node.js of `engines` (require() of ES modules), and the
+        # latest.
+        node: ['22.12', 26]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      # tsup needs Node.js 22.18 or later to build.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - run: pnpm test:packed

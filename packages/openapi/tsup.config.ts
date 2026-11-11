@@ -9,6 +9,9 @@ export default defineConfig([
     dts: true,
     sourcemap: true,
     clean: true,
+    // Keep `node:` in the bundles: Deno and Cloudflare Workers need it.
+    removeNodeProtocol: false,
+    external: [/^node:/],
   },
   {
     // Node.js-only command, published as the dotpress-openapi binary.
@@ -18,5 +21,6 @@ export default defineConfig([
     platform: 'node',
     banner: { js: '#!/usr/bin/env node' },
     sourcemap: true,
+    removeNodeProtocol: false,
   },
 ])

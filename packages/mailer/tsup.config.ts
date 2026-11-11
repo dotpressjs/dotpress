@@ -20,4 +20,7 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
+  // Keep `node:` in the bundles: Deno and Cloudflare Workers need it.
+  removeNodeProtocol: false,
+  external: [/^node:/],
 })

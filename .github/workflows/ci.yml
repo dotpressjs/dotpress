@@ -81,6 +81,7 @@ jobs:
       - run: pnpm build
       - run: pnpm check:core
       - run: pnpm check:packages
+      - run: pnpm check:examples
       - run: pnpm typecheck
       - run: pnpm test
 

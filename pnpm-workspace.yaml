@@ -1,5 +1,11 @@
 packages:
   - packages/*
+  - examples/*
+
+# Examples declare real versions (`^2.0.0-alpha.1`), so that they install as
+# is once copied out of the repository; in the workspace, they get the local
+# packages, whose versions satisfy these ranges (scripts/check-examples.mjs).
+linkWorkspacePackages: true
 
 allowBuilds:
   esbuild: true

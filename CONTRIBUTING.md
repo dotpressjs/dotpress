@@ -27,6 +27,7 @@ pnpm test
 | Path | Content |
 |---|---|
 | `packages/*` | The published packages, each with its README, sources (`src/`) and tests (`test/`) |
+| `examples/*` | Runnable examples, private packages linked to the sources (see [examples/README.md](examples/README.md)) |
 | `scripts/` | Checks of the repository (see below) |
 | `.changeset/` | Pending changesets and the configuration of the releases |
 | `.github/workflows/` | CI (`ci.yml`) and releases (`release.yml`) |
@@ -38,9 +39,10 @@ The CI runs all of them on Node.js 22, 24 and 26; run the relevant ones before o
 ```sh
 pnpm lint             # ESLint and Prettier (pnpm lint:fix, pnpm format)
 pnpm typecheck
-pnpm test             # every package; or pnpm --filter @dotpress/core test
+pnpm test             # every package and example; or pnpm --filter @dotpress/core test
 pnpm check:core       # core, openapi and the main entries stay runtime-agnostic
 pnpm check:packages   # manifests, publint and Are the Types Wrong? (after the build)
+pnpm check:examples   # examples declare the current versions, linked to the sources
 pnpm test:packed      # installs the packed packages in a new project, and checks them as a consumer
 pnpm release:dry-run  # replays the release on a local Verdaccio registry (CI; needs a clean working tree)
 ```
@@ -82,8 +84,8 @@ SERVICE_BUS_CONNECTION='Endpoint=sb://localhost;SharedAccessKeyName=RootManageSh
 
 1. Create a branch from `main`.
 2. Write the code and its tests. A test should fail without your change.
-3. Update the README of the package when the behavior or the API changes.
-4. Add a changeset if users will see the change (below).
+3. Update the README of the package, and the examples, when the behavior or the API changes.
+4. Add a changeset if users will see the change (below). The examples are not published: they need none.
 5. Open a pull request, and fill in its checklist.
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `feat(cache): add the Upstash store`, `fix(adapters): …`, `docs: …`, `test: …`, `ci: …`, `chore: …`.

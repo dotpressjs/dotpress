@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "check:core": "node scripts/check-core-agnostic.mjs",
     "check:packages": "node scripts/check-packages.mjs",
+    "check:examples": "node scripts/check-examples.mjs",
     "test:packed": "node scripts/test-packed.mjs",
     "test": "pnpm -r test",
     "lint": "eslint .",

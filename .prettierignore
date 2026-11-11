@@ -3,7 +3,7 @@ coverage
 pnpm-lock.yaml
 
 # Internal working documents
-docs
+dev
 
 # Hand-written documentation: no automatic reformatting
 *.md

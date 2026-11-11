@@ -1,0 +1,30 @@
+{
+  "name": "@dotpress-examples/express",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dotpress on Express: routes, validation, returned errors, OpenAPI and Scalar",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node --watch src/server.ts",
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dotpress/adapter-express": "^2.0.0-alpha.1",
+    "@dotpress/core": "^2.0.0-alpha.1",
+    "@dotpress/openapi": "^2.0.0-alpha.1",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@dotpress/testing": "^2.0.0-alpha.1",
+    "@types/node": "^22.20.5",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0"
+  }
+}

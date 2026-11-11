@@ -1,4 +1,4 @@
-import type { AddressInfo } from 'node:net'
+import { connect, type AddressInfo, type Socket } from 'node:net'
 import {
   createApp,
   createRouter,
@@ -489,6 +489,83 @@ describe('honoAdapter()', () => {
 
       expect(released).toHaveBeenCalledOnce()
       expect(await reader.read()).toMatchObject({ done: true })
+    })
+
+    it('keeps the connections alive between requests', async () => {
+      const adapter = nodeHonoAdapter()
+      const target = await startNode(adapter, {
+        logger: createMemoryLogger(),
+        routers: [
+          routerWith((router) => {
+            router.defineRoute({ path: '/hello', handler: () => ({ hi: 1 }) })
+          }),
+        ],
+      })
+      let closed = 0
+      adapter.server()!.on('connection', (socket: Socket) => {
+        socket.once('close', () => {
+          closed += 1
+        })
+      })
+
+      for (let index = 0; index < 3; index += 1) {
+        expect(await (await target.fetch('/hello')).json()).toEqual({ hi: 1 })
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(closed).toBe(0)
+      await target.close()
+    })
+
+    // Before Node.js 26, server.close() waits for a connection that has not
+    // sent a request (a browser preconnect…) until headersTimeout.
+    it('closes the connections that sent nothing, and waits for pending requests', async () => {
+      let started!: () => void
+      const handlerStarted = new Promise<void>((resolve) => (started = resolve))
+      let release!: () => void
+      const released = new Promise<void>((resolve) => (release = resolve))
+      const adapter = nodeHonoAdapter()
+      const target = await startNode(adapter, {
+        logger: createMemoryLogger(),
+        routers: [
+          routerWith((router) => {
+            router.defineRoute({
+              path: '/slow',
+              handler: async () => {
+                started()
+                await released
+                return { done: true }
+              },
+            })
+          }),
+        ],
+      })
+      const server = adapter.server()!
+      const { port } = server.address() as AddressInfo
+
+      const pending = target.fetch('/slow')
+      await handlerStarted
+      const accepted = new Promise((resolve) =>
+        server.once('connection', resolve)
+      )
+      const silent = connect(port, '127.0.0.1').on('error', () => {})
+      const silentClosed = new Promise((resolve) =>
+        silent.once('close', resolve)
+      )
+      await accepted
+
+      let closed = false
+      const closing = target.close().then(() => {
+        closed = true
+      })
+      await silentClosed
+      expect(closed).toBe(false)
+
+      release()
+      expect(await (await pending).json()).toEqual({ done: true })
+      // Without waiting for keepAliveTimeout.
+      const served = Date.now()
+      await closing
+      expect(Date.now() - served).toBeLessThan(1000)
     })
 
     it('closes the streams served without listening on close()', async () => {

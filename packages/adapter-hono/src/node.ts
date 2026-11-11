@@ -1,4 +1,5 @@
-import type { Server } from 'node:http'
+import type { IncomingMessage, Server, ServerResponse } from 'node:http'
+import type { Socket } from 'node:net'
 import { createAdaptorServer } from '@hono/node-server'
 import type { Hono } from 'hono'
 import {
@@ -25,6 +26,37 @@ export interface NodeHonoAdapter<
 }
 
 /**
+ * Lets `close()` complete as soon as the pending requests are served, and
+ * returns the function to call on close. Before Node.js 26, `server.close()`
+ * waits for the connections that have sent nothing yet (a browser
+ * preconnect…) until `headersTimeout`; and, whatever the version, the
+ * connections of the pending requests stay open once served, until
+ * `keepAliveTimeout`.
+ */
+const trackConnections = (server: Server) => {
+  const sockets = new Set<Socket>()
+  let closing = false
+  server.on('connection', (socket: Socket) => {
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
+  })
+  server.on(
+    'request',
+    (_request: IncomingMessage, response: ServerResponse) => {
+      response.once('finish', () => {
+        if (closing) server.closeIdleConnections()
+      })
+    }
+  )
+  return () => {
+    closing = true
+    for (const socket of sockets) {
+      if (socket.bytesRead === 0) socket.destroy()
+    }
+  }
+}
+
+/**
  * Creates the Hono adapter for Node.js: the adapter of
  * `@dotpress/adapter-hono`, with an HTTP server (`@hono/node-server`).
  *
@@ -43,6 +75,7 @@ export function honoAdapter<TApp extends HonoApplication>(
     options as HonoAdapterOptions<TApp> & { app: TApp }
   )
   let server: Server | undefined
+  let closeConnections = () => {}
 
   return {
     ...adapter,
@@ -59,6 +92,7 @@ export function honoAdapter<TApp extends HonoApplication>(
         })
       })
       server = created
+      closeConnections = trackConnections(created)
     },
 
     close: async () => {
@@ -72,6 +106,7 @@ export function honoAdapter<TApp extends HonoApplication>(
       await new Promise<void>((resolve, reject) => {
         // Also closes the idle connections.
         current.close((error) => (error ? reject(error) : resolve()))
+        closeConnections()
         // Streams never end by themselves: close them.
         void adapter.close()
       })

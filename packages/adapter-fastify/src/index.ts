@@ -1,4 +1,5 @@
-import type { Server, ServerResponse } from 'node:http'
+import type { IncomingMessage, Server, ServerResponse } from 'node:http'
+import type { Socket } from 'node:net'
 import type { Readable } from 'node:stream'
 import {
   DEFAULT_BODY_LIMIT,
@@ -55,6 +56,42 @@ export interface FastifyAdapter<
   close(): Promise<void>
   /** HTTP server started by `listen()`, if any. */
   server(): Server | undefined
+}
+
+/**
+ * Lets `close()` complete as soon as the pending requests are served, and
+ * returns the function to call on close. Before Node.js 26, `server.close()`
+ * waits for the connections that have sent nothing yet (a browser
+ * preconnect…) until `headersTimeout`; and, whatever the version, the
+ * connections of the pending requests stay open once served, until
+ * `keepAliveTimeout`. Fastify keeps listening during its `preClose` hooks:
+ * the connections accepted from then on are destroyed right away.
+ */
+const trackConnections = (server: Server) => {
+  const sockets = new Set<Socket>()
+  let closing = false
+  server.on('connection', (socket: Socket) => {
+    if (closing) {
+      socket.destroy()
+      return
+    }
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
+  })
+  server.on(
+    'request',
+    (_request: IncomingMessage, response: ServerResponse) => {
+      response.once('finish', () => {
+        if (closing) server.closeIdleConnections()
+      })
+    }
+  )
+  return () => {
+    closing = true
+    for (const socket of sockets) {
+      if (socket.bytesRead === 0) socket.destroy()
+    }
+  }
 }
 
 /** Rejection reason when the client goes away while the body is read. */
@@ -212,6 +249,7 @@ export function fastifyAdapter<TApp extends FastifyInstance>(
   const application = options.app ?? (Fastify() as unknown as TApp)
   let mounted = false
   let listening = false
+  let closeConnections = () => {}
   /** Closes the responses being streamed, so that `close()` can complete. */
   const streams = new Set<() => void>()
 
@@ -428,12 +466,14 @@ export function fastifyAdapter<TApp extends FastifyInstance>(
         await app.listen({ port, host: '0.0.0.0' })
       }
       listening = true
+      closeConnections = trackConnections(app.server as Server)
     },
 
     close: async () => {
       // Streams never end by themselves: close them.
       for (const stop of [...streams]) stop()
       listening = false
+      closeConnections()
       await (application as unknown as FastifyInstance).close()
     },
 

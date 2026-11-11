@@ -5,6 +5,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http'
+import type { Socket } from 'node:net'
 import {
   DEFAULT_BODY_LIMIT,
   HttpError,
@@ -24,6 +25,37 @@ import {
   type UploadedFiles,
 } from '@dotpress/core'
 import express, { type Express } from 'express'
+
+/**
+ * Lets `close()` complete as soon as the pending requests are served, and
+ * returns the function to call on close. Before Node.js 26, `server.close()`
+ * waits for the connections that have sent nothing yet (a browser
+ * preconnect…) until `headersTimeout`; and, whatever the version, the
+ * connections of the pending requests stay open once served, until
+ * `keepAliveTimeout`.
+ */
+const trackConnections = (server: Server) => {
+  const sockets = new Set<Socket>()
+  let closing = false
+  server.on('connection', (socket: Socket) => {
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
+  })
+  server.on(
+    'request',
+    (_request: IncomingMessage, response: ServerResponse) => {
+      response.once('finish', () => {
+        if (closing) server.closeIdleConnections()
+      })
+    }
+  )
+  return () => {
+    closing = true
+    for (const socket of sockets) {
+      if (socket.bytesRead === 0) socket.destroy()
+    }
+  }
+}
 
 /**
  * Minimal shape of an Express application, compatible with Express 4 and 5.
@@ -308,6 +340,7 @@ export function expressAdapter<TApp extends ExpressApplication>(
   const application = app
   let mounted = false
   let server: Server | undefined
+  let closeConnections = () => {}
   /** Aborts the responses being streamed, so that `close()` can complete. */
   const activeStreams = new Set<() => void>()
 
@@ -532,6 +565,7 @@ export function expressAdapter<TApp extends ExpressApplication>(
         })
       })
       server = created
+      closeConnections = trackConnections(created)
     },
 
     close: async () => {
@@ -541,7 +575,7 @@ export function expressAdapter<TApp extends ExpressApplication>(
 
       await new Promise<void>((resolve, reject) => {
         current.close((error) => (error ? reject(error) : resolve()))
-        current.closeIdleConnections()
+        closeConnections()
         // Streams never end by themselves: abort them.
         for (const stop of activeStreams) stop()
       })

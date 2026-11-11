@@ -176,9 +176,9 @@ export const checkEmission = async (
  * ```ts
  * const events = createEventBus({
  *   transport: createMemoryTransport(),
- *   listeners: [sendWelcomeMail, geocodePractitioner],
+ *   listeners: [sendWelcomeMail, geocodeUser],
  * })
- * await events.emit(practitionerCreated, { practitionerId: '42' })
+ * await events.emit(userCreated, { userId: '42' })
  * ```
  */
 export const createEventBus = (options: EventBusOptions): EventBus => {

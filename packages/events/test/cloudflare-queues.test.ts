@@ -16,12 +16,12 @@ import {
   type CloudflareQueueMessage,
 } from '../src/transports/cloudflare-queues.js'
 import { startCloudflareServer } from './cloudflare-queues-server.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const listenerOf = (
   name: string,
-  handle: ListenerHandler<{ practitionerId: string }>
-) => defineListener(practitionerCreated, { name, handle })
+  handle: ListenerHandler<{ userId: string }>
+) => defineListener(userCreated, { name, handle })
 
 const bindingMock = () => ({
   sendBatch: vi.fn<(messages: Iterable<{ body: unknown }>) => Promise<unknown>>(
@@ -37,8 +37,8 @@ describe('Cloudflare Queues transport (binding)', () => {
       listeners: [listenerOf('a', () => {}), listenerOf('b', () => {})],
     })
     const { messages } = await events.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       { delay: 60 }
     )
     expect(binding.sendBatch).toHaveBeenCalledExactlyOnceWith([
@@ -118,7 +118,7 @@ describe('Cloudflare Queues transport (binding)', () => {
       listeners: [listenerOf('a', () => {})],
     })
     const error = await events
-      .emit(practitionerCreated, { practitionerId: '1' }, { delay: 86_401 })
+      .emit(userCreated, { userId: '1' }, { delay: 86_401 })
       .catch((e: unknown) => e)
     expect(error).toBeInstanceOf(EventEmitError)
     expect((error as Error).cause).toEqual(
@@ -126,11 +126,7 @@ describe('Cloudflare Queues transport (binding)', () => {
         'Cloudflare Queues accepts delays of at most 86400 seconds, got 86401.'
       )
     )
-    await events.emit(
-      practitionerCreated,
-      { practitionerId: '1' },
-      { delay: 86_400 }
-    )
+    await events.emit(userCreated, { userId: '1' }, { delay: 86_400 })
     expect(binding.sendBatch).toHaveBeenCalledOnce()
   })
 
@@ -298,7 +294,7 @@ describe('Cloudflare Queues handler', () => {
   }
 
   const workerOf = (
-    handlers: Record<string, ListenerHandler<{ practitionerId: string }>>
+    handlers: Record<string, ListenerHandler<{ userId: string }>>
   ) =>
     createWorker({
       listeners: Object.entries(handlers).map(([name, handle]) =>
@@ -488,12 +484,9 @@ describe('Cloudflare Queues pull source', () => {
   it('runs the listeners of the queue, and acknowledges the messages', async () => {
     const received: string[] = []
     const { events, running, queueId } = setup([
-      listenerOf(
-        'a',
-        ({ payload }) => void received.push(payload.practitionerId)
-      ),
+      listenerOf('a', ({ payload }) => void received.push(payload.userId)),
     ])
-    await events.emit(practitionerCreated, { practitionerId: 'Zoë' })
+    await events.emit(userCreated, { userId: 'Zoë' })
     await vi.waitFor(() => expect(received).toEqual(['Zoë']))
     await vi.waitFor(() => expect(server.queue(queueId)).toEqual([]))
     await running.stop()
@@ -571,10 +564,7 @@ describe('Cloudflare Queues pull source', () => {
     const plain = await startCloudflareServer({ base64: false })
     const received: string[] = []
     const listeners = [
-      listenerOf(
-        'a',
-        ({ payload }) => void received.push(payload.practitionerId)
-      ),
+      listenerOf('a', ({ payload }) => void received.push(payload.userId)),
     ]
     const api = {
       accountId: 'acc',
@@ -585,7 +575,7 @@ describe('Cloudflare Queues pull source', () => {
     await createEventBus({
       transport: createCloudflareQueueTransport(api),
       listeners,
-    }).emit(practitionerCreated, { practitionerId: '7' })
+    }).emit(userCreated, { userId: '7' })
     const running = startWorker(
       createWorker({ listeners }),
       createCloudflarePullSource({ ...api, pollInterval: 10 })
@@ -611,7 +601,7 @@ describe('Cloudflare Queues pull source', () => {
         visibilityTimeoutMs: 1000,
       }
     )
-    await events.emit(practitionerCreated, { practitionerId: '1' })
+    await events.emit(userCreated, { userId: '1' })
     server.queue(queueId).push({
       id: 'dead',
       body: envelopeOf({ listener: 'removed' }),
@@ -679,17 +669,12 @@ describe('Cloudflare Queues pull source', () => {
     const received: string[] = []
     // A short lease: the message comes back after the failed acknowledgment.
     const { events, running, queueId, logger } = setup(
-      [
-        listenerOf(
-          'a',
-          ({ payload }) => void received.push(payload.practitionerId)
-        ),
-      ],
+      [listenerOf('a', ({ payload }) => void received.push(payload.userId))],
       { visibilityTimeoutMs: 200 }
     )
     server.failNext(queueId, 'pull', 503, 'Service unavailable')
     server.failNext(queueId, 'ack', 500, '{"success":false,"errors":[]}')
-    await events.emit(practitionerCreated, { practitionerId: '1' })
+    await events.emit(userCreated, { userId: '1' })
     await vi.waitFor(() => expect(received.length).toBeGreaterThanOrEqual(2), {
       timeout: 4000,
     })

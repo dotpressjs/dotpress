@@ -150,9 +150,9 @@ export const loaderOf = (listener: unknown) => loaders.get(listener as object)
  * payload.
  *
  * ```ts
- * export const practitionerCreated = defineEvent({
- *   name: 'practitioner.created',
- *   schema: z.object({ practitionerId: z.string() }),
+ * export const userCreated = defineEvent({
+ *   name: 'user.created',
+ *   schema: z.object({ userId: z.string() }),
  * })
  * ```
  */
@@ -198,7 +198,7 @@ export const defineEvent = <S extends z.ZodType>(options: {
  * emission, and is retried when it throws.
  *
  * ```ts
- * export const sendWelcomeMail = defineListener(practitionerCreated, {
+ * export const sendWelcomeMail = defineListener(userCreated, {
  *   name: 'send-welcome-mail',
  *   load: () => import('./listeners/send-welcome-mail.js'),
  * })

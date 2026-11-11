@@ -24,11 +24,11 @@ declareContextKey('events', 'eventsPlugin')
  *
  * defineRoute({
  *   method: 'post',
- *   path: '/practitioners',
+ *   path: '/users',
  *   handler: async ({ events, body }) => {
- *     const practitioner = await createPractitioner(body)
- *     await events.emit(practitionerCreated, { practitionerId: practitioner.id })
- *     return practitioner
+ *     const user = await createUser(body)
+ *     await events.emit(userCreated, { userId: user.id })
+ *     return user
  *   },
  * })
  * ```

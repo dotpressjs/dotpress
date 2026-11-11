@@ -13,12 +13,12 @@ import {
   DEFAULT_JOB_OPTIONS,
   processorOf,
 } from '../src/transports/bullmq.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const listenerOf = (
   name: string,
-  handle: ListenerHandler<{ practitionerId: string }>
-) => defineListener(practitionerCreated, { name, handle })
+  handle: ListenerHandler<{ userId: string }>
+) => defineListener(userCreated, { name, handle })
 
 describe('BullMQ transport', () => {
   it('adds one job per message, with the default options', async () => {
@@ -29,8 +29,8 @@ describe('BullMQ transport', () => {
       transport,
       listeners: [listenerOf('a', () => {}), listenerOf('b', () => {})],
     })
-    const { messages } = await events.emit(practitionerCreated, {
-      practitionerId: '42',
+    const { messages } = await events.emit(userCreated, {
+      userId: '42',
     })
 
     expect(transport.kind).toBe('bullmq')
@@ -326,14 +326,14 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
     const { events, transport, running, queue } = setup([
       listenerOf(
         'a',
-        ({ payload }) => void received.push(`a:${payload.practitionerId}`)
+        ({ payload }) => void received.push(`a:${payload.userId}`)
       ),
       listenerOf(
         'b',
-        ({ payload }) => void received.push(`b:${payload.practitionerId}`)
+        ({ payload }) => void received.push(`b:${payload.userId}`)
       ),
     ])
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     await vi.waitFor(() => expect(received.sort()).toEqual(['a:42', 'b:42']))
     await running.stop()
     await transport.close()
@@ -351,8 +351,8 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
         throw new Error('down')
       }),
     ])
-    const { messages } = await events.emit(practitionerCreated, {
-      practitionerId: '1',
+    const { messages } = await events.emit(userCreated, {
+      userId: '1',
     })
     await vi.waitFor(() => expect(attempts).toEqual([1, 2, 3]))
     await vi.waitFor(async () => {
@@ -408,7 +408,7 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
         steps.push('finished')
       }),
     ])
-    await events.emit(practitionerCreated, { practitionerId: '1' })
+    await events.emit(userCreated, { userId: '1' })
     await vi.waitFor(() => expect(steps).toEqual(['started']))
     await running.stop()
     steps.push('stopped')
@@ -426,7 +426,7 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
       })
     // setup() uses a concurrency of 2.
     const { events, running, transport } = setup([slow('a'), slow('b')])
-    await events.emit(practitionerCreated, { practitionerId: '1' })
+    await events.emit(userCreated, { userId: '1' })
     await vi.waitFor(() => expect(steps).toHaveLength(4))
     expect(steps.slice(0, 2).every((step) => step.endsWith(':start'))).toBe(
       true

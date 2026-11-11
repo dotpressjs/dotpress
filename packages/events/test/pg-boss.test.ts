@@ -13,12 +13,12 @@ import {
   DEFAULT_QUEUE_OPTIONS,
   handlerOf,
 } from '../src/transports/pg-boss.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const listenerOf = (
   name: string,
-  handle: ListenerHandler<{ practitionerId: string }>
-) => defineListener(practitionerCreated, { name, handle })
+  handle: ListenerHandler<{ userId: string }>
+) => defineListener(userCreated, { name, handle })
 
 /** A pg-boss instance recording its calls. */
 const fakeBoss = (queues: Record<string, { deadLetter?: string }> = {}) => ({
@@ -50,14 +50,10 @@ describe('pg-boss transport', () => {
       transport,
       listeners: [listenerOf('a', () => {}), listenerOf('b', () => {})],
     })
-    const { messages } = await events.emit(practitionerCreated, {
-      practitionerId: '42',
+    const { messages } = await events.emit(userCreated, {
+      userId: '42',
     })
-    await events.emit(
-      practitionerCreated,
-      { practitionerId: '43' },
-      { delay: 60 }
-    )
+    await events.emit(userCreated, { userId: '43' }, { delay: 60 })
 
     expect(transport.kind).toBe('pg-boss')
     expect(boss.start).not.toHaveBeenCalled()
@@ -473,14 +469,14 @@ describe.skipIf(!databaseUrl)('pg-boss with Postgres', () => {
     const { events, transport, running } = setup([
       listenerOf(
         'a',
-        ({ payload }) => void received.push(`a:${payload.practitionerId}`)
+        ({ payload }) => void received.push(`a:${payload.userId}`)
       ),
       listenerOf(
         'b',
-        ({ payload }) => void received.push(`b:${payload.practitionerId}`)
+        ({ payload }) => void received.push(`b:${payload.userId}`)
       ),
     ])
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     await vi.waitFor(() => expect(received.sort()).toEqual(['a:42', 'b:42']), {
       timeout: 5000,
     })
@@ -499,8 +495,8 @@ describe.skipIf(!databaseUrl)('pg-boss with Postgres', () => {
       ],
       { retryDelay: 0, retryBackoff: false, deadLetter: `dlq-${count + 1}` }
     )
-    const { messages } = await events.emit(practitionerCreated, {
-      practitionerId: '1',
+    const { messages } = await events.emit(userCreated, {
+      userId: '1',
     })
     await vi.waitFor(() => expect(attempts).toEqual([1, 2, 3]), {
       timeout: 10_000,
@@ -571,19 +567,18 @@ describe.skipIf(!databaseUrl)('pg-boss with Postgres', () => {
         ({ payload }) => void received.push(payload)
       ),
     ])
-    await transport.send([envelopeOf({ payload: { practitionerId: '1' } })], {
+    await transport.send([envelopeOf({ payload: { userId: '1' } })], {
       delay: 1,
     })
     // Same id: ignored by pg-boss, the first job is kept.
-    await transport.send([envelopeOf({ payload: { practitionerId: '2' } })], {
+    await transport.send([envelopeOf({ payload: { userId: '2' } })], {
       delay: 1,
     })
     const job = await admin.getJobById(queue, envelopeOf().id)
-    expect(job?.data).toMatchObject({ payload: { practitionerId: '1' } })
-    await vi.waitFor(
-      () => expect(received).toEqual([{ practitionerId: '1' }]),
-      { timeout: 6000 }
-    )
+    expect(job?.data).toMatchObject({ payload: { userId: '1' } })
+    await vi.waitFor(() => expect(received).toEqual([{ userId: '1' }]), {
+      timeout: 6000,
+    })
     await new Promise((resolve) => setTimeout(resolve, 1000))
     expect(received).toHaveLength(1)
     await running.stop()

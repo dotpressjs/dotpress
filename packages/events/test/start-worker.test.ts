@@ -5,11 +5,11 @@ import {
   startWorker,
   type Source,
 } from '../src/index.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const worker = createWorker({
   listeners: [
-    defineListener(practitionerCreated, {
+    defineListener(userCreated, {
       name: 'send-welcome-mail',
       handle: () => {},
     }),

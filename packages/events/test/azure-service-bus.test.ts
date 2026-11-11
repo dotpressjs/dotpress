@@ -20,12 +20,12 @@ import {
   createServiceBusSource,
   createServiceBusTransport,
 } from '../src/transports/azure-service-bus.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const listenerOf = (
   name: string,
-  handle: ListenerHandler<{ practitionerId: string }>
-) => defineListener(practitionerCreated, { name, handle })
+  handle: ListenerHandler<{ userId: string }>
+) => defineListener(userCreated, { name, handle })
 
 afterEach(() => {
   vi.doUnmock('@azure/service-bus')
@@ -117,8 +117,8 @@ describe('Service Bus transport', () => {
       }),
       listeners: [listenerOf('a', () => {}), listenerOf('b', () => {})],
     })
-    const { messages } = await events.emit(practitionerCreated, {
-      practitionerId: '42',
+    const { messages } = await events.emit(userCreated, {
+      userId: '42',
     })
     expect(client.createSender).toHaveBeenCalledExactlyOnceWith('events')
     expect(batches).toEqual([
@@ -126,11 +126,11 @@ describe('Service Bus transport', () => {
         body: expect.objectContaining({ id: messages[index]?.id, listener }),
         contentType: 'application/json',
         messageId: messages[index]?.id,
-        subject: 'practitioner.created',
-        applicationProperties: { event: 'practitioner.created', listener },
+        subject: 'user.created',
+        applicationProperties: { event: 'user.created', listener },
       })),
     ])
-    await events.emit(practitionerCreated, { practitionerId: '43' })
+    await events.emit(userCreated, { userId: '43' })
     expect(client.createSender).toHaveBeenCalledOnce()
   })
 
@@ -158,7 +158,7 @@ describe('Service Bus transport', () => {
       queue: 'events',
     })
     const sized = (id: string, size: number) =>
-      envelopeOf({ id, payload: { practitionerId: 'x'.repeat(size) } })
+      envelopeOf({ id, payload: { userId: 'x'.repeat(size) } })
     const error = await transport
       .send(
         [
@@ -197,7 +197,7 @@ describe('Service Bus transport', () => {
         [
           envelopeOf({
             id: 'huge',
-            payload: { practitionerId: 'x'.repeat(2000) },
+            payload: { userId: 'x'.repeat(2000) },
           }),
         ],
         { delay: undefined }
@@ -213,7 +213,7 @@ describe('Service Bus transport', () => {
       queue: 'events',
     })
     const sized = (id: string, size: number) =>
-      envelopeOf({ id, payload: { practitionerId: 'x'.repeat(size) } })
+      envelopeOf({ id, payload: { userId: 'x'.repeat(size) } })
     const error = await transport
       .send(
         [
@@ -249,7 +249,7 @@ describe('Service Bus transport', () => {
         [
           envelopeOf({
             id: 'large',
-            payload: { practitionerId: 'x'.repeat(2_000_000) },
+            payload: { userId: 'x'.repeat(2_000_000) },
           }),
         ],
         { delay: undefined }
@@ -267,7 +267,7 @@ describe('Service Bus transport', () => {
       queue: 'events',
     })
     const sized = (id: string) =>
-      envelopeOf({ id, payload: { practitionerId: 'x'.repeat(400) } })
+      envelopeOf({ id, payload: { userId: 'x'.repeat(400) } })
     const error = await transport
       .send([sized('a'), sized('b'), sized('c')], { delay: undefined })
       .catch((caught: unknown) => caught)
@@ -302,10 +302,10 @@ describe('Service Bus transport', () => {
       listeners: [listenerOf('a', () => {})],
     })
     const error = await events
-      .emit(practitionerCreated, { practitionerId: '42' })
+      .emit(userCreated, { userId: '42' })
       .catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(EventEmitError)
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     expect(client.createSender).toHaveBeenCalledTimes(2)
   })
 
@@ -427,7 +427,7 @@ describe('Service Bus source', () => {
     const worker = createWorker({
       listeners: [
         listenerOf('send-welcome-mail', ({ payload }) => {
-          if (payload.practitionerId === 'fail') throw new Error('down')
+          if (payload.userId === 'fail') throw new Error('down')
         }),
       ],
       onFailure,
@@ -452,10 +452,7 @@ describe('Service Bus source', () => {
     expect(receiver.completeMessage).toHaveBeenCalledExactlyOnceWith(ok)
     expect(onFailure).not.toHaveBeenCalled()
 
-    const failed = received(
-      envelopeOf({ payload: { practitionerId: 'fail' } }),
-      9
-    )
+    const failed = received(envelopeOf({ payload: { userId: 'fail' } }), 9)
     await handlers.processMessage(failed)
     expect(receiver.abandonMessage).toHaveBeenCalledExactlyOnceWith(failed)
     expect(onFailure).toHaveBeenLastCalledWith(
@@ -680,7 +677,7 @@ describe('Service Bus source', () => {
 })
 
 describe('Service Bus Azure Functions handler', () => {
-  const workerOf = (handle: ListenerHandler<{ practitionerId: string }>) =>
+  const workerOf = (handle: ListenerHandler<{ userId: string }>) =>
     createWorker({
       listeners: [listenerOf('send-welcome-mail', handle)],
       maxAttempts: 10,
@@ -694,8 +691,8 @@ describe('Service Bus Azure Functions handler', () => {
     expect(
       handle.mock.calls.map(([context]) => [context.payload, context.attempt])
     ).toEqual([
-      [{ practitionerId: '42' }, 3],
-      [{ practitionerId: '42' }, 1],
+      [{ userId: '42' }, 3],
+      [{ userId: '42' }, 1],
     ])
   })
 
@@ -874,7 +871,7 @@ describe.skipIf(!connectionString)('Service Bus (emulator)', () => {
       listenerOf('steady', ({ attempt }) => void attempts.push(attempt * 10)),
     ]
     const events = createEventBus({ transport: transportOf(), listeners })
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     const running = startWorker(
       createWorker({ listeners, maxAttempts: 3 }),
       createServiceBusSource({ client, queue: 'events', maxConcurrentCalls: 2 })
@@ -892,8 +889,8 @@ describe.skipIf(!connectionString)('Service Bus (emulator)', () => {
     })
     const transport = transportOf()
     await createEventBus({ transport, listeners: [listener] }).emit(
-      practitionerCreated,
-      { practitionerId: '42' }
+      userCreated,
+      { userId: '42' }
     )
     await transport.send([envelopeOf({ id: 'dead-1', listener: 'removed' })], {
       delay: undefined,
@@ -947,7 +944,7 @@ describe.skipIf(!connectionString)('Service Bus (emulator)', () => {
     await createEventBus({
       transport: transportOf(),
       listeners: [listener],
-    }).emit(practitionerCreated, { practitionerId: '42' }, { delay: 3 })
+    }).emit(userCreated, { userId: '42' }, { delay: 3 })
     const running = startWorker(
       createWorker({ listeners: [listener] }),
       createServiceBusSource({ client, queue: 'events' })
@@ -975,7 +972,7 @@ describe.skipIf(!connectionString)('Service Bus (emulator)', () => {
     expect(messages.map(({ messageId }) => messageId)).toEqual([id])
     expect(messages[0]?.body).toEqual(envelopeOf({ id }))
     expect(messages[0]?.applicationProperties).toEqual({
-      event: 'practitioner.created',
+      event: 'user.created',
       listener: 'send-welcome-mail',
     })
   })

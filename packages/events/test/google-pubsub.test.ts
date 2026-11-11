@@ -25,12 +25,12 @@ import {
   createPubSubTransport,
 } from '../src/transports/google-pubsub.js'
 import { startPubSubServer } from './google-pubsub-server.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const listenerOf = (
   name: string,
-  handle: ListenerHandler<{ practitionerId: string }>
-) => defineListener(practitionerCreated, { name, handle })
+  handle: ListenerHandler<{ userId: string }>
+) => defineListener(userCreated, { name, handle })
 
 const TOPIC = 'projects/test-project/topics/events'
 const DLQ = 'projects/test-project/topics/events-dlq'
@@ -64,8 +64,8 @@ describe('Pub/Sub transport', () => {
       listeners: [listenerOf('a', () => {}), listenerOf('b', () => {})],
     })
     const before = server.calls.length
-    const { messages } = await events.emit(practitionerCreated, {
-      practitionerId: '42',
+    const { messages } = await events.emit(userCreated, {
+      userId: '42',
     })
     expect(server.calls.slice(before)).toEqual([
       {
@@ -77,8 +77,8 @@ describe('Pub/Sub transport', () => {
     expect(getAccessToken).toHaveBeenCalledOnce()
     const published = server.published(TOPIC).slice(-2)
     expect(published.map(({ attributes }) => attributes)).toEqual([
-      { event: 'practitioner.created', listener: 'a' },
-      { event: 'practitioner.created', listener: 'b' },
+      { event: 'user.created', listener: 'a' },
+      { event: 'user.created', listener: 'b' },
     ])
     expect(server.envelopes(TOPIC).slice(-2)).toEqual([
       expect.objectContaining({ id: messages[0]?.id, listener: 'a' }),
@@ -146,7 +146,7 @@ describe('Pub/Sub transport', () => {
     // Base64 data takes 4/3 of the JSON: 2 MB of payload, about 2.7 MB.
     sizes.length = 0
     const big = (id: string, size: number) =>
-      envelopeOf({ id, payload: { practitionerId: 'x'.repeat(size) } })
+      envelopeOf({ id, payload: { userId: 'x'.repeat(size) } })
     const error = await transport
       .send(
         [
@@ -319,7 +319,7 @@ describe('Pub/Sub transport', () => {
       listeners: [listenerOf('a', () => {})],
     })
     const error = await events
-      .emit(practitionerCreated, { practitionerId: '42' })
+      .emit(userCreated, { userId: '42' })
       .catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(EventEmitError)
     expect((error as EventEmitError).failed).toEqual([
@@ -443,7 +443,7 @@ describe('Pub/Sub transport', () => {
 const pushBody = (data: unknown, extra: object = {}) => ({
   message: {
     data: typeof data === 'string' ? data : base64(data),
-    attributes: { event: 'practitioner.created' },
+    attributes: { event: 'user.created' },
     messageId: '1',
     publishTime: '2026-11-10T10:00:00.000Z',
   },
@@ -454,7 +454,7 @@ const pushBody = (data: unknown, extra: object = {}) => ({
 describe('Pub/Sub push handler', () => {
   const claims = { aud: AUDIENCE, email: ACCOUNT, email_verified: true }
   const handlerOf = (
-    handle: ListenerHandler<{ practitionerId: string }> = () => {},
+    handle: ListenerHandler<{ userId: string }> = () => {},
     options: object = {}
   ) =>
     createPubSubPushHandler(
@@ -483,7 +483,7 @@ describe('Pub/Sub push handler', () => {
     expect(response.status).toBe(204)
     expect(handle).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        payload: { practitionerId: '42' },
+        payload: { userId: '42' },
         attempt: 1,
         id: envelopeOf().id,
       })
@@ -681,7 +681,7 @@ describe('Pub/Sub push handler', () => {
       }
     )
     await long.handle(
-      pushBody(envelopeOf({ payload: { practitionerId: 42 } })),
+      pushBody(envelopeOf({ payload: { userId: 42 } })),
       undefined
     )
     const error = (
@@ -897,8 +897,8 @@ describe('Pub/Sub pull source', () => {
     const onFailure = vi.fn()
     const worker = createWorker({
       listeners: [
-        listenerOf('send-welcome-mail', ({ payload: { practitionerId } }) => {
-          if (practitionerId === 'fail') throw new Error('down')
+        listenerOf('send-welcome-mail', ({ payload: { userId } }) => {
+          if (userId === 'fail') throw new Error('down')
         }),
       ],
       onFailure,
@@ -919,10 +919,7 @@ describe('Pub/Sub pull source', () => {
     expect(client.topic).not.toHaveBeenCalled()
 
     const ok = pulledMessage(envelopeOf())
-    const failed = pulledMessage(
-      envelopeOf({ payload: { practitionerId: 'fail' } }),
-      5
-    )
+    const failed = pulledMessage(envelopeOf({ payload: { userId: 'fail' } }), 5)
     const dead = pulledMessage('not json')
     for (const message of [ok, failed, dead])
       subscription.emit('message', message)
@@ -1223,12 +1220,12 @@ describe.skipIf(!emulator)('Pub/Sub (emulator)', () => {
   it('publishes with the transport, and pulls with the source', async () => {
     const received: string[] = []
     const listeners = ['a', 'b'].map((name) =>
-      listenerOf(name, ({ payload: { practitionerId } }) => {
-        received.push(`${name}:${practitionerId}`)
+      listenerOf(name, ({ payload: { userId } }) => {
+        received.push(`${name}:${userId}`)
       })
     )
     const events = createEventBus({ transport: transport(), listeners })
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     const running = startWorker(
       createWorker({ listeners }),
       createPubSubPullSource({
@@ -1252,7 +1249,7 @@ describe.skipIf(!emulator)('Pub/Sub (emulator)', () => {
       transport: transport(),
       listeners: [listener],
     })
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     await transport().send([envelopeOf({ listener: 'removed' })], {
       delay: undefined,
     })
@@ -1317,7 +1314,7 @@ describe.skipIf(!emulator)('Pub/Sub (emulator)', () => {
       timeout: 15_000,
     })
     expect(handle.mock.calls[0]?.[0]).toMatchObject({
-      payload: { practitionerId: '42' },
+      payload: { userId: '42' },
     })
   })
 })

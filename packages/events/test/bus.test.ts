@@ -16,19 +16,19 @@ import { messageId } from '../src/envelope.js'
 import {
   createLogger,
   createRecordingTransport,
-  practitionerCreated,
+  userCreated,
   recordingUploaded,
 } from './support.js'
 
-const welcome = defineListener(practitionerCreated, {
+const welcome = defineListener(userCreated, {
   name: 'send-welcome-mail',
   handle: () => {},
 })
-const geocode = defineListener(practitionerCreated, {
-  name: 'geocode-practitioner',
+const geocode = defineListener(userCreated, {
+  name: 'geocode-user',
   handle: () => {},
 })
-const invalidate = defineListener(practitionerCreated, {
+const invalidate = defineListener(userCreated, {
   name: 'invalidate-cache',
   transport: 'edge' as never,
   handle: () => {},
@@ -90,7 +90,7 @@ describe('createEventBus()', () => {
         transport: createRecordingTransport(),
         listeners: [welcome, invalidate],
       },
-      'createEventBus(): listener "invalidate-cache" (event "practitioner.created") uses the "edge" transport, which is not configured.',
+      'createEventBus(): listener "invalidate-cache" (event "user.created") uses the "edge" transport, which is not configured.',
     ],
     [
       'an event routed to a missing transport',
@@ -106,7 +106,7 @@ describe('createEventBus()', () => {
         transports: { edge: createRecordingTransport() },
         listeners: [welcome],
       },
-      'createEventBus(): listener "send-welcome-mail" (event "practitioner.created") uses the "default" transport, which is not configured.',
+      'createEventBus(): listener "send-welcome-mail" (event "user.created") uses the "default" transport, which is not configured.',
     ],
     [
       'an invalid logger',
@@ -149,22 +149,22 @@ describe('emit()', () => {
     })
 
     const result = await events.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       { metadata: { source: 'import' } }
     )
 
     expect(result.emissionId).toMatch(/^[0-9a-f-]{36}$/)
     const ids = {
       welcome: await messageId(result.emissionId, 'send-welcome-mail'),
-      geocode: await messageId(result.emissionId, 'geocode-practitioner'),
+      geocode: await messageId(result.emissionId, 'geocode-user'),
       invalidate: await messageId(result.emissionId, 'invalidate-cache'),
     }
     expect(result.messages).toEqual([
       { id: ids.welcome, listener: 'send-welcome-mail', transport: 'default' },
       {
         id: ids.geocode,
-        listener: 'geocode-practitioner',
+        listener: 'geocode-user',
         transport: 'default',
       },
       { id: ids.invalidate, listener: 'invalidate-cache', transport: 'edge' },
@@ -173,8 +173,8 @@ describe('emit()', () => {
     const base = {
       v: 1,
       emissionId: result.emissionId,
-      event: 'practitioner.created',
-      payload: { practitionerId: '42' },
+      event: 'user.created',
+      payload: { userId: '42' },
       emittedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       metadata: { source: 'import' },
     }
@@ -183,7 +183,7 @@ describe('emit()', () => {
         delay: undefined,
         envelopes: [
           { ...base, id: ids.welcome, listener: 'send-welcome-mail' },
-          { ...base, id: ids.geocode, listener: 'geocode-practitioner' },
+          { ...base, id: ids.geocode, listener: 'geocode-user' },
         ],
       },
     ])
@@ -200,7 +200,7 @@ describe('emit()', () => {
         level: 'info',
         message: 'Event emitted',
         data: {
-          event: 'practitioner.created',
+          event: 'user.created',
           emissionId: result.emissionId,
           messages: 3,
         },
@@ -223,16 +223,8 @@ describe('emit()', () => {
   it('passes the delay', async () => {
     const transport = createRecordingTransport()
     const events = createEventBus({ transport, listeners: [welcome] })
-    await events.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
-      { delay: 0 }
-    )
-    await events.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
-      { delay: 900 }
-    )
+    await events.emit(userCreated, { userId: '42' }, { delay: 0 })
+    await events.emit(userCreated, { userId: '42' }, { delay: 900 })
     expect(transport.sent.map(({ delay }) => delay)).toEqual([0, 900])
   })
 
@@ -240,8 +232,8 @@ describe('emit()', () => {
     const transport = createRecordingTransport()
     const logger = createLogger()
     const events = createEventBus({ transport, listeners: [], logger })
-    const result = await events.emit(practitionerCreated, {
-      practitionerId: '1',
+    const result = await events.emit(userCreated, {
+      userId: '1',
     })
     expect(result).toEqual({ emissionId: expect.any(String), messages: [] })
     expect(transport.send).not.toHaveBeenCalled()
@@ -249,7 +241,7 @@ describe('emit()', () => {
       {
         level: 'debug',
         message: 'Event emitted without listeners',
-        data: { event: 'practitioner.created', emissionId: result.emissionId },
+        data: { event: 'user.created', emissionId: result.emissionId },
       },
     ])
   })
@@ -259,11 +251,11 @@ describe('emit()', () => {
       transport: createRecordingTransport(),
       listeners: [welcome],
     })
-    const first = await events.emit(practitionerCreated, {
-      practitionerId: '1',
+    const first = await events.emit(userCreated, {
+      userId: '1',
     })
-    const second = await events.emit(practitionerCreated, {
-      practitionerId: '1',
+    const second = await events.emit(userCreated, {
+      userId: '1',
     })
     expect(first.emissionId).not.toBe(second.emissionId)
     expect(first.messages[0]?.id).not.toBe(second.messages[0]?.id)
@@ -366,7 +358,7 @@ describe('emit()', () => {
 
     it('rejects a value that is not an event', async () => {
       await expect(
-        events.emit({ name: 'practitioner.created' } as never, {} as never)
+        events.emit({ name: 'user.created' } as never, {} as never)
       ).rejects.toThrow(
         new TypeError('emit(): expected an event created by defineEvent().')
       )
@@ -387,22 +379,16 @@ describe('emit()', () => {
       [{ metadata: { a: 'x\ny' } }, 'metadata.a must be a string on one line.'],
     ])('rejects %j', async (options, message) => {
       await expect(
-        events.emit(
-          practitionerCreated,
-          { practitionerId: '1' },
-          options as never
-        )
-      ).rejects.toThrow(
-        new TypeError(`emit("practitioner.created"): ${message}`)
-      )
+        events.emit(userCreated, { userId: '1' }, options as never)
+      ).rejects.toThrow(new TypeError(`emit("user.created"): ${message}`))
     })
 
     it('accepts no options', async () => {
       await expect(
-        events.emit(practitionerCreated, { practitionerId: '1' }, undefined)
+        events.emit(userCreated, { userId: '1' }, undefined)
       ).resolves.toBeDefined()
       await expect(
-        events.emit(practitionerCreated, { practitionerId: '1' }, null as never)
+        events.emit(userCreated, { userId: '1' }, null as never)
       ).resolves.toBeDefined()
     })
   })
@@ -421,14 +407,14 @@ describe('emit()', () => {
       })
 
       const error = await events
-        .emit(practitionerCreated, { practitionerId: '42' })
+        .emit(userCreated, { userId: '42' })
         .catch((e: unknown) => e)
       expect(error).toBeInstanceOf(EventEmitError)
       expect(error).toMatchObject({
         name: 'EventEmitError',
-        event: 'practitioner.created',
+        event: 'user.created',
         message:
-          'Event "practitioner.created" not fully emitted: 2 of 3 messages failed (send-welcome-mail, geocode-practitioner): SQS unavailable',
+          'Event "user.created" not fully emitted: 2 of 3 messages failed (send-welcome-mail, geocode-user): SQS unavailable',
         cause: failure,
         sent: [{ listener: 'invalidate-cache', transport: 'edge' }],
         failed: [
@@ -438,7 +424,7 @@ describe('emit()', () => {
             error: failure,
           },
           {
-            listener: 'geocode-practitioner',
+            listener: 'geocode-user',
             transport: 'default',
             error: failure,
           },
@@ -460,19 +446,19 @@ describe('emit()', () => {
         listeners: [welcome, geocode],
       })
       const error = (await events
-        .emit(practitionerCreated, { practitionerId: '42' })
+        .emit(userCreated, { userId: '42' })
         .catch((e: unknown) => e)) as EventEmitError
       expect(error.sent.map(({ listener }) => listener)).toEqual([
         'send-welcome-mail',
       ])
       expect(error.failed).toEqual([
         expect.objectContaining({
-          listener: 'geocode-practitioner',
+          listener: 'geocode-user',
           error: failure,
         }),
       ])
       expect(error.message).toBe(
-        'Event "practitioner.created" not fully emitted: 1 of 2 messages failed (geocode-practitioner): throttled'
+        'Event "user.created" not fully emitted: 1 of 2 messages failed (geocode-user): throttled'
       )
     })
 
@@ -480,9 +466,9 @@ describe('emit()', () => {
       const transport = createRecordingTransport()
       transport.send.mockRejectedValueOnce('timeout')
       const events = createEventBus({ transport, listeners: [welcome] })
-      await expect(
-        events.emit(practitionerCreated, { practitionerId: '42' })
-      ).rejects.toThrow(/: timeout$/)
+      await expect(events.emit(userCreated, { userId: '42' })).rejects.toThrow(
+        /: timeout$/
+      )
     })
 
     it('gives the same identifiers when emitting again', async () => {
@@ -507,23 +493,21 @@ describe('emit()', () => {
       })
       const request = events
         .withContext({ logger: scoped, metadata: { requestId: 'req-1' } })
-        .withContext({ metadata: { userId: '7' } })
+        .withContext({ metadata: { actorId: '7' } })
 
       await request.emit(
-        practitionerCreated,
-        { practitionerId: '42' },
-        { metadata: { userId: '8' } }
+        userCreated,
+        { userId: '42' },
+        { metadata: { actorId: '8' } }
       )
       expect(transport.sent[0]?.envelopes[0]?.metadata).toEqual({
         requestId: 'req-1',
-        userId: '8',
+        actorId: '8',
       })
       expect(scoped.entries).toHaveLength(1)
       expect(base.entries).toHaveLength(0)
 
-      await events
-        .withContext({})
-        .emit(practitionerCreated, { practitionerId: '1' })
+      await events.withContext({}).emit(userCreated, { userId: '1' })
       expect(transport.sent[1]?.envelopes[0]?.metadata).toEqual({})
       expect(base.entries).toHaveLength(1)
       expect(Object.isFrozen(request)).toBe(true)
@@ -551,13 +535,13 @@ describe('sync transport', () => {
     const events = createEventBus({
       transport: createSyncTransport(),
       listeners: [
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'a',
           handle: ({ payload, attempt }) => {
-            calls.push(`a:${payload.practitionerId}:${attempt}`)
+            calls.push(`a:${payload.userId}:${attempt}`)
           },
         }),
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'b',
           handle: async () => {
             await new Promise((resolve) => setTimeout(resolve, 5))
@@ -566,11 +550,7 @@ describe('sync transport', () => {
         }),
       ],
     })
-    await events.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
-      { delay: 60 }
-    )
+    await events.emit(userCreated, { userId: '42' }, { delay: 60 })
     calls.push('emitted')
     expect(calls).toEqual(['a:42:1', 'b', 'emitted'])
   })
@@ -583,20 +563,20 @@ describe('sync transport', () => {
       transport: createSyncTransport(),
       onFailure,
       listeners: [
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'failing',
           handle: () => {
             throw failure
           },
         }),
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'working',
           handle: () => void ran.push('working'),
         }),
       ],
     })
     const error = (await events
-      .emit(practitionerCreated, { practitionerId: '42' })
+      .emit(userCreated, { userId: '42' })
       .catch((e: unknown) => e)) as EventEmitError
     expect(error).toBeInstanceOf(EventEmitError)
     expect(error.cause).toBe(failure)
@@ -638,13 +618,13 @@ describe('memory transport', () => {
     const events = createEventBus({
       transport,
       listeners: [
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'a',
-          handle: ({ payload }) => void calls.push(payload.practitionerId),
+          handle: ({ payload }) => void calls.push(payload.userId),
         }),
       ],
     })
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     calls.push('emitted')
     await transport.drain()
     expect(calls).toEqual(['emitted', '42'])
@@ -652,7 +632,7 @@ describe('memory transport', () => {
     expect(transport.sent).toEqual([
       expect.objectContaining({
         listener: 'a',
-        payload: { practitionerId: '42' },
+        payload: { userId: '42' },
       }),
     ])
     transport.clear()
@@ -669,7 +649,7 @@ describe('memory transport', () => {
       transport,
       onFailure,
       listeners: [
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'flaky',
           handle: ({ attempt }) => {
             attempts.push(attempt)
@@ -678,7 +658,7 @@ describe('memory transport', () => {
         }),
       ],
     })
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     const drained = transport.drain()
     await vi.advanceTimersByTimeAsync(0)
     expect(attempts).toEqual([1])
@@ -707,7 +687,7 @@ describe('memory transport', () => {
     const events = createEventBus({
       transport,
       listeners: [
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'flaky',
           handle: () => {
             calls += 1
@@ -716,7 +696,7 @@ describe('memory transport', () => {
         }),
       ],
     })
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     await transport.drain()
     expect(calls).toBe(2)
   })
@@ -765,18 +745,14 @@ describe('memory transport', () => {
     const events = createEventBus({
       transport,
       listeners: [
-        defineListener(practitionerCreated, {
+        defineListener(userCreated, {
           name: 'a',
           handle: () => void calls.push(Date.now()),
         }),
       ],
     })
     const start = Date.now()
-    await events.emit(
-      practitionerCreated,
-      { practitionerId: '1' },
-      { delay: 2 }
-    )
+    await events.emit(userCreated, { userId: '1' }, { delay: 2 })
     await vi.advanceTimersByTimeAsync(1999)
     expect(calls).toEqual([])
     await vi.advanceTimersByTimeAsync(1)
@@ -817,9 +793,8 @@ describe('memory transport', () => {
 /** An envelope emitted by a recording bus. */
 const sample = async () => {
   const transport = createRecordingTransport()
-  await createEventBus({ transport, listeners: [welcome] }).emit(
-    practitionerCreated,
-    { practitionerId: '1' }
-  )
+  await createEventBus({ transport, listeners: [welcome] }).emit(userCreated, {
+    userId: '1',
+  })
   return transport.sent[0]?.envelopes[0]
 }

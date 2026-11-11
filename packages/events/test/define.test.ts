@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { defineEvent, defineListener } from '../src/index.js'
-import { practitionerCreated } from './support.js'
+import { userCreated } from './support.js'
 
 const handle = () => undefined
 
@@ -81,18 +81,18 @@ describe('defineEvent()', () => {
 
 describe('defineListener()', () => {
   it('returns a frozen listener', () => {
-    const listener = defineListener(practitionerCreated, {
+    const listener = defineListener(userCreated, {
       name: 'send-welcome-mail',
       handle,
     })
     expect(listener).toEqual({
       name: 'send-welcome-mail',
-      event: practitionerCreated,
+      event: userCreated,
       transport: undefined,
     })
     expect(Object.isFrozen(listener)).toBe(true)
     expect(
-      defineListener(practitionerCreated, {
+      defineListener(userCreated, {
         name: 'b',
         transport: 'edge' as never,
         load: async () => ({ default: handle }),
@@ -109,49 +109,49 @@ describe('defineListener()', () => {
     ],
     [
       'options that are not an object',
-      practitionerCreated,
+      userCreated,
       'a',
       'Invalid listener: expected an object.',
     ],
     [
       'an unknown option',
-      practitionerCreated,
+      userCreated,
       { name: 'a', handle, retries: 3 },
       'Invalid listener "a": unknown option "retries".',
     ],
     [
       'an invalid name',
-      practitionerCreated,
+      userCreated,
       { name: 'send mail', handle },
       'Invalid listener "send mail": name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
     ],
     [
       'no handler',
-      practitionerCreated,
+      userCreated,
       { name: 'a' },
       'Invalid listener "a": set exactly one of handle and load.',
     ],
     [
       'handle and load',
-      practitionerCreated,
+      userCreated,
       { name: 'a', handle, load: handle },
       'Invalid listener "a": set exactly one of handle and load.',
     ],
     [
       'a handle that is not a function',
-      practitionerCreated,
+      userCreated,
       { name: 'a', handle: 'x' },
       'Invalid listener "a": handle must be a function.',
     ],
     [
       'a load that is not a function',
-      practitionerCreated,
+      userCreated,
       { name: 'a', load: {} },
       'Invalid listener "a": load must be a function.',
     ],
     [
       'an invalid transport',
-      practitionerCreated,
+      userCreated,
       { name: 'a', handle, transport: '' },
       'Invalid listener "a": transport must be a non-empty string.',
     ],

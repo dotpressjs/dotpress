@@ -21,31 +21,31 @@ import {
 import { z } from 'zod'
 
 // An event: a fact, with the schema of its payload.
-export const practitionerCreated = defineEvent({
-  name: 'practitioner.created',
-  schema: z.object({ practitionerId: z.string() }),
+export const userCreated = defineEvent({
+  name: 'user.created',
+  schema: z.object({ userId: z.string() }),
 })
 
 // Listeners react to it, independently.
-export const sendWelcomeMail = defineListener(practitionerCreated, {
+export const sendWelcomeMail = defineListener(userCreated, {
   name: 'send-welcome-mail',
   handle: async ({ payload, logger }) => {
-    const practitioner = await findPractitioner(payload.practitionerId)
-    await mailer.send(welcomeMail, { to: practitioner.email, data: { … } })
+    const user = await findUser(payload.userId)
+    await mailer.send(welcomeMail, { to: user.email, data: { … } })
   },
 })
 
-export const geocodePractitioner = defineListener(practitionerCreated, {
-  name: 'geocode-practitioner',
-  load: () => import('./listeners/geocode-practitioner.js'), // loaded by workers only
+export const geocodeUser = defineListener(userCreated, {
+  name: 'geocode-user',
+  load: () => import('./listeners/geocode-user.js'), // loaded by workers only
 })
 
 const events = createEventBus({
   transport: createMemoryTransport(), // a real queue in production
-  listeners: [sendWelcomeMail, geocodePractitioner],
+  listeners: [sendWelcomeMail, geocodeUser],
 })
 
-await events.emit(practitionerCreated, { practitionerId: '42' })
+await events.emit(userCreated, { userId: '42' })
 ```
 
 ## Concepts
@@ -72,7 +72,7 @@ defineEvent({
 
 **Payloads travel as JSON.** The bus serializes the payload, then validates the result with the schema, so an invalid payload throws an `EventPayloadError` at `emit()`, not later in a worker. Describe JSON values: dates as ISO strings (convert them in the schema with `.transform()` or `z.coerce.date()` if listeners need `Date` objects). Workers validate the payload again: a message emitted by a previous version of your code is checked against the current schema.
 
-**Pass identifiers, not secrets.** Messages are stored by queues, shown in their consoles and kept in dead-letter queues: send `{ practitionerId }`, never a password or a token. Listeners load what they need.
+**Pass identifiers, not secrets.** Messages are stored by queues, shown in their consoles and kept in dead-letter queues: send `{ userId }`, never a password or a token. Listeners load what they need.
 
 ## Listeners
 
@@ -124,8 +124,8 @@ const { emissionId, messages } = await events.emit(
 **Emit after the transaction commits.** An event describes something that happened: emitted inside a database transaction that rolls back, it describes something that did not. Commit first, then emit.
 
 ```ts
-const practitioner = await db.transaction(async (tx) => createPractitioner(tx, input))
-await events.emit(practitionerCreated, { practitionerId: practitioner.id })
+const user = await db.transaction(async (tx) => createUser(tx, input))
+await events.emit(userCreated, { userId: user.id })
 ```
 
 When some messages cannot be sent (a queue is down), `emit()` throws an `EventEmitError` listing the `sent` and `failed` messages. Emitting again is safe: message ids depend on the emission and the listener, so listeners that use `id` ignore the duplicates.
@@ -220,7 +220,7 @@ Messages are sent in batches of 10 (`SendMessageBatch`), with `event` and `liste
 import { createSqsHandler } from '@dotpress/events/aws-sqs'
 
 export const handler = createSqsHandler(
-  createWorker({ listeners: [sendWelcomeMail, geocodePractitioner], logger }),
+  createWorker({ listeners: [sendWelcomeMail, geocodeUser], logger }),
   {
     deadLetterQueueUrl: process.env.EVENTS_DLQ_URL, // optional, see below
     retryDelay: (attempt) => 30 * 2 ** (attempt - 1), // optional backoff, in seconds
@@ -611,7 +611,7 @@ A worker runs the listeners of the messages it receives. Give it the listeners i
 
 ```ts
 const worker = createWorker({
-  listeners: [sendWelcomeMail, geocodePractitioner],
+  listeners: [sendWelcomeMail, geocodeUser],
   logger,
   onFailure: (error, { envelope, attempt, final, reason }) => { … },
   maxAttempts: 5, // the retry limit of the queue, to report the last attempt as final
@@ -664,11 +664,11 @@ await createApp({ adapter, plugins: [eventsPlugin(events)] })
 
 defineRoute({
   method: 'post',
-  path: '/practitioners',
+  path: '/users',
   handler: async ({ events, body }) => {
-    const practitioner = await createPractitioner(body)
-    await events.emit(practitionerCreated, { practitionerId: practitioner.id })
-    return practitioner
+    const user = await createUser(body)
+    await events.emit(userCreated, { userId: user.id })
+    return user
   },
 })
 ```

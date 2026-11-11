@@ -7,22 +7,22 @@ import {
   defineListener,
   EventPayloadError,
 } from '../src/index.js'
-import { createLogger, practitionerCreated } from './support.js'
+import { createLogger, userCreated } from './support.js'
 
 describe('createFakeEventBus()', () => {
   it('records emissions without running listeners', async () => {
     const events = createFakeEventBus()
     const result = await events.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       { delay: 30, metadata: { source: 'import' } }
     )
     expect(result).toEqual({ emissionId: expect.any(String), messages: [] })
     expect(events.emitted).toEqual([
       {
         emissionId: result.emissionId,
-        event: 'practitioner.created',
-        payload: { practitionerId: '42' },
+        event: 'user.created',
+        payload: { userId: '42' },
         delay: 30,
         metadata: { source: 'import' },
         emittedAt: expect.any(Date),
@@ -36,18 +36,18 @@ describe('createFakeEventBus()', () => {
   it('checks emissions like a real bus', async () => {
     const events = createFakeEventBus()
     await expect(
-      events.emit(practitionerCreated, { practitionerId: 42 } as never)
+      events.emit(userCreated, { userId: 42 } as never)
     ).rejects.toBeInstanceOf(EventPayloadError)
     await expect(
       events.emit({ name: 'x' } as never, {} as never)
     ).rejects.toThrow('emit(): expected an event created by defineEvent().')
     await expect(
-      events.emit(practitionerCreated, { practitionerId: '42' }, { delay: -1 })
+      events.emit(userCreated, { userId: '42' }, { delay: -1 })
     ).rejects.toThrow('delay must be a non-negative integer (seconds).')
     await expect(
       events.emit(
-        practitionerCreated,
-        { practitionerId: '42' },
+        userCreated,
+        { userId: '42' },
         { metadata: { 'bad key': 'x' } }
       )
     ).rejects.toThrow('metadata keys must have')
@@ -56,11 +56,11 @@ describe('createFakeEventBus()', () => {
 
   it('records the payload after JSON', async () => {
     const events = createFakeEventBus()
-    await events.emit(practitionerCreated, {
-      practitionerId: '42',
+    await events.emit(userCreated, {
+      userId: '42',
       extra: undefined,
     } as never)
-    expect(events.emitted[0]?.payload).toStrictEqual({ practitionerId: '42' })
+    expect(events.emitted[0]?.payload).toStrictEqual({ userId: '42' })
   })
 
   it('shares the record with its contexts, and merges their metadata', async () => {
@@ -69,13 +69,11 @@ describe('createFakeEventBus()', () => {
       .withContext({ metadata: { requestId: 'req-1' } })
       .withContext({ logger: createLogger(), metadata: { tenant: 'acme' } })
     await scoped.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       { metadata: { tenant: 'other' } }
     )
-    await events
-      .withContext({})
-      .emit(practitionerCreated, { practitionerId: '43' })
+    await events.withContext({}).emit(userCreated, { userId: '43' })
     expect(events.emitted.map(({ metadata }) => metadata)).toEqual([
       { requestId: 'req-1', tenant: 'other' },
       {},
@@ -94,15 +92,15 @@ describe('createFakeEventBus()', () => {
     const events = createFakeEventBus()
     await events
       .withContext({ metadata: { requestId: 'req-1' } })
-      .emit(practitionerCreated, { practitionerId: '42' }, { delay: 60 })
+      .emit(userCreated, { userId: '42' }, { delay: 60 })
     const emission = expectEventEmitted(
       events,
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       { metadata: { requestId: 'req-1' }, delay: 60, times: 1 }
     )
     expect(emission).toBe(events.emitted[0])
-    expectEventNotEmitted(events, 'practitioner.deleted')
+    expectEventNotEmitted(events, 'user.deleted')
   })
 
   it('lets the assertions read a memory transport', async () => {
@@ -110,15 +108,15 @@ describe('createFakeEventBus()', () => {
     const events = createEventBus({
       transport,
       listeners: ['a', 'b'].map((name) =>
-        defineListener(practitionerCreated, { name, handle: () => {} })
+        defineListener(userCreated, { name, handle: () => {} })
       ),
     })
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     await transport.drain()
     expectEventEmitted(
       transport,
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       {
         times: 1,
       }
@@ -134,10 +132,10 @@ describe('createEventBus() metadata', () => {
     })
     await expect(
       events.emit(
-        practitionerCreated,
-        { practitionerId: '42' },
+        userCreated,
+        { userId: '42' },
         { metadata: { requestId: 42 } as never }
       )
-    ).rejects.toThrow('emit("practitioner.created"): metadata')
+    ).rejects.toThrow('emit("user.created"): metadata')
   })
 })

@@ -105,7 +105,7 @@ const describe = (error: unknown) =>
  * a transport (Lambda handler, queue consumer, `startWorker()`…).
  *
  * ```ts
- * const worker = createWorker({ listeners: [sendWelcomeMail, geocodePractitioner] })
+ * const worker = createWorker({ listeners: [sendWelcomeMail, geocodeUser] })
  * export const handler = createSqsHandler(worker)
  * ```
  */

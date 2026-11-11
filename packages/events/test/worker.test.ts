@@ -6,15 +6,14 @@ import {
   defineListener,
   type ListenerContext,
 } from '../src/index.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const setup = (
-  handle: (
-    context: ListenerContext<{ practitionerId: string }>
-  ) => unknown = () => undefined,
+  handle: (context: ListenerContext<{ userId: string }>) => unknown = () =>
+    undefined,
   options: Record<string, unknown> = {}
 ) => {
-  const listener = defineListener(practitionerCreated, {
+  const listener = defineListener(userCreated, {
     name: 'send-welcome-mail',
     handle: vi.fn(handle),
   })
@@ -54,8 +53,8 @@ describe('createWorker()', () => {
       'two listeners with the same name',
       {
         listeners: [
-          defineListener(practitionerCreated, { name: 'a', handle: () => {} }),
-          defineListener(practitionerCreated, { name: 'a', handle: () => {} }),
+          defineListener(userCreated, { name: 'a', handle: () => {} }),
+          defineListener(userCreated, { name: 'a', handle: () => {} }),
         ],
       },
       'createWorker(): two listeners are named "a".',
@@ -87,7 +86,7 @@ describe('createWorker()', () => {
 
 describe('worker.handle()', () => {
   it('runs the listener with its context', async () => {
-    let received: ListenerContext<{ practitionerId: string }> | undefined
+    let received: ListenerContext<{ userId: string }> | undefined
     const { worker, logger, onFailure } = setup((context) => {
       received = context
     })
@@ -97,8 +96,8 @@ describe('worker.handle()', () => {
       status: 'success',
     })
     expect(received).toEqual({
-      payload: { practitionerId: '42' },
-      event: 'practitioner.created',
+      payload: { userId: '42' },
+      event: 'user.created',
       listener: 'send-welcome-mail',
       id: '00000000-0000-8000-8000-000000000001',
       emissionId: 'emission-1',
@@ -113,7 +112,7 @@ describe('worker.handle()', () => {
         level: 'debug',
         message: 'Event listener succeeded',
         data: {
-          event: 'practitioner.created',
+          event: 'user.created',
           listener: 'send-welcome-mail',
           messageId: '00000000-0000-8000-8000-000000000001',
           attempt: 2,
@@ -132,7 +131,7 @@ describe('worker.handle()', () => {
   })
 
   it('works without logger nor onFailure', async () => {
-    const listener = defineListener(practitionerCreated, {
+    const listener = defineListener(userCreated, {
       name: 'send-welcome-mail',
       handle: () => {
         throw new Error('boom')
@@ -194,7 +193,7 @@ describe('worker.handle()', () => {
           level: 'warn',
           message: 'Event listener failed, the message is retried',
           data: {
-            event: 'practitioner.created',
+            event: 'user.created',
             listener: 'send-welcome-mail',
             messageId: '00000000-0000-8000-8000-000000000001',
             attempt: 1,
@@ -279,23 +278,23 @@ describe('worker.handle()', () => {
       ],
       [
         'another event',
-        envelopeOf({ event: 'user.created' }),
+        envelopeOf({ event: 'order.placed' }),
         'invalid-envelope',
-        'Listener "send-welcome-mail" listens to "practitioner.created", not "user.created".',
-        envelopeOf({ event: 'user.created' }),
+        'Listener "send-welcome-mail" listens to "user.created", not "order.placed".',
+        envelopeOf({ event: 'order.placed' }),
       ],
       [
         'an invalid payload',
-        envelopeOf({ payload: { practitionerId: 42 } }),
+        envelopeOf({ payload: { userId: 42 } }),
         'invalid-payload',
-        'Invalid payload for event "practitioner.created": practitionerId: Invalid input: expected string, received number',
-        envelopeOf({ payload: { practitionerId: 42 } }),
+        'Invalid payload for event "user.created": userId: Invalid input: expected string, received number',
+        envelopeOf({ payload: { userId: 42 } }),
       ],
       [
         'a payload that is not an object',
         envelopeOf({ payload: 'x' }),
         'invalid-payload',
-        'Invalid payload for event "practitioner.created": Invalid input: expected object, received string',
+        'Invalid payload for event "user.created": Invalid input: expected object, received string',
         envelopeOf({ payload: 'x' }),
       ],
     ])('gives up on %s', async (_, message, reason, text, envelope) => {
@@ -401,7 +400,7 @@ describe('worker.handle()', () => {
       const load = vi.fn(async () => ({ default: handler }))
       const worker = createWorker({
         listeners: [
-          defineListener(practitionerCreated, {
+          defineListener(userCreated, {
             name: 'send-welcome-mail',
             load,
           }),
@@ -422,7 +421,7 @@ describe('worker.handle()', () => {
         .mockResolvedValue({ default: handler })
       const worker = createWorker({
         listeners: [
-          defineListener(practitionerCreated, {
+          defineListener(userCreated, {
             name: 'send-welcome-mail',
             load,
           }),
@@ -444,7 +443,7 @@ describe('worker.handle()', () => {
     ])('rejects a module with %s', async (_, module) => {
       const worker = createWorker({
         listeners: [
-          defineListener(practitionerCreated, {
+          defineListener(userCreated, {
             name: 'send-welcome-mail',
             load: async () => module as never,
           }),

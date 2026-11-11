@@ -24,7 +24,7 @@ import {
   queueUrlOf,
   type SqsRecord,
 } from '../src/transports/aws-sqs.js'
-import { createLogger, envelopeOf, practitionerCreated } from './support.js'
+import { createLogger, envelopeOf, userCreated } from './support.js'
 import { startSqsServer } from './aws-sqs-server.js'
 
 let server: Awaited<ReturnType<typeof startSqsServer>>
@@ -58,8 +58,8 @@ const newQueue = (suffix = '') => {
 
 const listenerOf = (
   name: string,
-  handle: ListenerHandler<{ practitionerId: string }>
-) => defineListener(practitionerCreated, { name, handle })
+  handle: ListenerHandler<{ userId: string }>
+) => defineListener(userCreated, { name, handle })
 
 /** Calls of an action on a queue (earlier tests may still have requests in flight). */
 const callsOf = (queueUrl: string, action: string) =>
@@ -78,8 +78,8 @@ describe('SQS transport', () => {
       listeners: [listenerOf('a', () => {}), listenerOf('b', () => {})],
     })
     const { messages } = await events.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       { delay: 30 }
     )
 
@@ -88,7 +88,7 @@ describe('SQS transport', () => {
       expect.objectContaining({ id: messages[1]?.id, listener: 'b' }),
     ])
     expect(queue.queue().messages[0]?.attributes).toEqual({
-      event: { DataType: 'String', StringValue: 'practitioner.created' },
+      event: { DataType: 'String', StringValue: 'user.created' },
       listener: { DataType: 'String', StringValue: 'a' },
     })
     expect(server.calls).toEqual([
@@ -114,7 +114,7 @@ describe('SQS transport', () => {
       transport: createSqsTransport({ queueUrl: queue.url, client }),
       listeners,
     })
-    await events.emit(practitionerCreated, { practitionerId: '1' })
+    await events.emit(userCreated, { userId: '1' })
     expect(
       server.calls.map(({ input }) => (input.Entries as unknown[]).length)
     ).toEqual([10, 10, 3])
@@ -220,8 +220,8 @@ describe('SQS transport', () => {
       transport: createSqsTransport({ queueUrl: queue.url, client }),
       listeners: [listenerOf('a', () => {})],
     })
-    const { messages } = await events.emit(practitionerCreated, {
-      practitionerId: '42',
+    const { messages } = await events.emit(userCreated, {
+      userId: '42',
     })
     expect((server.calls[0]?.input.Entries as unknown[])[0]).toMatchObject({
       Id: messages[0]?.id,
@@ -234,15 +234,11 @@ describe('SQS transport', () => {
         queueUrl: queue.url,
         client,
         messageGroupId: (envelope) =>
-          (envelope.payload as { practitionerId: string }).practitionerId,
+          (envelope.payload as { userId: string }).userId,
       }),
       listeners: [listenerOf('a', () => {})],
     })
-    await grouped.emit(
-      practitionerCreated,
-      { practitionerId: '42' },
-      { delay: 0 }
-    )
+    await grouped.emit(userCreated, { userId: '42' }, { delay: 0 })
     expect((server.calls[1]?.input.Entries as unknown[])[0]).toMatchObject({
       MessageGroupId: '42',
     })
@@ -271,7 +267,7 @@ describe('SQS transport', () => {
         listeners: [listenerOf('a', () => {})],
       })
       const error = await events
-        .emit(practitionerCreated, { practitionerId: '1' }, { delay })
+        .emit(userCreated, { userId: '1' }, { delay })
         .catch((e: unknown) => e)
       expect(error).toBeInstanceOf(EventEmitError)
       expect((error as Error).cause).toEqual(new RangeError(message))
@@ -313,7 +309,7 @@ describe('SQS transport', () => {
       listeners,
     })
     const error = (await events
-      .emit(practitionerCreated, { practitionerId: '1' })
+      .emit(userCreated, { userId: '1' })
       .catch((e: unknown) => e)) as EventEmitError
     expect(error.sent).toHaveLength(8)
     expect(error.failed.map(({ listener }) => listener)).toEqual([
@@ -345,9 +341,7 @@ describe('SQS transport', () => {
       transport: createSqsTransport({ queueUrl: queue.url, client }),
       listeners: [listenerOf('a', () => {})],
     })
-    await expect(
-      events.emit(practitionerCreated, { practitionerId: '1' })
-    ).rejects.toThrow(
+    await expect(events.emit(userCreated, { userId: '1' })).rejects.toThrow(
       /not fully emitted: 1 of 1 messages failed \(a\): The queue does not exist\./
     )
   })
@@ -449,7 +443,7 @@ describe('SQS Lambda handler', () => {
   })
 
   const workerOf = (
-    handlers: Record<string, ListenerHandler<{ practitionerId: string }>>
+    handlers: Record<string, ListenerHandler<{ userId: string }>>
   ) =>
     createWorker({
       listeners: Object.entries(handlers).map(([name, handle]) =>
@@ -768,10 +762,7 @@ describe('SQS source', () => {
     queue.queue().redrivePolicy = '{"maxReceiveCount":5}'
     const received: string[] = []
     const listeners = [
-      listenerOf(
-        'a',
-        ({ payload }) => void received.push(payload.practitionerId)
-      ),
+      listenerOf('a', ({ payload }) => void received.push(payload.userId)),
     ]
     const events = createEventBus({
       transport: createSqsTransport({ queueUrl: queue.url, client }),
@@ -781,7 +772,7 @@ describe('SQS source', () => {
       createSqsSource({ queueUrl: queue.url, client, waitTimeSeconds: 1 }),
       listeners
     )
-    await events.emit(practitionerCreated, { practitionerId: '42' })
+    await events.emit(userCreated, { userId: '42' })
     await vi.waitFor(() => expect(received).toEqual(['42']))
     await vi.waitFor(() => expect(queue.queue().messages).toEqual([]))
     await running.stop()
@@ -890,7 +881,7 @@ describe('SQS source', () => {
       transport: createSqsTransport({ queueUrl: queue.url, client }),
       listeners,
     })
-    await events.emit(practitionerCreated, { practitionerId: '1' })
+    await events.emit(userCreated, { userId: '1' })
     queue.queue().messages.push({
       id: 'dead',
       body: JSON.stringify(envelopeOf({ listener: 'removed' })),
@@ -931,7 +922,7 @@ describe('SQS source', () => {
     await createEventBus({
       transport: createSqsTransport({ queueUrl: queue.url, client }),
       listeners,
-    }).emit(practitionerCreated, { practitionerId: '1' })
+    }).emit(userCreated, { userId: '1' })
     await vi.waitFor(() => expect(done).toBe(true), { timeout: 3000 })
     await running.stop()
     expect(callsOf(queue.url, 'ReceiveMessage')[0]?.input).toMatchObject({
@@ -974,7 +965,7 @@ describe('SQS source', () => {
     await createEventBus({
       transport: createSqsTransport({ queueUrl: queue.url, client }),
       listeners,
-    }).emit(practitionerCreated, { practitionerId: '1' })
+    }).emit(userCreated, { userId: '1' })
     await vi.waitFor(() => expect(done).toBe(true), { timeout: 3000 })
     await running.stop()
     expect(logger.entries).toContainEqual({
@@ -997,10 +988,7 @@ describe('SQS source', () => {
     )
     const received: string[] = []
     const listeners = [
-      listenerOf(
-        'a',
-        ({ payload }) => void received.push(payload.practitionerId)
-      ),
+      listenerOf('a', ({ payload }) => void received.push(payload.userId)),
     ]
     const { running, logger } = run(
       createSqsSource({ queueUrl: queue.url, client, waitTimeSeconds: 0 }),
@@ -1009,7 +997,7 @@ describe('SQS source', () => {
     await createEventBus({
       transport: createSqsTransport({ queueUrl: queue.url, client }),
       listeners,
-    }).emit(practitionerCreated, { practitionerId: '7' })
+    }).emit(userCreated, { userId: '7' })
     await vi.waitFor(() => expect(received).toEqual(['7']), { timeout: 4000 })
     await running.stop()
     expect(logger.entries).toContainEqual({

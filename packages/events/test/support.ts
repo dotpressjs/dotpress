@@ -7,9 +7,9 @@ import {
   type Transport,
 } from '../src/index.js'
 
-export const practitionerCreated = defineEvent({
-  name: 'practitioner.created',
-  schema: z.object({ practitionerId: z.string() }),
+export const userCreated = defineEvent({
+  name: 'user.created',
+  schema: z.object({ userId: z.string() }),
 })
 
 export const recordingUploaded = defineEvent({
@@ -49,9 +49,9 @@ export const envelopeOf = (overrides: Partial<Envelope> = {}): Envelope => ({
   v: 1,
   id: '00000000-0000-8000-8000-000000000001',
   emissionId: 'emission-1',
-  event: 'practitioner.created',
+  event: 'user.created',
   listener: 'send-welcome-mail',
-  payload: { practitionerId: '42' },
+  payload: { userId: '42' },
   emittedAt: '2026-11-10T10:00:00.000Z',
   metadata: { requestId: 'req-1' },
   ...overrides,

@@ -7,14 +7,14 @@ import {
   defineListener,
 } from '../src/index.js'
 import { eventsPlugin } from '../src/plugin.js'
-import { createRecordingTransport, practitionerCreated } from './support.js'
+import { createRecordingTransport, userCreated } from './support.js'
 
 const setup = async (withPlugin = true) => {
   const transport = createRecordingTransport()
   const events = createEventBus({
     transport,
     listeners: [
-      defineListener(practitionerCreated, {
+      defineListener(userCreated, {
         name: 'send-welcome-mail',
         handle: () => {},
       }),
@@ -23,10 +23,10 @@ const setup = async (withPlugin = true) => {
   const router = createRouter()
   router.defineRoute({
     method: 'post',
-    path: '/practitioners',
+    path: '/users',
     handler: async ({ events: bus }) => {
-      const { messages } = await bus.emit(practitionerCreated, {
-        practitionerId: '42',
+      const { messages } = await bus.emit(userCreated, {
+        userId: '42',
       })
       return { messages: messages.length }
     },
@@ -41,7 +41,7 @@ const setup = async (withPlugin = true) => {
 describe('eventsPlugin()', () => {
   it('provides ctx.events, with the request ID and logger', async () => {
     const { fetch, transport, logger, close } = await setup()
-    const res = await fetch('/practitioners', { method: 'POST' })
+    const res = await fetch('/users', { method: 'POST' })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ messages: 1 })
     const requestId = res.headers.get('x-request-id')
@@ -65,7 +65,7 @@ describe('eventsPlugin()', () => {
 
   it('fails clearly when the plugin is not installed', async () => {
     const { fetch, logger, close } = await setup(false)
-    const res = await fetch('/practitioners', { method: 'POST' })
+    const res = await fetch('/users', { method: 'POST' })
     expect(res.status).toBe(500)
     const [error] = logger.entries.find(({ level }) => level === 'error')
       ?.args as [Error]
@@ -89,9 +89,9 @@ describe('eventsPlugin() with a fake event bus', () => {
     const router = createRouter()
     router.defineRoute({
       method: 'post',
-      path: '/practitioners',
+      path: '/users',
       handler: async ({ events: bus }) => {
-        await bus.emit(practitionerCreated, { practitionerId: '42' })
+        await bus.emit(userCreated, { userId: '42' })
         return { ok: true }
       },
     })
@@ -99,12 +99,12 @@ describe('eventsPlugin() with a fake event bus', () => {
       routers: [router],
       plugins: [eventsPlugin(events)],
     })
-    const res = await fetch('/practitioners', { method: 'POST' })
+    const res = await fetch('/users', { method: 'POST' })
     expect(res.status).toBe(200)
     expectEventEmitted(
       events,
-      practitionerCreated,
-      { practitionerId: '42' },
+      userCreated,
+      { userId: '42' },
       {
         times: 1,
         metadata: { requestId: expect.any(String) },

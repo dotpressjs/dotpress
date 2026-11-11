@@ -116,6 +116,15 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
-      - uses: changesets/action/publish@v2
+      # npm 11.21 or later: dist-tags with trusted publishing.
+      - run: npm install --global npm@11.21.2
+      - id: publish
+        uses: changesets/action/publish@v2
         with:
           pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
+      # changesets chooses the dist-tags from the versions on the registry
+      # (npm placeholders such as 0.0.0-stage make it publish new packages to
+      # the prerelease tag): set them explicitly. Needs "Allow npm dist-tag"
+      # on the trusted publisher of each package.
+      - if: steps.publish.outputs.published == 'true'
+        run: node scripts/sync-dist-tags.mjs

@@ -1,15 +1,15 @@
 // Release dry run: replays the release of the Release workflow on a local
 // Verdaccio registry (scripts/verdaccio.yaml), never on npm.
 //
-// 1. Seeds the local registry with the versions of the @dotpress/* dist-tags
-//    published on npm (read only).
+// 1. Seeds the local registry with every version of the @dotpress/* packages
+//    published on npm, and their dist-tags (read only).
 // 2. Versions the pending changesets, builds, packs and publishes like the
-//    workflow (changeset pack, then publish --from-pack-dir).
+//    workflow (changeset pack, then publish --from-pack-dir), then sets the
+//    dist-tags with scripts/sync-dist-tags.mjs.
 // 3. Checks the result: every version published without `workspace:`
 //    ranges, and the dist-tags. In prerelease mode, a package with a stable
 //    version keeps its `latest` tag and gets the prerelease tag; the others
-//    are published to `latest`, and no other tag may point elsewhere (a
-//    prerelease tag left behind).
+//    have `latest` only.
 //
 // It changes the working tree (versions, changelogs): it runs in CI, or in
 // a clean checkout. GITHUB_TOKEN is needed to version changesets (links of
@@ -108,9 +108,13 @@ const view = (spec, field, from) => {
     : undefined
 }
 
-// 1. Seed: the versions of the dist-tags published on npm.
+// 1. Seed: every version published on npm, with the same dist-tags, so that
+// changesets sees the same registry (npm placeholders such as 0.0.0-stage
+// included).
 console.log(`Seeding ${registry} from npm`)
 const seeded = new Map()
+const seedDir = join(work, 'seed')
+mkdirSync(seedDir, { recursive: true })
 for (const name of packages) {
   const tags = view(name, 'dist-tags', NPM)
   if (!tags) {
@@ -119,33 +123,27 @@ for (const name of packages) {
   }
   const versions = [].concat(view(name, 'versions', NPM) ?? [])
   seeded.set(name, { tags, hasStable: versions.some((v) => !v.includes('-')) })
-  // `latest` first: the registry gives it to the first version published.
-  const ordered = Object.entries(tags).sort(([a], [b]) =>
-    a === 'latest' ? -1 : b === 'latest' ? 1 : 0
-  )
-  const published = new Set()
-  for (const [tag, version] of ordered) {
-    // Already there (a previous dry run on the same registry): tag only.
-    if (
-      published.has(version) ||
-      view(`${name}@${version}`, 'version', registry)
-    ) {
-      local('npm', ['dist-tag', 'add', `${name}@${version}`, tag])
-      published.add(version)
-      continue
-    }
-    const packDir = join(work, 'seed')
-    mkdirSync(packDir, { recursive: true })
+  for (const version of versions) {
+    // Already there: a previous dry run on the same registry.
+    if (view(`${name}@${version}`, 'version', registry)) continue
     const file = run('npm', ['pack', `${name}@${version}`, '--registry', NPM], {
-      cwd: packDir,
+      cwd: seedDir,
     })
       .stdout.trim()
       .split('\n')
       .at(-1)
-    local('npm', ['publish', join(packDir, file), '--tag', tag])
-    published.add(version)
+    local('npm', ['publish', join(seedDir, file), '--tag', 'dry-run-seed'])
   }
-  console.log(`  ${name}: ${JSON.stringify(tags)}`)
+  const localTags = view(name, 'dist-tags', registry) ?? {}
+  for (const [tag, version] of Object.entries(tags)) {
+    if (localTags[tag] !== version) {
+      local('npm', ['dist-tag', 'add', `${name}@${version}`, tag])
+    }
+  }
+  for (const tag of Object.keys(localTags)) {
+    if (!(tag in tags)) local('npm', ['dist-tag', 'rm', name, tag])
+  }
+  console.log(`  ${name}: ${versions.length} versions, ${JSON.stringify(tags)}`)
 }
 
 // 2. Version, build, pack and publish, like the Release workflow.
@@ -172,6 +170,16 @@ console.log(
     .split('\n')
     .filter((line) => /@dotpress\/|latest|published/i.test(line))
     .map((line) => `  ${line.trim()}`)
+    .join('\n')
+)
+
+// The dist-tags, by the script of the Release workflow.
+console.log('\nSetting the dist-tags (scripts/sync-dist-tags.mjs)')
+console.log(
+  local(process.execPath, [join(root, 'scripts/sync-dist-tags.mjs')])
+    .stdout.trim()
+    .split('\n')
+    .map((line) => `  ${line}`)
     .join('\n')
 )
 
@@ -207,7 +215,8 @@ for (const name of packages) {
     expected.latest = version
   }
   for (const [tag, value] of Object.entries(tags)) {
-    if (!(tag in expected) && value !== version && !before?.hasStable) {
+    // No prerelease tag on a package without stable version.
+    if (!(tag in expected) && !before?.hasStable) {
       errors.push(`dist-tag ${tag} still points to ${value}`)
     }
   }

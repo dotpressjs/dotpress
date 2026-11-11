@@ -143,4 +143,6 @@ pnpm changeset pre exit        # the next Version Packages pull request releases
 pnpm changeset pre enter beta  # after an exit: 2.0.0-beta.N
 ```
 
-In prerelease mode, the packages without stable version are published to the `latest` dist-tag, and the others to the prerelease tag: `@dotpress/auth`, whose `latest` is the 1.x, gets its prereleases under `alpha`, `beta` or `rc`. The release dry run of the CI checks these dist-tags on a local registry.
+In prerelease mode, the packages without stable version have their prereleases under the `latest` dist-tag, and the others under the prerelease tag: `@dotpress/auth`, whose `latest` is the 1.x, gets its prereleases under `alpha`, `beta` or `rc`. After a stable release, `latest` is the new version and older prerelease tags are removed.
+
+The Release workflow sets these dist-tags after publishing (`scripts/sync-dist-tags.mjs`), whatever tag Changesets chose: the trusted publisher of each package without stable version must allow it (**Allow npm dist-tag** in the package settings on npmjs.com, including for a new package). Without it, a package with a stable version only keeps an old prerelease tag after a stable release. The release dry run of the CI checks them on a local registry, seeded with the versions published on npm.

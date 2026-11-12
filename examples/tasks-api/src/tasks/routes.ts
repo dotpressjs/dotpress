@@ -10,6 +10,7 @@ import {
   type Loaders,
 } from '../loaders.ts'
 import { projectTag } from '../projects/stats.ts'
+import { taskAssigned, taskCompleted } from './events.ts'
 import type { Task, TaskRepository } from './repository.ts'
 
 const Status = z.enum(['todo', 'doing', 'done'])
@@ -72,7 +73,8 @@ export const tasksRouter = (deps: {
       tags: ['tasks'],
       responses: { 404: 'Project not found', 422: NOT_A_MEMBER },
     },
-    handler: async ({ req, memo, user, cache }) => {
+    // ctx.events: eventsPlugin, with the request ID in the metadata.
+    handler: async ({ req, memo, user, cache, events }) => {
       const { projectId } = req.params
       const { title, assigneeId } = req.body
       if (assigneeId && !(await isMember(memo, projectId, assigneeId))) {
@@ -86,6 +88,15 @@ export const tasksRouter = (deps: {
         createdBy: user.id,
       })
       await cache.invalidateTags([projectTag(projectId)])
+      // After the write: the event describes something that happened. The
+      // response does not wait for the email, sent by a listener.
+      if (assigneeId && assigneeId !== user.id) {
+        await events.emit(taskAssigned, {
+          taskId: task.id,
+          assigneeId,
+          assignedBy: user.id,
+        })
+      }
       return toView(memo, task)
     },
   })
@@ -163,9 +174,28 @@ export const tasksRouter = (deps: {
         return unprocessableError(NOT_A_MEMBER)
       }
 
-      const updated = await tasks.update(task.id, req.body)
+      const updated = (await tasks.update(task.id, req.body))!
       await ctx.cache.invalidateTags([projectTag(task.projectId)])
-      return toView(memo, updated!)
+
+      const { user, events } = ctx
+      if (
+        updated.assigneeId &&
+        updated.assigneeId !== task.assigneeId &&
+        updated.assigneeId !== user.id
+      ) {
+        await events.emit(taskAssigned, {
+          taskId: task.id,
+          assigneeId: updated.assigneeId,
+          assignedBy: user.id,
+        })
+      }
+      if (updated.status === 'done' && task.status !== 'done') {
+        await events.emit(taskCompleted, {
+          taskId: task.id,
+          completedBy: user.id,
+        })
+      }
+      return toView(memo, updated)
     },
   })
 

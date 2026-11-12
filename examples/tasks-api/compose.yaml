@@ -1,0 +1,15 @@
+# Redis and Mailpit for development: docker compose up -d
+services:
+  redis:
+    image: redis:7-alpine
+    # The queue of the events (BullMQ) and the cache. BullMQ requires that
+    # Redis never evicts its keys; the cache sets an expiry on its own.
+    command: redis-server --maxmemory-policy noeviction
+    ports:
+      - '6379:6379'
+  mailpit:
+    # An SMTP server keeping every email, shown at http://localhost:8025
+    image: axllent/mailpit:v1.33
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # web interface and API

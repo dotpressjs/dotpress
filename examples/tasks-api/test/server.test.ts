@@ -1,6 +1,7 @@
 import type { AddressInfo } from 'node:net'
 import { fastifyAdapter } from '@dotpress/adapter-fastify'
 import { createMemoryStore } from '@dotpress/cache'
+import { createFakeEventBus } from '@dotpress/events'
 import { createMemoryLogger } from '@dotpress/testing'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createTasksApp } from '../src/app.ts'
@@ -22,6 +23,8 @@ beforeAll(async () => {
     keys: generateKeys(),
     publicUrl: 'https://tasks.example.com',
     cacheStore: createMemoryStore(),
+    // The notifications are tested elsewhere.
+    events: createFakeEventBus(),
     logger: createMemoryLogger(),
   })
   await app.listen(0, '127.0.0.1')

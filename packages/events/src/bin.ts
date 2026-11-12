@@ -1,17 +1,26 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { main } from './cli.js'
+import { createStopHandler, main } from './cli.js'
 
 const write = (stream: NodeJS.WriteStream) => (text: string) =>
   new Promise<void>((resolve) => {
     stream.write(text, () => resolve())
   })
 
-// First SIGINT / SIGTERM: graceful stop. Second one: immediate exit.
 const controller = new AbortController()
-const onSignal = () => {
-  if (controller.signal.aborted) process.exit(130)
-  controller.abort()
+const stopOnSignal = createStopHandler({
+  stop: () => controller.abort(),
+  exit: (code) => process.exit(code),
+})
+
+// With --watch, the worker runs under `node --watch`, which relays the
+// signals it receives to the worker. The signals sent to this process only
+// (kill, the stop button of an IDE) are forwarded to it: the worker ignores
+// the repeats of a signal also sent by the terminal.
+let watched: ChildProcess | undefined
+const onSignal = (signal: NodeJS.Signals) => {
+  if (watched) watched.kill(signal)
+  else stopOnSignal()
 }
 process.on('SIGINT', onSignal)
 process.on('SIGTERM', onSignal)
@@ -24,12 +33,12 @@ const code = await main(process.argv.slice(2), {
   watch: (args) =>
     new Promise((resolve) => {
       // node --watch restarts the command when a loaded file changes.
-      const child = spawn(
+      watched = spawn(
         process.execPath,
         ['--watch', fileURLToPath(import.meta.url), ...args],
         { stdio: 'inherit' }
       )
-      child.on('exit', (exitCode) => resolve(exitCode ?? 0))
+      watched.on('exit', (exitCode) => resolve(exitCode ?? 0))
     }),
 })
 

@@ -39,6 +39,9 @@ a logger), or a function returning it:
     source: createSqsSource({ queueUrl }),
   }
 
+Ctrl+C or SIGTERM stops the worker after the messages in progress; once
+more, a second later or more, exits at once.
+
 Options:
   --export <name>   Export of the module (default: "default")
   --watch           Restarts the worker when a loaded file changes
@@ -46,6 +49,37 @@ Options:
 
 ${TYPESCRIPT_HINT}
 `
+
+/**
+ * Delay, in milliseconds, during which a repeated signal is the same stop
+ * request. One Ctrl+C can reach the worker several times within a few
+ * milliseconds: the terminal sends it to every process of the group, and
+ * `npm run`, `pnpm run` and `node --watch` relay the signals they receive.
+ */
+export const SIGNAL_REPEAT_DELAY = 1000
+
+/**
+ * Reaction to SIGINT and SIGTERM: the first signal stops the worker after
+ * the messages in progress; another one, at least `SIGNAL_REPEAT_DELAY`
+ * later, exits at once (code 130).
+ */
+export const createStopHandler = (options: {
+  stop: () => void
+  exit: (code: number) => void
+  now?: () => number
+}) => {
+  const now = options.now ?? Date.now
+  let firstAt: number | undefined
+  return (): void => {
+    const time = now()
+    if (firstAt === undefined) {
+      firstAt = time
+      options.stop()
+    } else if (time - firstAt >= SIGNAL_REPEAT_DELAY) {
+      options.exit(130)
+    }
+  }
+}
 
 class CliError extends Error {}
 

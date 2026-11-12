@@ -1,4 +1,9 @@
+import { expectMailSent } from '@dotpress/testing'
 import { afterEach, beforeEach, expect, it } from 'vitest'
+import {
+  taskAssignedMail,
+  taskCompletedMail,
+} from '../src/notifications/mails.ts'
 import { startApp, type TestApi } from './support.ts'
 
 // The story of the demo, step by step (see the README).
@@ -44,6 +49,20 @@ it('runs the story of the demo', async () => {
   expect(task.status).toBe(201)
   const { id: taskId } = (await task.json()) as { id: string }
 
+  // The response did not wait for the email: a listener sends it to Bob,
+  // in French.
+  await api.drain()
+  expectMailSent(
+    api.outbox,
+    {
+      to: 'bob@example.com',
+      template: taskAssignedMail,
+      locale: 'fr',
+      subject: 'Nouvelle tâche pour vous : Write the homepage copy',
+    },
+    { times: 1 }
+  )
+
   // 4. Bob finds it in his tasks.
   const mine = await api.request(
     `/projects/${project.id}/tasks?assignee=${bob.userId}`,
@@ -65,6 +84,17 @@ it('runs the story of the demo', async () => {
     bob.headers
   )
   expect(await done.json()).toMatchObject({ status: 'done' })
+
+  // Alice, who created the task, is told, in English.
+  await api.drain()
+  const mail = expectMailSent(api.outbox, {
+    to: 'alice@example.com',
+    template: taskCompletedMail,
+    locale: 'en',
+    subject: 'Task completed: Write the homepage copy',
+  })
+  expect(mail.text).toContain('Bob completed the task')
+  expect(api.outbox.sent).toHaveLength(2)
 
   // 6. The dashboard of the project.
   const stats = await api.request(`/projects/${project.id}/stats`, {

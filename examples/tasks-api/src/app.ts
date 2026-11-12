@@ -7,6 +7,8 @@ import {
   type HttpAdapter,
   type Logger,
 } from '@dotpress/core'
+import type { EventBus } from '@dotpress/events'
+import { eventsPlugin } from '@dotpress/events/plugin'
 import { openapiPlugin } from '@dotpress/openapi'
 import { createAuthService } from './auth/auth.ts'
 import type { Database } from './db/database.ts'
@@ -25,6 +27,8 @@ export interface TasksAppOptions<TAdapter extends HttpAdapter> {
   /** Public URL of the API: the issuer of the tokens. */
   publicUrl: string
   cacheStore: CacheStore
+  /** The event bus of `bus.ts`, or a fake bus in tests. */
+  events: EventBus
   /** bcrypt cost: lower in the tests. Defaults to 12. */
   passwordHashRounds?: number
   logger?: Logger
@@ -81,6 +85,8 @@ export const createTasksApp = <TAdapter extends HttpAdapter>(
       authPlugin(auth),
       // ctx.memo (per request) and ctx.cache.
       cachePlugin({ cache }),
+      // ctx.events: emits with the request logger and request ID.
+      eventsPlugin(options.events),
       // /openapi.json and /docs: the routes guarded by requireAuth are
       // marked as secured.
       openapiPlugin({

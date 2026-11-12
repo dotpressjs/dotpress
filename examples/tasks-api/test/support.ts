@@ -1,8 +1,17 @@
 import { createMemoryStore, type CacheStore } from '@dotpress/cache'
+import {
+  createMemoryTransport,
+  type EventBus,
+  type Transport,
+} from '@dotpress/events'
+import { createMemoryProvider, type MailProvider } from '@dotpress/mailer'
 import { createMemoryLogger, memoryAdapter } from '@dotpress/testing'
 import { createTasksApp } from '../src/app.ts'
 import { generateKeys } from '../src/auth/keys.ts'
+import { createBus } from '../src/bus.ts'
 import { openDatabase } from '../src/db/database.ts'
+import { createNotifications } from '../src/notifications/listeners.ts'
+import { createAppMailer } from '../src/notifications/mailer.ts'
 
 /** One key pair per test file: generating one takes about 100 ms. */
 const keys = generateKeys()
@@ -17,19 +26,42 @@ export interface Session {
 
 /**
  * The app on the memory adapter, with an in-memory SQLite database: each
- * test starts from an empty database.
+ * test starts from an empty database. The events go through an in-memory
+ * queue (no wait between attempts), and the emails to `outbox`.
  */
-export const startApp = async (options: { cacheStore?: CacheStore } = {}) => {
+export const startApp = async (
+  options: {
+    cacheStore?: CacheStore
+    events?: EventBus
+    /** Defaults to `outbox`. */
+    mailProvider?: MailProvider
+    /** Defaults to an in-memory queue. */
+    transport?: Transport
+  } = {}
+) => {
   const adapter = memoryAdapter()
   const db = openDatabase(':memory:')
+  const logger = createMemoryLogger()
+  const outbox = createMemoryProvider()
+  const transport = createMemoryTransport({ retryDelay: () => 0 })
+  const listeners = createNotifications({
+    db,
+    mailer: createAppMailer(
+      options.mailProvider ?? outbox,
+      'Tasks <noreply@example.com>'
+    ),
+  })
   const app = await createTasksApp({
     adapter,
     db,
     keys,
     publicUrl: 'https://tasks.example.com',
     cacheStore: options.cacheStore ?? createMemoryStore(),
+    events:
+      options.events ??
+      createBus(options.transport ?? transport, listeners, { logger }),
     passwordHashRounds: 4, // fast tests; production keeps 12
-    logger: createMemoryLogger(),
+    logger,
   })
 
   const request = (path: string, init: RequestInit = {}) =>
@@ -114,6 +146,12 @@ export const startApp = async (options: { cacheStore?: CacheStore } = {}) => {
 
   return {
     db,
+    logger,
+    outbox,
+    transport,
+    listeners,
+    /** Waits for the listeners of the emitted events. */
+    drain: () => transport.drain(),
     request,
     queriesOf,
     send,

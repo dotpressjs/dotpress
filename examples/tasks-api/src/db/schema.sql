@@ -50,3 +50,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS tasks_project_id ON tasks (project_id);
+
+-- Event messages already handled by a listener: queues deliver a message at
+-- least once, and a message delivered twice must not send two emails.
+CREATE TABLE IF NOT EXISTS handled_messages (
+  id TEXT PRIMARY KEY, -- the id of the message, the same for every attempt
+  handled_at TEXT NOT NULL
+);

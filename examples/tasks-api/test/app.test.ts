@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadKeys } from '../src/auth/keys.ts'
-import { loadConfig } from '../src/config.ts'
+import { loadConfig, requireInProduction } from '../src/config.ts'
 import { openDatabase } from '../src/db/database.ts'
 import { DEMO_PASSWORD, seedDemo } from '../src/demo-data.ts'
 import { startApp, type TestApi } from './support.ts'
@@ -65,10 +65,15 @@ describe('configuration', () => {
     )
   })
 
-  it('requires the keys and the public URL in production', () => {
-    expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(
-      'JWT_PRIVATE_KEY, JWT_PUBLIC_KEY and PUBLIC_URL are required in production'
-    )
+  it('requires other variables in production, by process', () => {
+    const config = loadConfig({ NODE_ENV: 'production' })
+    expect(() =>
+      requireInProduction(config, ['PUBLIC_URL', 'SMTP_URL'])
+    ).toThrow('Required in production: PUBLIC_URL, SMTP_URL.')
+    // Not in development.
+    expect(() =>
+      requireInProduction(loadConfig({}), ['PUBLIC_URL'])
+    ).not.toThrow()
   })
 })
 

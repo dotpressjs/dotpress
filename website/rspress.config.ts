@@ -69,14 +69,20 @@ export default defineConfig({
     nav: [
       {
         text: 'Guide',
-        link: '/getting-started/installation',
-        activeMatch: '^/(getting-started|concepts|adapters)/',
+        link: '/getting-started/introduction',
+        activeMatch: '^/(getting-started|concepts|routing)/',
       },
-      { text: 'Packages', link: '/packages/auth', activeMatch: '^/packages/' },
+      { text: 'Adapters', link: '/adapters/', activeMatch: '^/adapters/' },
+      { text: 'Auth', link: '/auth/', activeMatch: '^/auth/' },
       {
-        text: 'Deployment',
-        link: '/deployment/node',
-        activeMatch: '^/deployment/',
+        text: 'Services',
+        link: '/services/openapi',
+        activeMatch: '^/services/',
+      },
+      {
+        text: 'Reference',
+        link: '/reference/application',
+        activeMatch: '^/reference/',
       },
       { text: 'Examples', link: '/examples/', activeMatch: '^/examples/' },
     ],

@@ -1,0 +1,96 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# AWS Lambda
+
+The Hono and Fastify adapters run your app on [AWS Lambda](https://aws.amazon.com/lambda/), behind:
+
+- an API Gateway REST API (payload v1);
+- an API Gateway HTTP API or a Function URL (payload v2);
+- an Application Load Balancer.
+
+The routes are the same as on a server: only the entry point changes.
+
+## The handler
+
+Both adapters provide `createLambdaHandler()`. It takes a function that creates the app.
+
+### With Hono
+
+<PackageManagerTabs command="install @dotpress/core @dotpress/adapter-hono hono @hono/aws-lambda zod" />
+
+```ts file="<root>/../examples/hono/src/lambda.ts"
+```
+
+Use the main entry of the adapter, `@dotpress/adapter-hono`, not `/node`: it has no Node.js server, and keeps the bundle small.
+
+### With Fastify
+
+<PackageManagerTabs command="install @dotpress/core @dotpress/adapter-fastify fastify @fastify/aws-lambda zod" />
+
+```ts file="<root>/../examples/fastify/src/lambda.ts"
+```
+
+The handler of Fastify sends the events to `inject()` of the instance, through [`@fastify/aws-lambda`](https://github.com/fastify/aws-lambda-fastify): the Fastify hooks and plugins apply.
+
+## How the handler behaves
+
+- **Lazy creation.** The app is created at the first invocation (the cold start), and reused by the next invocations of the execution environment. Invocations received meanwhile wait for the same app. The `handler` export stays synchronous: no top-level `await` in the module.
+- **Recoverable failures.** When the app cannot be created (a missing secret, a database down), the error is logged, the invocation gets the standard `500` error, and the next invocation tries again.
+- **Buffered responses.** Responses are sent once complete. `stream()` works for finite streams; Server-Sent Events (`sse()`) are not supported. Lambda response streaming is not supported yet.
+- **Binary responses** are sent in base64: every content type except text, JSON and XML, or as decided by the `isContentTypeBinary(contentType)` option.
+- **`ctx.req.ip`** is the source IP of API Gateway, or the last `X-Forwarded-For` entry behind a load balancer. Behind CloudFront or another proxy, read the right header with the `getIp(c)` option of `honoAdapter()`, or the `trustProxy` option of Fastify.
+- **Load balancers**: enable the multi-value headers of the target group, to receive repeated query keys and send several cookies.
+
+| Option of `createLambdaHandler()` | Description |
+| --- | --- |
+| `logger` | Logs the failures to create the app. A console logger by default. |
+| `isContentTypeBinary(contentType)` | Whether a response is sent in base64. |
+
+## Configuration and secrets
+
+Create the services of the app inside the factory, not at the top of the module: a failure is then retried at the next invocation, instead of breaking the execution environment for good.
+
+```ts
+export const handler = createLambdaHandler(async () => {
+  const config = loadConfig()
+  const db = await connectDatabase(config.DATABASE_URL)
+  return createApp({ adapter: honoAdapter(), routers, plugins: [servicesPlugin({ db })] })
+})
+```
+
+Database connections created in the factory are reused by the next invocations of the execution environment. Size the connection pools for many small environments, or use a proxy such as RDS Proxy.
+
+## Bundle the handler
+
+Bundle the handler and its dependencies into one file, for instance with [esbuild](https://esbuild.github.io):
+
+```sh
+# Hono
+esbuild src/lambda.ts --bundle --minify --platform=node --target=node22 \
+  --format=esm --outfile=dist/lambda.mjs
+```
+
+Fastify and its dependencies are CommonJS modules: an ES module bundle must define `require` for them.
+
+```sh
+# Fastify
+esbuild src/lambda.ts --bundle --minify --platform=node --target=node22 \
+  --format=esm --outfile=dist/lambda.mjs \
+  --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
+```
+
+In the examples, the Hono bundle weighs about 510 kB minified (115 kB gzipped), and the Fastify bundle about 1.1 MB (300 kB gzipped).
+
+Deploy `dist/lambda.mjs` with your tool (AWS SAM, CDK, Serverless Framework, Terraform…): runtime Node.js 22 or later, handler `lambda.handler`. See [Deployment on AWS Lambda](/deployment/aws-lambda).
+
+## CORS
+
+Configure CORS either in API Gateway or Function URLs, or in Dotpress, not both: AWS answers the preflight requests before the function runs. See [CORS](/routing/http-options#cors).
+
+## Testing
+
+`createLambdaTarget()` of `@dotpress/testing` sends simulated API Gateway and load balancer events to your handler, without an AWS account: see [Testing helpers](/services/testing). The [Hono](/examples/hono) and [Fastify](/examples/fastify) examples test their handler and their bundle this way.
+
+## Event workers on Lambda
+
+Listeners of [`@dotpress/events`](/services/events) can run on Lambda too, triggered by SQS: see [Event workers](/deployment/event-workers).

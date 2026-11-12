@@ -1,0 +1,124 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Authentication
+
+`@dotpress/auth` authenticates the users of your API with a username and a password, and keeps them logged in with short-lived access tokens and rotating refresh tokens. It works with any database, through a small data provider, and on every adapter.
+
+What it gives you:
+
+- **the routes**: login, token refresh, current user, cookie session restore, logout;
+- **`ctx.user` and `ctx.auth`**, typed, in every handler, and guards: `requireAuth`, `requireRole()`, `requireClient()`;
+- **sessions for browsers** in `httpOnly` cookies, protected against cross-site request forgery;
+- **security by default**: refresh token rotation with reuse detection, login throttling, constant-time login failures, bcrypt hashing, RFC 9068 access tokens checked on every request.
+
+## How it works
+
+1. The client logs in with a username and a password. It gets an **access token**, valid 15 minutes, and a **refresh token**.
+2. It sends the access token with each request. The plugin verifies it, loads the user, and sets `ctx.user`.
+3. Before the access token expires, the client exchanges the refresh token for a new pair. The old refresh token can no longer be used: a stolen one is detected when it comes back.
+4. A logout revokes the session.
+
+The access token is a JWT signed with your RSA key: verifying it costs no database lookup of the token. The refresh token is a random value; only its SHA-256 hash is stored, in your database.
+
+## Install
+
+<PackageManagerTabs command="install @dotpress/auth@alpha" />
+
+:::warning During the alpha
+Install `@dotpress/auth` with the `alpha` tag: without it, npm installs `@dotpress/auth` 1.x, the plugin of Dotpress 1.
+:::
+
+## Set up
+
+Describe your user, create the auth service, and install its plugin:
+
+```ts twoslash
+import { createApp, defineRoute, type HttpAdapter } from '@dotpress/core'
+import { authPlugin, createAuth, requireAuth, type DataProvider } from '@dotpress/auth'
+
+declare const adapter: HttpAdapter
+declare const dataProvider: DataProvider
+declare const env: { JWT_PRIVATE_KEY: string; JWT_PUBLIC_KEY: string }
+// ---cut---
+// The type of ctx.user: what dataProvider.findUserById() returns.
+declare module '@dotpress/auth' {
+  interface AuthUser {
+    id: string
+    email: string
+    roles: string[]
+  }
+}
+
+const auth = createAuth({
+  keys: {
+    secretKey: env.JWT_PRIVATE_KEY, // PKCS#8 PEM, "BEGIN PRIVATE KEY"
+    publicKey: env.JWT_PUBLIC_KEY, // SPKI PEM, "BEGIN PUBLIC KEY"
+  },
+  issuer: 'https://api.example.com', // required, one per environment
+  dataProvider, // your users and refresh tokens, see Data provider
+})
+
+defineRoute({
+  path: '/profile',
+  middlewares: [requireAuth],
+  handler: ({ user }) => ({ email: user.email }),
+})
+
+const app = await createApp({ adapter, plugins: [authPlugin(auth)] })
+```
+
+See [Data provider](./data-provider) to connect your database, and [Keys and rotation](./keys) to generate the keys.
+
+## The routes
+
+| Route | Description |
+| --- | --- |
+| `POST /auth/login` | `{ username, password, clientId?, mode? }`: logs in. `mode: 'cookie'` sets the tokens as cookies. |
+| `POST /auth/refresh` | Exchanges a refresh token for a new pair. |
+| `GET /auth/me` | The authenticated user. |
+| `POST /auth/restore` | Restores a cookie session: the user and the expiration of the session. |
+| `POST /auth/logout` | `{ refreshToken?, scope? }`: revokes the current session, or every session with `scope: 'all'`. |
+
+Each route answers with `userId`, `expiresIn` and `expiresAt` (the expiration of the access token), so that the client knows when to refresh. The tokens are in the body, or in cookies (see below).
+
+`authPlugin(auth, { prefix: '/api/auth' })` changes the prefix; `{ routes: false }` keeps only the authentication of the requests, for an API that only verifies tokens.
+
+## Browsers or other clients
+
+The same API serves two kinds of clients:
+
+| Client | Tokens | Configuration |
+| --- | --- | --- |
+| Browser application | Both tokens in `httpOnly` cookies: the JavaScript of the page never sees them | `cookies: { enabled: true, accessTokenInCookie: true }`, login with `mode: 'cookie'` |
+| Mobile application, another service, a script | Both tokens in the body; the access token in the `Authorization: Bearer` header | the default |
+
+:::tip Recommended for browsers
+Use the cookie mode with `accessTokenInCookie`. A token stored in `localStorage`, or in any variable of the page, can be stolen by a single injected script (XSS); an `httpOnly` cookie cannot. See [Cookie mode and CSRF](./cookies).
+:::
+
+## Without an app
+
+The auth service works in scripts and workers too:
+
+```ts
+const hash = await auth.hashPassword(password)
+const { accessToken, refreshToken } = await auth.generateTokensForUser({ userId })
+const session = await auth.verifyAccessToken(accessToken)
+```
+
+## In this section
+
+- [Data provider](./data-provider): connect your database.
+- [Protecting routes](./protecting-routes): guards, roles, the type of the user.
+- [Sessions and tokens](./sessions): lifetimes, rotation, logout, revocation.
+- [Cookie mode and CSRF](./cookies): sessions for browsers.
+- [Clients](./clients): several applications on one API.
+- [Passwords and brute force](./passwords).
+- [Keys and rotation](./keys).
+- [Security checklist](./security): what to check before going to production.
+
+The [Auth example](/examples/auth) puts it all together: sign-up, both modes, rotation, logout of one or every device, password change, roles.
+
+:::tip Coming from v1
+`configurePlugin()` is replaced by `createAuth()` and `authPlugin(auth)`. Access tokens follow RFC 9068, `issuer` is required, logout revokes the current session only, login attempts are throttled, and tokens set as cookies are no longer returned in the body. See [Migrate from v1](/reference/migrate-from-v1).
+:::

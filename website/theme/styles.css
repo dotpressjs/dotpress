@@ -56,3 +56,9 @@ html.rp-dark {
   margin: 0 auto;
   padding: 48px 24px 64px;
 }
+
+/* Task lists (checklists): the checkbox replaces the bullet. */
+.rp-doc li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.25rem;
+}

@@ -1,7 +1,7 @@
 import { defineCacheEntry, type Memo } from '@dotpress/cache'
 import { z } from 'zod'
-import { personOf, PersonView, type Loaders } from '../loaders.ts'
-import type { TaskRepository } from '../tasks/repository.ts'
+import type { AppServices } from '../../services/index.ts'
+import { personOf, PersonView } from '../users/loaders.ts'
 
 const Counts = z.object({
   todo: z.number(),
@@ -37,9 +37,8 @@ export const statsCache = defineCacheEntry({
 const empty = () => ({ todo: 0, doing: 0, done: 0 })
 
 export const computeStats = async (
-  tasks: TaskRepository,
+  { tasks, loaders }: AppServices,
   memo: Memo,
-  loaders: Loaders,
   projectId: string
 ): Promise<Stats> => {
   const rows = await tasks.countByAssigneeAndStatus(projectId)
@@ -59,7 +58,7 @@ export const computeStats = async (
     byAssignee: (
       await Promise.all(
         [...byAssignee].map(async ([assigneeId, counts]) => ({
-          assignee: await personOf(memo, loaders, assigneeId),
+          assignee: await personOf(memo, loaders.user, assigneeId),
           ...counts,
         }))
       )

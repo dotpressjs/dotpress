@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { all, get, run, type Database } from '../db/database.ts'
+import { all, get, run, type Database } from '../../db/database.ts'
 
 export type Status = 'todo' | 'doing' | 'done'
 export const STATUSES: readonly Status[] = ['todo', 'doing', 'done']

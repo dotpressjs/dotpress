@@ -1,33 +1,24 @@
 import { authPlugin, type KeyPairSettings } from '@dotpress/auth'
 import { createCache, type CacheStore } from '@dotpress/cache'
 import { cachePlugin } from '@dotpress/cache/plugin'
-import {
-  createApp,
-  createRouter,
-  type HttpAdapter,
-  type Logger,
-} from '@dotpress/core'
+import { createApp, type HttpAdapter, type Logger } from '@dotpress/core'
 import type { EventBus } from '@dotpress/events'
 import { eventsPlugin } from '@dotpress/events/plugin'
 import { openapiPlugin } from '@dotpress/openapi'
-import { createAuthService } from './auth/auth.ts'
-import type { Database } from './db/database.ts'
-import { createLoaders } from './loaders.ts'
-import { createProjectRepository } from './projects/repository.ts'
-import { projectsRouter } from './projects/routes.ts'
-import { createTaskRepository } from './tasks/repository.ts'
-import { tasksRouter } from './tasks/routes.ts'
-import { createUserRepository } from './users/repository.ts'
-import { usersRouter } from './users/routes.ts'
+import { createAuthService } from '../features/auth/auth.ts'
+import type { Repositories } from '../services/index.ts'
+import { routers } from './routes.ts'
+import { servicesPlugin } from './services-plugin.ts'
 
 export interface TasksAppOptions<TAdapter extends HttpAdapter> {
   adapter: TAdapter
-  db: Database
+  /** The repositories of `createRepositories()`, over one database. */
+  repositories: Repositories
   keys: KeyPairSettings
   /** Public URL of the API: the issuer of the tokens. */
   publicUrl: string
   cacheStore: CacheStore
-  /** The event bus of `bus.ts`, or a fake bus in tests. */
+  /** The event bus of `services/bus.ts`, or a fake bus in tests. */
   events: EventBus
   /** bcrypt cost: lower in the tests. Defaults to 12. */
   passwordHashRounds?: number
@@ -35,21 +26,17 @@ export interface TasksAppOptions<TAdapter extends HttpAdapter> {
 }
 
 /**
- * The app, on any adapter: Fastify in `server.ts`, the memory adapter of
- * `@dotpress/testing` in the tests.
+ * The HTTP app, on any adapter: Fastify in `server.ts`, the memory adapter
+ * of `@dotpress/testing` in the tests. Its services come from the caller:
+ * the entry point in production, each test in the tests.
  */
 export const createTasksApp = <TAdapter extends HttpAdapter>(
   options: TasksAppOptions<TAdapter>
 ) => {
-  const { adapter, db, logger } = options
-  const users = createUserRepository(db)
-  const projects = createProjectRepository(db)
-  const tasks = createTaskRepository(db)
-  const loaders = createLoaders(projects, users)
-
+  const { adapter, repositories, logger } = options
   const auth = createAuthService({
-    db,
-    users,
+    db: repositories.db,
+    users: repositories.users,
     keys: options.keys,
     issuer: options.publicUrl,
     passwordHashRounds: options.passwordHashRounds,
@@ -61,26 +48,13 @@ export const createTasksApp = <TAdapter extends HttpAdapter>(
     storeTimeout: '200ms',
   })
 
-  const health = createRouter()
-  health.defineRoute({
-    path: '/health',
-    meta: { summary: 'Health check', tags: ['health'] },
-    handler: () => {
-      db.prepare('SELECT 1').get()
-      return { status: 'ok' }
-    },
-  })
-
   return createApp({
     adapter,
     ...(logger && { logger }),
-    routers: [
-      health,
-      usersRouter(auth, users),
-      projectsRouter({ projects, tasks, users, loaders }),
-      tasksRouter({ tasks, loaders }),
-    ],
+    routers,
     plugins: [
+      // ctx.services: the repositories, the memos and auth of the app.
+      servicesPlugin({ ...repositories, auth }),
       // ctx.user and ctx.auth; /auth/login, /refresh, /me, /logout.
       authPlugin(auth),
       // ctx.memo (per request) and ctx.cache.

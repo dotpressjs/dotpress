@@ -1,28 +1,22 @@
 import { defineListener } from '@dotpress/events'
 import type { Mailer } from '@dotpress/mailer'
-import { get, run, type Database } from '../db/database.ts'
-import { createProjectRepository } from '../projects/repository.ts'
+import { get, run } from '../../db/database.ts'
+import type { Repositories } from '../../services/index.ts'
 import { taskAssigned, taskCompleted } from '../tasks/events.ts'
-import { createTaskRepository } from '../tasks/repository.ts'
-import { createUserRepository } from '../users/repository.ts'
 import { taskAssignedMail, taskCompletedMail } from './mails.ts'
 
 /**
  * The listeners of the task events: they email the people concerned. They
  * run in the worker (with Redis), or in the API process (without): both
- * create them with their own database connection and mailer.
+ * create them with their own services.
  */
 export const createNotifications = ({
-  db,
+  repositories: { db, users, projects, tasks },
   mailer,
 }: {
-  db: Database
+  repositories: Repositories
   mailer: Mailer
 }) => {
-  const users = createUserRepository(db)
-  const projects = createProjectRepository(db)
-  const tasks = createTaskRepository(db)
-
   /**
    * Sends once per message: queues deliver a message at least once, and a
    * retry after a timeout must not send a second email. A crash between

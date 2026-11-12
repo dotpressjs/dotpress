@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createMemoryStore } from '@dotpress/cache'
-import { createCacheStore, type ClosableStore } from '../src/cache-store.ts'
+import {
+  createCacheStore,
+  type ClosableStore,
+} from '../src/services/cache-store.ts'
 import { startApp, type Session, type TestApi } from './support.ts'
 
 // The dashboard of a project, cached: on memory, and on Redis with

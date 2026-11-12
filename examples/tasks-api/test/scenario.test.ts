@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import {
   taskAssignedMail,
   taskCompletedMail,
-} from '../src/notifications/mails.ts'
+} from '../src/features/notifications/mails.ts'
 import { startApp, type TestApi } from './support.ts'
 
 // The story of the demo, step by step (see the README).

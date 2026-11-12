@@ -8,8 +8,8 @@ import {
   expectNoMailSent,
 } from '@dotpress/testing'
 import { afterEach, describe, expect, it } from 'vitest'
-import { taskAssignedMail } from '../src/notifications/mails.ts'
-import { taskAssigned, taskCompleted } from '../src/tasks/events.ts'
+import { taskAssignedMail } from '../src/features/notifications/mails.ts'
+import { taskAssigned, taskCompleted } from '../src/features/tasks/events.ts'
 import { startApp, type Session, type TestApi } from './support.ts'
 
 let api: TestApi

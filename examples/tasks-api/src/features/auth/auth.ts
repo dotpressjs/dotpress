@@ -1,5 +1,5 @@
 import { createAuth, type KeyPairSettings } from '@dotpress/auth'
-import type { Database } from '../db/database.ts'
+import type { Database } from '../../db/database.ts'
 import type { User, UserRepository } from '../users/repository.ts'
 import { createDataProvider } from './data-provider.ts'
 

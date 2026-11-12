@@ -92,8 +92,23 @@ describe('cache types', () => {
     await cache.set(userCache, '1', { id: '1', name: 'Ada' })
     // @ts-expect-error: not a user
     await cache.set(userCache, '1', { id: 1 })
+    // A loader returning undefined (not found): undefined is not cached.
+    expectTypeOf(
+      cache.getOrSet(userCache, '1', async () =>
+        Math.random() > 0.5 ? { id: '1', name: 'Ada' } : undefined
+      )
+    ).toEqualTypeOf<Promise<{ id: string; name: string } | undefined>>()
+    expectTypeOf(cache.getOrSet(userCache, '1', () => undefined)).toEqualTypeOf<
+      Promise<{ id: string; name: string } | undefined>
+    >()
     // @ts-expect-error: the loader returns another type
     void cache.getOrSet(userCache, '1', async () => 'Ada')
+    // A loader returning any (an untyped client) keeps the type of the value.
+    expectTypeOf(
+      cache.getOrSet(userCache, '1', async () => JSON.parse('{}'))
+    ).toEqualTypeOf<Promise<{ id: string; name: string }>>()
+    // @ts-expect-error: null is cached, so it must match the schema
+    void cache.getOrSet(userCache, '1', async () => null)
     // @ts-expect-error: the id is a string
     void cache.get(userCache, 1)
   })
@@ -119,6 +134,13 @@ describe('cache types', () => {
     expectTypeOf(
       cache.getOrSet(typed, '1', () => ({ name: 'Ada' }))
     ).toEqualTypeOf<Promise<{ name: string }>>()
+    expectTypeOf(
+      cache.getOrSet(
+        typed,
+        '1',
+        async (): Promise<{ name: string } | undefined> => undefined
+      )
+    ).toEqualTypeOf<Promise<{ name: string } | undefined>>()
     // @ts-expect-error: not the declared type
     void cache.set(typed, '1', 42)
   })

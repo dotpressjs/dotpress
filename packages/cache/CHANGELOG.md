@@ -1,5 +1,13 @@
 # @dotpress/cache
 
+## 2.0.0-alpha.2
+
+### Patch Changes
+
+- [#4](https://github.com/dotpressjs/dotpress/pull/4) [`ad895a0`](https://github.com/dotpressjs/dotpress/commit/ad895a09a51f23bf659dc497e15768e7673b17f3) Thanks [@renoguyon](https://github.com/renoguyon)! - `cache.getOrSet()`: with an entry typed by its `schema` (or explicit types), the loader may return `undefined` (not found), as the cache already accepted it at runtime: the value is not cached, and the result is typed `T | undefined`. A loader returning a value keeps the result typed `T`.
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.2
+
 ## 2.0.0-alpha.1
 
 ### Patch Changes

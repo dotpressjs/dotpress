@@ -68,6 +68,10 @@ jobs:
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - uses: changesets/action/version@v2
+        with:
+          # Also updates pnpm-lock.yaml: the examples depend on the versions
+          # of the packages, and CI installs with --frozen-lockfile.
+          script: pnpm version-packages
         env:
           # For the links of the changelogs (@changesets/changelog-github).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

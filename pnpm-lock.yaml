@@ -258,6 +258,40 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(@vitest/ui@5.1.0)(vite@8.3.6(@types/node@22.20.5)(esbuild@0.28.2)(yaml@2.9.1))
 
+  examples/events:
+    dependencies:
+      '@dotpress/adapter-fastify':
+        specifier: ^2.0.0-alpha.1
+        version: link:../../packages/adapter-fastify
+      '@dotpress/core':
+        specifier: ^2.0.0-alpha.1
+        version: link:../../packages/core
+      '@dotpress/events':
+        specifier: ^2.0.0-alpha.1
+        version: link:../../packages/events
+      bullmq:
+        specifier: ^6.7.2
+        version: 6.7.2(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.1)(redis@6.3.1(@opentelemetry/api@1.9.1))
+      fastify:
+        specifier: ^5.12.8
+        version: 5.12.8
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@dotpress/testing':
+        specifier: ^2.0.0-alpha.1
+        version: link:../../packages/testing
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.1.0
+        version: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(@vitest/ui@5.1.0)(vite@8.3.6(@types/node@22.20.5)(esbuild@0.28.2)(yaml@2.9.1))
+
   examples/express:
     dependencies:
       '@dotpress/adapter-express':

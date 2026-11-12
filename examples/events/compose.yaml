@@ -1,0 +1,8 @@
+# Redis for the BullMQ queue: docker compose up -d
+services:
+  redis:
+    image: redis:7-alpine
+    # BullMQ requires that Redis never evicts its keys.
+    command: redis-server --maxmemory-policy noeviction
+    ports:
+      - '6379:6379'

@@ -1,0 +1,26 @@
+{
+  "name": "dotpress-website",
+  "private": true,
+  "description": "The documentation site of Dotpress (dotpress.dev)",
+  "type": "module",
+  "scripts": {
+    "dev": "rspress dev",
+    "build": "rspress build",
+    "preview": "rspress preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dotpress/core": "workspace:*",
+    "@fontsource/rubik": "^5.3.0",
+    "@rspress/core": "^2.1.2",
+    "@rspress/plugin-twoslash": "^2.1.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "typescript": "~6.0.3"
+  }
+}

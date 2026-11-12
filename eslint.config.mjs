@@ -43,7 +43,14 @@ const NODE_GLOBALS = [
 
 export default defineConfig(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'dev/**'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      'dev/**',
+      // Output of the website build.
+      'website/doc_build/**',
+    ],
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,

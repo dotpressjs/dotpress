@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - examples/*
+  - website
 
 # Examples declare real versions (`^2.0.0-alpha.1`), so that they install as
 # is once copied out of the repository; in the workspace, they get the local

@@ -1,0 +1,75 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Fastify
+
+`@dotpress/adapter-fastify` runs your app on [Fastify](https://fastify.dev) 5, on Node.js and [AWS Lambda](./aws-lambda).
+
+<PackageManagerTabs command="install @dotpress/core @dotpress/adapter-fastify fastify zod" />
+
+```ts
+import { createApp, defineRoute } from '@dotpress/core'
+import { fastifyAdapter } from '@dotpress/adapter-fastify'
+
+defineRoute({ path: '/hello', handler: () => ({ message: 'Hello' }) })
+
+const app = await createApp({ adapter: fastifyAdapter() })
+await app.listen(3000)
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `app` | An existing Fastify instance. `Fastify()` by default. |
+| `beforeRoutes(app)` | Registers hooks, plugins and native routes. Hooks registered here apply to the Dotpress routes. |
+| `afterRoutes(app)` | Registers hooks, plugins and native routes in an encapsulated context: they do not apply to the Dotpress routes, except plugins wrapped with `fastify-plugin`. |
+| `bodyLimit` | Maximum request body size, in bytes. 1 MiB by default. |
+
+## Fastify plugins and hooks
+
+Register Fastify plugins and hooks in `beforeRoutes`, which can be `async`: they apply to the Dotpress routes too.
+
+```ts
+import helmet from '@fastify/helmet'
+
+const app = await createApp({
+  adapter: fastifyAdapter({
+    beforeRoutes: async (app) => {
+      await app.register(helmet)
+    },
+  }),
+})
+```
+
+The instance is ready once `createApp()` resolves: register everything in `beforeRoutes` or `afterRoutes`.
+
+## An existing instance
+
+The app of the [Fastify example](/examples/fastify) mounts the Dotpress routes on an existing instance, next to a native route, with a Fastify hook applied to both:
+
+```ts file="<root>/../examples/fastify/src/app.ts"
+```
+
+## Behavior
+
+- **Each Dotpress route is a native Fastify route.** Its path (`request.routeOptions.url`, `/users/:id`) shows in the Fastify logs, metrics and traces, and a native route with the same method and path fails at startup. Routing still follows the Dotpress rules: trailing slashes ignored, `HEAD` on `GET` routes, `405` with `Allow`.
+- **Bodies are read by Dotpress**, with the same rules on every adapter: the Fastify body parsers only apply to native routes, and `@fastify/multipart` is not needed for uploads. `preParsing` hooks apply. Like Fastify, the adapter does not read the bodies of `GET` and `HEAD` requests.
+- **Errors** with a `4xx` `statusCode` raised by Fastify or its plugins (`@fastify/rate-limit`, `@fastify/sensible`…) use the Dotpress error format and keep their status and message. Other errors are unexpected (`500`). The adapter takes over the not-found and error handlers of the instance: they apply to native routes too.
+- **`ctx.req.ip`** is `request.ip`: proxy headers are only used with the `trustProxy` option of Fastify, set when you create the instance.
+- **Streamed responses** (`stream()`, `sse()`) are written directly to the Node.js response, so that their headers are sent at once: `onSend` hooks, such as `@fastify/compress`, do not apply to them.
+- **`ctx.raw`** is the Fastify request.
+- **`listen(port, host?)`** listens on every interface without `host`, like Node.js. **`close()`** closes the instance (its `onClose` hooks), waits for pending requests and closes the streamed responses.
+
+## Testing with inject()
+
+Besides the [memory adapter](/routing/testing), Fastify tests can use `inject()`, which goes through the Fastify hooks and plugins without opening a port:
+
+```ts
+const adapter = fastifyAdapter()
+await createApp({ adapter, routers })
+const res = await adapter.native().inject('/hello')
+```
+
+## On AWS Lambda
+
+The same app runs on AWS Lambda with `createLambdaHandler()` of `@dotpress/adapter-fastify/lambda`: see [AWS Lambda](./aws-lambda).

@@ -1,0 +1,93 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Express
+
+`@dotpress/adapter-express` runs your app on [Express](https://expressjs.com) 4 or 5.
+
+<PackageManagerTabs command="install @dotpress/core @dotpress/adapter-express express zod" />
+
+```ts twoslash
+import { createApp, defineRoute } from '@dotpress/core'
+import { expressAdapter } from '@dotpress/adapter-express'
+
+defineRoute({ path: '/hello', handler: () => ({ message: 'Hello' }) })
+
+const app = await createApp({ adapter: expressAdapter() })
+await app.listen(3000)
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `app` | An existing Express application (Express 4 or 5). By default, a new `express()` application, with `X-Powered-By` and `ETag` disabled. |
+| `beforeRoutes(app)` | Registers native middlewares before the Dotpress routes. |
+| `afterRoutes(app)` | Registers native middlewares and routes after the Dotpress routes, before the not-found handler. |
+| `bodyLimit` | Maximum request body size, in bytes. 1 MiB by default. |
+
+## Express middlewares
+
+Middlewares of the Express ecosystem go in `beforeRoutes`:
+
+```ts
+import compression from 'compression'
+import helmet from 'helmet'
+
+const app = await createApp({
+  adapter: expressAdapter({
+    beforeRoutes: (app) => {
+      app.use(helmet())
+      app.use(compression())
+    },
+  }),
+})
+```
+
+They run before Dotpress, for every request. Keep the logic of your API in [Dotpress middlewares](/routing/middlewares): they see the matched route and the typed context, run on every adapter, and are tested in memory.
+
+## An existing application
+
+Pass your application with `app`: its settings, middlewares and routes stay, and the Dotpress routes are added to it. A project can move its routes to Dotpress one at a time.
+
+```ts
+import express from 'express'
+
+const legacy = express()
+legacy.set('trust proxy', 1) // behind one proxy: ctx.req.ip is the client address
+legacy.get('/legacy/status', (req, res) => res.json({ ok: true }))
+
+const app = await createApp({ adapter: expressAdapter({ app: legacy }) })
+```
+
+## Behavior
+
+- **Routes are matched by Dotpress**, with the same rules on every adapter. Express settings such as `case sensitive routing` or `strict routing` do not apply to them.
+- **Bodies are read by the adapter**: JSON, forms and text are parsed, and uploads without Multer. A body already parsed by a native middleware (`express.json()`, `multer`…) is used as is. Routes declared with `rawBody: true` need the exact bytes: do not register a native body parser for them.
+- **Errors passed to `next(error)`** by native middlewares use the Dotpress error format: a `4xx` `status` is kept, anything else is a `500` reported to `onError`.
+- **`ctx.req.ip`** honors the `trust proxy` setting of Express.
+- **`ctx.raw`** is the Express request.
+- **`close()`** waits for pending requests and closes the responses being streamed.
+- **`adapter.server()`** returns the Node.js HTTP server started by `listen()`.
+
+## Your own HTTP server
+
+To serve HTTPS from Node.js, or share a server, mount the Express application yourself:
+
+```ts
+import https from 'node:https'
+
+const app = await createApp({ adapter: expressAdapter() })
+https.createServer(tlsOptions, app.native()).listen(443)
+```
+
+## AWS Lambda
+
+The Express adapter has no Lambda entry. Your routes do not depend on the adapter: use the [Hono or Fastify adapter on AWS Lambda](./aws-lambda), and keep Express for your servers if you like.
+
+## Example
+
+The [Express example](/examples/express) is a tasks API with route groups, validation, returned errors, OpenAPI, and tests in memory and over HTTP.
+
+:::tip Coming from v1
+`useBeforeRoutes` and `useAfterRoutes` of `createApp()` become the `beforeRoutes` and `afterRoutes` options of the adapter. `createApp()` no longer returns the Express application: use `app.native()`.
+:::

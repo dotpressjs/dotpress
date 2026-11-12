@@ -1,0 +1,71 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Hono
+
+`@dotpress/adapter-hono` runs your app on [Hono](https://hono.dev) 4.13 or later, on Node.js and [AWS Lambda](./aws-lambda).
+
+## On Node.js
+
+<PackageManagerTabs command="install @dotpress/core @dotpress/adapter-hono hono @hono/node-server zod" />
+
+```ts
+import { createApp, defineRoute } from '@dotpress/core'
+import { honoAdapter } from '@dotpress/adapter-hono/node'
+
+defineRoute({ path: '/hello', handler: () => ({ message: 'Hello' }) })
+
+const app = await createApp({ adapter: honoAdapter() })
+await app.listen(3000)
+```
+
+The `@dotpress/adapter-hono/node` entry serves the app with [`@hono/node-server`](https://github.com/honojs/node-server). The main entry, `@dotpress/adapter-hono`, has no Node.js server: it is the one to use on AWS Lambda, where the bundle stays small.
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `app` | An existing Hono application. `new Hono()` by default. |
+| `beforeRoutes(app)` | Registers native middlewares and routes before the Dotpress routes. |
+| `afterRoutes(app)` | Registers native middlewares and routes after the Dotpress routes, before the not-found handler. |
+| `bodyLimit` | Maximum request body size, in bytes. 1 MiB by default. |
+| `getIp(c)` | The client IP address (`ctx.req.ip`). By default, the address given by the runtime: the socket address on Node.js. |
+
+## Hono middlewares
+
+The [Hono example](/examples/hono) shares its adapter options between Node.js and AWS Lambda, with a native middleware and a native route:
+
+```ts file="<root>/../examples/hono/src/app.ts"
+```
+
+```ts file="<root>/../examples/hono/src/node.ts"
+```
+
+## Behavior
+
+- **Routes are matched by Dotpress**, with the same rules on every adapter: Hono options such as `strict` do not apply. Use the `basePath` option of `createApp()` rather than `app.basePath()`.
+- **Bodies are read by the adapter**: JSON, forms, text and multipart uploads. A body already read by a native middleware through Hono (`c.req.json()`, `c.req.parseBody()`…) is taken from its cache. Routes declared with `rawBody: true` need the exact bytes: let the adapter read the body, or read it with `c.req.arrayBuffer()` or `c.req.blob()` in a native middleware.
+- **`HTTPException` client errors** (`4xx`) thrown by native middlewares use the Dotpress error format and keep their status, message and headers (the `WWW-Authenticate` header of `bearerAuth()`…). Other errors are unexpected (`500`). The adapter takes over `app.notFound()` and `app.onError()`.
+- **`ctx.req.ip`** does not read proxy headers such as `X-Forwarded-For`: behind a proxy, read them in `getIp(c)`, and only trust the proxies you run.
+- **`ctx.raw`** is the Hono context.
+- **`close()`** waits for pending requests and closes the responses being streamed; `adapter.server()` returns the Node.js HTTP server.
+
+## Other runtimes
+
+The main entry only relies on Hono and Web-standard APIs. `adapter.fetch` handles a Web `Request`, like `app.fetch` in Hono, for runtimes that take a `fetch` handler:
+
+```ts
+import { honoAdapter } from '@dotpress/adapter-hono'
+
+const adapter = honoAdapter()
+await createApp({ adapter, routers })
+
+export default { fetch: adapter.fetch }
+```
+
+:::warning
+Dotpress 2.0 is tested on Node.js and AWS Lambda only: other runtimes (Bun, Deno, edge runtimes) are not officially supported yet. See [the design decision](/reference/design-decisions/edge).
+:::
+
+## On AWS Lambda
+
+The same app runs on AWS Lambda with `createLambdaHandler()` of `@dotpress/adapter-hono/lambda`: see [AWS Lambda](./aws-lambda).

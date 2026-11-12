@@ -1,0 +1,8 @@
+# Redis for the cache: docker compose up -d
+services:
+  redis:
+    image: redis:7-alpine
+    # A cache may evict the least recently used keys when memory is full.
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '6379:6379'

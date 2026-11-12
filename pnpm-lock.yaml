@@ -756,9 +756,18 @@ importers:
       '@dotpress/auth':
         specifier: workspace:*
         version: link:../packages/auth
+      '@dotpress/cache':
+        specifier: workspace:*
+        version: link:../packages/cache
       '@dotpress/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@dotpress/events':
+        specifier: workspace:*
+        version: link:../packages/events
+      '@dotpress/mailer':
+        specifier: workspace:*
+        version: link:../packages/mailer
       '@dotpress/openapi':
         specifier: workspace:*
         version: link:../packages/openapi

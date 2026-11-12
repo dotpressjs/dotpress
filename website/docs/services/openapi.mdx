@@ -1,0 +1,143 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# OpenAPI and API docs
+
+`@dotpress/openapi` builds an [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) document from the routes of your app, and serves an interactive API reference with [Scalar](https://scalar.com). No annotation: the paths, parameters, bodies and responses come from the Zod schemas of the routes, and the security from their middlewares. The documentation cannot drift from the code.
+
+<PackageManagerTabs command="install @dotpress/openapi" />
+
+```ts
+import { openapiPlugin } from '@dotpress/openapi'
+
+const app = await createApp({
+  adapter,
+  plugins: [
+    authPlugin(auth),
+    openapiPlugin({ info: { title: 'Tasks API', version: '1.0.0' } }),
+  ],
+})
+// GET /openapi.json: the document
+// GET /docs: the API reference
+```
+
+The document is generated once, when the app is created.
+
+## What is documented
+
+| Source | OpenAPI |
+| --- | --- |
+| `path` (`/users/:id`) | the path (`/users/{id}`), with the base path of the app |
+| `schema.params`, `schema.query` | path and query parameters. Path parameters without schema are strings. |
+| `schema.body` | the JSON request body, required unless the schema is optional |
+| `schema.files` | a `multipart/form-data` body, with the `body` fields |
+| `schema.response`, `status` | the success response (`200` by default) |
+| `meta.responses` | other responses |
+| middlewares, `meta.security` | the security requirements |
+| `meta.summary`, `description`, `tags`… | the operation. `meta.hidden` excludes the route. |
+| — | the standard errors: `400` for routes with request schemas, `401` and `403` for secured routes, `500` |
+
+Request schemas are documented as the client sends them (`z.coerce.number()` is a number, a field with a default is optional), response schemas as the API returns them. Dates are ISO 8601 strings.
+
+## Describe the routes
+
+```ts
+defineRoute({
+  method: 'post',
+  path: '/tasks',
+  status: 201,
+  schema: (z) => ({ body: TaskInput, response: Task }),
+  meta: {
+    summary: 'Create a task',
+    description: 'The task is added to the project of the current user.',
+    tags: ['tasks'],
+    responses: { 409: 'A task with this title already exists' },
+  },
+  handler,
+})
+```
+
+`meta.responses` documents the responses the schemas do not describe: errors returned by the handler, or bodies that are not JSON. An entry is a description, or an object with `description`, `schema` and `contentType`:
+
+```ts
+meta: {
+  responses: {
+    200: { description: 'CSV export', contentType: 'text/csv' },
+    404: 'Member not found',
+    409: { description: 'Already exported', schema: ExportStatus },
+  },
+}
+```
+
+An entry replaces the generated response of the same status.
+
+## Reusable schemas
+
+A Zod schema with an identifier is declared once in `components/schemas`, and referenced by the routes:
+
+```ts
+const Task = z
+  .object({ id: z.uuid(), title: z.string(), done: z.boolean() })
+  .meta({ id: 'Task', description: 'A task to do' })
+```
+
+When the input and output of a schema differ (defaults, transforms), the request side gets an `Input` variant: `Task` and `TaskInput`. Two different schemas with the same identifier fail the generation. Recursive schemas need an identifier.
+
+## Security
+
+A route is secured by the security schemes its middlewares declare, including group and global middlewares. `requireAuth`, `requireRole()` and `requireClient()` of `@dotpress/auth` declare `bearerAuth`, and the auth plugin declares the scheme: the API reference shows an Authorize button, and the secured routes a lock.
+
+Your own middlewares declare theirs:
+
+```ts
+const requireApiKey = defineMiddleware(checkApiKey, { security: ['apiKey'] })
+
+openapiPlugin({
+  info,
+  securitySchemes: { apiKey: { type: 'apiKey', in: 'header', name: 'x-api-key' } },
+})
+```
+
+`meta.security` overrides the schemes of a route, and `[]` marks it as public.
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `info` | — | **Required.** `title`, `version`, and the other fields of the OpenAPI `info` object. |
+| `servers` | the public base path of the app | The servers of the document. |
+| `tags` | — | Descriptions of the tags used by the routes. |
+| `externalDocs` | — | A link to external documentation. |
+| `securitySchemes` | — | Security schemes, added to those of the plugins. |
+| `path` | `/openapi.json` | The path of the document. |
+| `ui` | `{ path: '/docs' }` | The Scalar page: `path`, `title`, `configuration`, `cdnUrl`, `integrity`. `false` serves the document only. |
+| `middlewares` | `[]` | Middlewares of the document and page routes, for instance to restrict them. |
+
+:::tip Public or private documentation?
+The document lists every route of the API, with its parameters. For an internal API, protect it with `middlewares: [requireRole('admin')]`, or serve it in development only.
+:::
+
+## The API reference
+
+The page loads a pinned version of Scalar from jsDelivr, checked with Subresource Integrity. It is neutral by default: no telemetry, no AI integration, no link to the Scalar client, system fonts. `ui.configuration` sets the [Scalar configuration](https://guides.scalar.com/scalar/scalar-api-references/configuration), `cdnUrl` hosts the script yourself. With a strict Content Security Policy, the page needs an inline script.
+
+## The document in CI
+
+`dotpress-openapi` writes the document without starting the server, to commit it, check its changes in pull requests, or generate clients:
+
+```sh
+npx dotpress-openapi src/app.ts --export createApp --out openapi.json
+```
+
+The module exports the app, or a function creating it. The routes are mounted, no server is started, and the app is closed afterwards.
+
+`generateOpenApi(app, options)` returns the document in code, with the options of the plugin except `path`, `ui` and `middlewares`:
+
+```ts
+import { generateOpenApi } from '@dotpress/openapi'
+
+const document = generateOpenApi(app, { info: { title: 'Tasks API', version: '1.0.0' } })
+```
+
+## Example
+
+Every example serves its document and reference. The [Express example](/examples/express) shows reusable schemas and documented errors; the [Auth example](/examples/auth), secured routes.

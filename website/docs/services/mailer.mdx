@@ -1,0 +1,165 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Emails
+
+`@dotpress/mailer` sends typed, multilingual emails: templates written in [MJML](https://mjml.io) or HTML, with shared layouts, data checked by a Zod schema, and interchangeable providers (SMTP, Amazon SES, Resend, SendGrid, Postmark…). It works in a route, a worker or a script.
+
+<PackageManagerTabs command="install @dotpress/mailer zod mjml" />
+
+`mjml` is only needed for MJML templates.
+
+## A layout and a template
+
+A layout holds what every email shares; a template, the content of one email, in each language. From the [Mailer example](/examples/mailer):
+
+```ts file="<root>/../examples/mailer/src/mails/layout.ts"
+```
+
+```ts file="<root>/../examples/mailer/src/mails/contact-received.ts"
+```
+
+The data is checked by TypeScript when you send, and by the schema at runtime:
+
+```ts twoslash
+// @errors: 2741
+import { createMailer, createMemoryProvider, defineTemplate } from '@dotpress/mailer'
+import { z } from 'zod'
+
+const mailer = createMailer({ provider: createMemoryProvider(), from: 'noreply@example.com' })
+// ---cut---
+const invoiceReady = defineTemplate({
+  name: 'invoiceReady',
+  schema: z.object({ number: z.string(), amount: z.string(), url: z.url() }),
+  subject: 'Your invoice {{number}}',
+  html: '<p>Your invoice of {{amount}} is ready: <a href="{{{url}}}">download it</a>.</p>',
+})
+
+await mailer.send(invoiceReady, {
+  to: 'ada@example.com',
+  data: { number: 'F-2026-001', amount: '€42.00' },
+})
+```
+
+## How a template is rendered
+
+1. **Translations**: the template function runs with `t()`, which returns the texts of the locale. The layout receives the result as `content`.
+2. **MJML** compiles it to HTML. This step only depends on the template and the locale: it is cached.
+3. **Mustache** inserts the data (`{{name}}`) in the HTML, the subject and the text version.
+
+Translations can use the data too (`{ en: 'Hello {{name}}' }`), and contain HTML.
+
+| Syntax | HTML version | Subject and text version |
+| --- | --- | --- |
+| `{{value}}` | escaped | as is |
+| `{{{value}}}` | as is | as is |
+
+:::warning Escaping
+Use `{{value}}` for any data, and in particular for user input: it is HTML-escaped. Keep `{{{url}}}` for the URLs built by your app.
+:::
+
+Without a `text` source, the text version is converted from the HTML: lines wrapped at 78 characters, links followed by their URL.
+
+## Locales
+
+The locales of a template are those of its subject and translations: every text needs all of them. The rendered locale is the first available among the requested locale (`fr-CA`), its language (`fr`), then the `defaultLocale` of the mailer.
+
+## Sending
+
+```ts
+import { createMailer } from '@dotpress/mailer'
+import { createSmtpProvider } from '@dotpress/mailer/smtp'
+
+const mailer = createMailer({
+  provider: createSmtpProvider(env.SMTP_URL),
+  from: 'Example <noreply@example.com>',
+  defaultLocale: 'en',
+})
+
+await mailer.send(contactReceived, {
+  to: { name: 'Ada Lovelace', address: 'ada@example.com' },
+  locale: 'fr-CA',
+  data: { name: 'Ada' },
+})
+```
+
+`send()` also takes `cc`, `bcc`, `replyTo`, `from`, `subject`, `attachments` (inline ones with `contentId`), `headers`, and `tags` and `metadata` for the statistics and webhooks of the provider. Addresses, headers and attachments are checked before rendering: a line break in a name or a header throws, so user input cannot inject headers.
+
+`mailer.sendMessage({ to, subject, html })` sends a message rendered elsewhere. `mailer.render(template, { locale, data })` renders without sending: previews and tests.
+
+## Providers
+
+| Provider | Import | Use |
+| --- | --- | --- |
+| `createMemoryProvider()` | `@dotpress/mailer` | tests: keeps the messages |
+| `createConsoleProvider()` | `@dotpress/mailer` | development: prints the messages |
+| `createSmtpProvider()` | `@dotpress/mailer/smtp` | any SMTP server, through nodemailer (Node.js only) |
+| `createSesProvider()` | `@dotpress/mailer/aws-ses` | Amazon SES, through the AWS SDK |
+| `createResendProvider()` | `@dotpress/mailer/resend` | Resend |
+| `createSendgridProvider()` | `@dotpress/mailer/sendgrid` | SendGrid |
+| `createPostmarkProvider()` | `@dotpress/mailer/postmark` | Postmark |
+| `createBrevoProvider()` | `@dotpress/mailer/brevo` | Brevo |
+| `createMailjetProvider()` | `@dotpress/mailer/mailjet` | Mailjet |
+| `createMailgunProvider()` | `@dotpress/mailer/mailgun` | Mailgun |
+| `createScalewayProvider()` | `@dotpress/mailer/scaleway` | Scaleway Transactional Email |
+
+The HTTP API providers have no dependency (`fetch`). Most email services also have an SMTP interface. A provider is an object with a `name` and a `send(message)` method: write your own for another service.
+
+Switching provider changes one line: templates and calls stay the same. A message that the API of a provider cannot accept (too many recipients, an attachment type it refuses) throws before any request.
+
+:::warning Never fall back to the console provider
+The console provider is for development. In production, a missing provider configuration must fail at startup: falling back to the console would lose every message silently. The [Mailer example](/examples/mailer) shows the pattern:
+:::
+
+```ts file="<root>/../examples/mailer/src/mailer.ts"
+```
+
+## In a route
+
+```ts
+import { mailerPlugin } from '@dotpress/mailer/plugin'
+
+const app = await createApp({ adapter, plugins: [mailerPlugin(mailer)] })
+```
+
+`ctx.mailer` is the mailer, logging with the request logger. From the [Mailer example](/examples/mailer): a contact form that notifies the team, and acknowledges receipt to the visitor in their language, without repeating their message (otherwise, anyone could send any text to any address through the form):
+
+```ts
+handler: async ({ req, mailer }) => {
+  const { name, email, message } = req.body
+  const locale = negotiateLocale(req.header('accept-language'), contactReceived.locales)
+
+  await mailer.send(contactNotification, {
+    to: contactTo,
+    replyTo: { name, address: email }, // the team answers with the Reply button
+    data: { name, email, message, locale: locale ?? 'en' },
+  })
+  await mailer.send(contactReceived, { to: { name, address: email }, locale, data: { name } })
+}
+```
+
+Sending is neither queued nor retried. For emails that must arrive despite a provider outage, send them from an [event listener](./events): the queue retries them, and the request does not wait for the provider. The [Tasks API example](/examples/tasks-api) does so.
+
+## Testing
+
+The memory provider keeps the messages, and `expectMailSent()` of `@dotpress/testing` checks them:
+
+```ts
+const outbox = createMemoryProvider()
+const mailer = createMailer({ provider: outbox, from: 'noreply@example.com' })
+
+await signUp(mailer, 'ada@example.com')
+
+const mail = expectMailSent(outbox, { to: 'ada@example.com', template: welcomeMail, locale: 'en' })
+expect(mail.html).toContain('https://example.com/confirm')
+```
+
+Render each locale of a template in a test, to catch a missing translation or an invalid MJML before your users do. See [Testing helpers](./testing).
+
+## Errors
+
+| Error | When |
+| --- | --- |
+| `MailDataError` | the data does not match the schema |
+| `MailRenderError` | invalid MJML, unknown translation key, no available locale |
+| `MailMessageError` | invalid address, header or attachment, or a limit of the provider |
+| `MailSendError` | the provider failed (`status`, `cause`) |

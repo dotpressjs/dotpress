@@ -1,0 +1,58 @@
+/*
+ * Provisional identity of Dotpress, until the new logo: the brand blue
+ * #00bcff and Rubik for the headings. Every brand value lives here.
+ *
+ * #00bcff has a contrast of 2.2:1 on white: in light mode, the links and the
+ * text in the brand color use a darker shade of the same hue, #0077b6
+ * (4.9:1). In dark mode, #00bcff passes as is (about 8:1 on the background).
+ */
+@import '@fontsource/rubik/latin-500.css';
+@import '@fontsource/rubik/latin-600.css';
+
+:root {
+  --dp-blue: #00bcff;
+  --dp-blue-dark: #0077b6;
+
+  --rp-c-brand: var(--dp-blue);
+  --rp-c-brand-light: #33c9ff;
+  --rp-c-brand-lighter: #c2eeff;
+  --rp-c-brand-dark: var(--dp-blue-dark);
+  --rp-c-brand-darker: #005d8f;
+  --rp-c-brand-tint: #00bcff29;
+
+  --dp-font-heading: 'Rubik', var(--rp-font-family-base);
+}
+
+html.rp-dark {
+  --rp-c-link: var(--dp-blue);
+}
+
+/* Home page: the brand blue instead of the default blue and purple. */
+html:not(.rp-dark) {
+  --rp-home-hero-secondary-color: var(--dp-blue);
+  --rp-home-background-bg:
+    radial-gradient(42% 56% at 100% 0%, #00bcff1a 0%, #fff0 100%),
+    radial-gradient(80% 58% at 0% 0%, #00bcff24 0%, #fff0 100%), #fff;
+}
+
+html.rp-dark {
+  --rp-home-hero-secondary-color: var(--dp-blue);
+  --rp-home-background-bg:
+    radial-gradient(42% 56% at 100% 0%, #003a52 0%, #12121200 100%),
+    radial-gradient(122% 88% at 0% 0%, #00303f 0%, #12121200 100%), #121212;
+}
+
+/* Rubik for the headings only: the text and the code keep the defaults. */
+.rp-doc :is(h1, h2, h3),
+.rp-home-hero__title,
+.rp-home-hero__subtitle {
+  font-family: var(--dp-font-heading);
+  font-weight: 500;
+}
+
+/* Markdown content of the home page, after the features (theme/index.tsx). */
+.dp-home-content {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 48px 24px 64px;
+}

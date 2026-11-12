@@ -28,6 +28,7 @@ pnpm test
 |---|---|
 | `packages/*` | The published packages, each with its README, sources (`src/`) and tests (`test/`) |
 | `examples/*` | Runnable examples, private packages linked to the sources (see [examples/README.md](examples/README.md)) |
+| `website/` | The documentation site ([Rspress](https://rspress.rs)), a private package (see below) |
 | `scripts/` | Checks of the repository (see below) |
 | `.changeset/` | Pending changesets and the configuration of the releases |
 | `.github/workflows/` | CI (`ci.yml`) and releases (`release.yml`) |
@@ -46,6 +47,16 @@ pnpm check:examples   # examples declare the current versions, linked to the sou
 pnpm test:packed      # installs the packed packages in a new project, and checks them as a consumer
 pnpm release:dry-run  # replays the release on a local Verdaccio registry (CI; needs a clean working tree)
 ```
+
+### Documentation site
+
+```sh
+pnpm build                              # the packages first: the site compiles its snippets against them
+pnpm --filter dotpress-website dev      # http://localhost:3000, with hot reload
+pnpm --filter dotpress-website build    # also part of pnpm build
+```
+
+The code blocks marked `twoslash` are compiled against the packages: a type error, or a dead internal link, fails the build. Prefer importing the code of an example (```` ```ts file="<root>/../examples/…" ````) to writing a long snippet.
 
 ### Integration tests
 

@@ -83,7 +83,7 @@ await cache.set(userCache, id, user)
 await cache.delete(userCache, id) // after an update
 ```
 
-- **`getOrSet`** reads the value, or loads it with the last argument and caches it. Calls made while it loads share the load (single flight, per cache). A failed load is not cached: the error reaches the caller, unless the grace period serves a stale value (see [Resilience](#resilience)).
+- **`getOrSet`** reads the value, or loads it with the last argument and caches it. Calls made while it loads share the load (single flight, per cache). A failed load is not cached: the error reaches the caller, unless the grace period serves a stale value (see [Resilience](#resilience)). A load that returns `undefined` (not found) is not cached either: `getOrSet` returns `undefined`, and the type of the result includes it.
 - **`get`** returns fresh values only: undefined when missing, expired or invalidated by a tag.
 - **Keys**: `prefix:name:vVersion:key`, like `app:user:v1:42`. `key` returns a string, a number, or a value compared like the arguments of a memo; without `key`, the argument (or the arguments) is the key. Keys longer than the store accepts are hashed (SHA-256).
 - **`version`** (1 by default) is part of the key: increase it when the shape of the values changes, and the values written by the previous version are ignored.

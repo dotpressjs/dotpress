@@ -326,15 +326,18 @@ export interface Cache {
    * The value of the arguments, loaded by the last argument when missing
    * and cached. Calls made while it loads share the load. Applies the
    * grace period, stale-while-revalidate and timeouts of the entry.
+   *
+   * A loader may return `undefined` (not found): it is not cached, and
+   * `getOrSet` returns it.
    */
   getOrSet<A extends readonly unknown[], R>(
     entry: CacheEntry<A, Untyped>,
     ...argsAndLoader: [...A, () => R | Promise<R>]
   ): Promise<R>
-  getOrSet<A extends readonly unknown[], T>(
+  getOrSet<A extends readonly unknown[], T, R extends T | undefined = T>(
     entry: CacheEntry<A, T>,
-    ...argsAndLoader: [...A, () => T | Promise<T>]
-  ): Promise<T>
+    ...argsAndLoader: [...A, () => R | Promise<R>]
+  ): Promise<[R] extends [T] ? T : T | undefined>
   /**
    * Expires every value with one of the tags (they can still be served by
    * the grace period when the loader fails).

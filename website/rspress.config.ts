@@ -61,6 +61,8 @@ export default defineConfig({
           moduleResolution: ts.ModuleResolutionKind.Bundler,
           strict: true,
           lib: ['lib.es2023.d.ts', 'lib.dom.d.ts'],
+          // Server code: the snippets may use Node.js modules.
+          types: ['node'],
         },
       },
     }),

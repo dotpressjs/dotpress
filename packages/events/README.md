@@ -640,6 +640,8 @@ npx dotpress-events work ./src/events/worker.ts --watch # restarts when a file c
 
 The module exports `{ worker, source }` (and optionally a `logger`), or a function returning them; choose another export with `--export`. Logs are written to the standard error as JSON lines. With an SQS transport, it reads your development queue as the Lambda would, without deploying; in production, it is also the entry point of a container.
 
+Ctrl+C or SIGTERM stops the worker after the messages in progress; another signal, a second later or more, exits at once. The repeats within one second are ignored: `npm run`, `pnpm run` and `--watch` relay the signal they receive, so that one Ctrl+C reaches the worker several times.
+
 TypeScript modules require Node.js 22.18 or later (erasable syntax, relative imports ending in `.ts`); otherwise, run the compiled module, or the command with `NODE_OPTIONS="--import tsx"`.
 
 ## Failures

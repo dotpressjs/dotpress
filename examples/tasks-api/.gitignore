@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# SQLite database and development keys
+data/

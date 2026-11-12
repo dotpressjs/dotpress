@@ -10,6 +10,7 @@ Runnable examples of [Dotpress](https://dotpress.dev), tested by the CI of this 
 | [`auth`](auth) | Sign-up, login, token rotation, cookie sessions, roles and logout, on Express |
 | [`events`](events) | Events emitted by an API, and listeners run by a worker through Redis (BullMQ), on Fastify |
 | [`mailer`](mailer) | A contact form sending multilingual MJML emails, with previews and SMTP, on Hono |
+| [`cache`](cache) | Memo with batching per request, cache with tags and grace period, Redis, on Express |
 
 Copy an example with [degit](https://github.com/Rich-Harris/degit), then install it with your package manager:
 

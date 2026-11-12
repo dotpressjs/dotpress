@@ -12,7 +12,10 @@
   "dependencies": {
     "@dotpress/adapter-express": "workspace:*",
     "@dotpress/auth": "workspace:*",
+    "@dotpress/cache": "workspace:*",
     "@dotpress/core": "workspace:*",
+    "@dotpress/events": "workspace:*",
+    "@dotpress/mailer": "workspace:*",
     "@dotpress/openapi": "workspace:*",
     "@dotpress/testing": "workspace:*",
     "@fontsource/rubik": "^5.3.0",

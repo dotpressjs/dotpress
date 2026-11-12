@@ -1,0 +1,192 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Events and workers
+
+`@dotpress/events` lets your code announce what happened, and lets other code react to it, later, in workers. A route that places an order emits `order.placed` and answers at once; the confirmation email and the warehouse notification run in a worker, retried on their own when they fail.
+
+The code that emits never knows where the listeners run: in the same process during development, in a container reading Redis, or in a Lambda function reading SQS. Changing the transport changes one line.
+
+<PackageManagerTabs command="install @dotpress/events zod" />
+
+## Concepts
+
+| | Role | Where |
+| --- | --- | --- |
+| **Event** (`defineEvent`) | a fact, with a name and the schema of its payload | shared code |
+| **Listener** (`defineListener`) | a reaction to an event, with a unique name | shared code |
+| **Bus** (`createEventBus`) | validates the events emitted, sends one message per listener to its transport | the code that emits: API, scripts |
+| **Transport** | sends the messages to a queue: memory, Redis, SQS, Postgres… | the configuration of the bus |
+| **Worker** (`createWorker`) | runs the listeners of the messages it receives | a container, a Lambda function, `dotpress-events work` |
+
+`emit()` sends **one message per listener**: each listener is retried on its own, and can even run on another platform.
+
+## Events and listeners
+
+From the [Events example](/examples/events):
+
+```ts file="<root>/../examples/events/src/events.ts"
+```
+
+`load` imports the code of a listener only in the worker: the API that emits only needs the names of the listeners, not their dependencies. A listener can also be written inline, with `handle`:
+
+```ts twoslash
+import { defineEvent, defineListener } from '@dotpress/events'
+import { z } from 'zod'
+
+declare const crm: { addContact(userId: string): Promise<void> }
+// ---cut---
+const userCreated = defineEvent({
+  name: 'user.created',
+  schema: z.object({ userId: z.string() }),
+})
+
+const syncCrm = defineListener(userCreated, {
+  name: 'sync-crm',
+  handle: async ({ payload, logger }) => {
+    await crm.addContact(payload.userId)
+    logger.info({ userId: payload.userId }, 'Contact added to the CRM')
+  },
+})
+```
+
+The listener receives the parsed `payload`, typed by the schema, and:
+
+| Field | Content |
+| --- | --- |
+| `id` | the identifier of the message, the same for every attempt |
+| `attempt` | the attempt number, from 1 |
+| `emissionId`, `emittedAt` | the emission |
+| `metadata` | the metadata of the emission: the `requestId` with the plugin |
+| `logger` | the logger of the worker |
+| `event`, `listener` | the names |
+
+### Payloads
+
+**Payloads travel as JSON.** The bus serializes the payload, then validates it with the schema: an invalid payload throws at `emit()`, not later in a worker. Dates travel as ISO strings.
+
+:::warning Pass identifiers, not secrets
+Messages are stored by queues, shown in their consoles and kept in dead-letter queues. Send `{ userId }`, never a password, a token or personal data the listener can load itself.
+:::
+
+### Retries and idempotency
+
+**A listener throws to be retried.** The transport delivers the message again, then moves it to its dead-letter queue after its retry limit.
+
+**Make listeners idempotent.** Queues deliver messages at least once: a message can run twice, after a timeout or a duplicate delivery. Use `id` to ignore duplicates (a unique constraint, an idempotency key sent to the API you call), or make running twice harmless:
+
+```ts file="<root>/../examples/events/src/listeners/notify-warehouse.ts"
+```
+
+## Emitting
+
+```ts twoslash
+import { createEventBus, createMemoryTransport, defineEvent } from '@dotpress/events'
+import { z } from 'zod'
+
+const invoicePaid = defineEvent({
+  name: 'invoice.paid',
+  schema: z.object({ invoiceId: z.string(), paidAt: z.iso.datetime() }),
+})
+const events = createEventBus({ transport: createMemoryTransport(), listeners: [] })
+// ---cut---
+await events.emit(
+  invoicePaid,
+  { invoiceId: 'F-1', paidAt: new Date().toISOString() },
+  { delay: 3600, metadata: { source: 'payments' } } // optional
+)
+```
+
+The payload is typed by the schema of the event. `delay`, in seconds, postpones the listeners, within the limit of the transport.
+
+:::warning Emit after the transaction commits
+An event describes something that happened. Emitted inside a database transaction that rolls back, it describes something that did not. Commit first, then emit.
+:::
+
+When some messages cannot be sent (the queue is down), `emit()` throws an `EventEmitError`. Emitting again is safe: the message ids depend on the emission and the listener, so idempotent listeners ignore the duplicates.
+
+## In a route
+
+```ts
+import { eventsPlugin } from '@dotpress/events/plugin'
+
+const app = await createApp({ adapter, plugins: [eventsPlugin(events)] })
+
+defineRoute({
+  method: 'post',
+  path: '/orders',
+  handler: async ({ req, events }) => {
+    const order = await orders.place(req.body)
+    await events.emit(orderPlaced, { orderId: order.id, items: order.items })
+    return order
+  },
+})
+```
+
+`ctx.events` logs with the request logger, and adds the `requestId` to the metadata of the events: the logs of the listeners link back to the request.
+
+## Transports
+
+| Transport | Import | Use |
+| --- | --- | --- |
+| `createSyncTransport()` | `@dotpress/events` | runs the listeners inside `emit()`. Development, tests, apps without a queue |
+| `createMemoryTransport()` | `@dotpress/events` | an in-process queue with retries. Development and tests: messages are lost when the process stops |
+| `createBullmqTransport()` | `@dotpress/events/bullmq` | Redis, through BullMQ |
+| `createSqsTransport()` | `@dotpress/events/aws-sqs` | Amazon SQS, with Lambda workers |
+| `createPgBossTransport()` | `@dotpress/events/pg-boss` | Postgres, through pg-boss: no other infrastructure than your database |
+| `createCloudflareQueueTransport()` | `@dotpress/events/cloudflare-queues` | Cloudflare Queues |
+| `createPubSubTransport()` | `@dotpress/events/google-pubsub` | Google Cloud Pub/Sub |
+| `createServiceBusTransport()` | `@dotpress/events/azure-service-bus` | Azure Service Bus |
+
+The example picks its transport from the configuration: BullMQ with Redis, an in-memory queue in the API process without it.
+
+```ts file="<root>/../examples/events/src/bus.ts"
+```
+
+Several transports can be used together: name them in the bus with `transports: { default, … }`, and route an event, or a single listener, with its `transport` option. The setup of each platform (queues, dead letters, Lambda, containers) is described in [Event workers](/deployment/event-workers).
+
+## Workers
+
+A worker runs the listeners of the messages it receives. During development, run it next to your API with `dotpress-events work`:
+
+```sh
+npx dotpress-events work src/worker.ts --watch
+```
+
+The module exports the `worker`, the `source` of the messages, and optionally a `logger`:
+
+```ts file="<root>/../examples/events/src/worker.ts"
+```
+
+Ctrl+C or `SIGTERM` stops the worker after the messages in progress; a second signal, a second later or more, exits at once. In production, the same command is the entry point of a container; on AWS Lambda, the SQS handler replaces it. See [Event workers](/deployment/event-workers).
+
+## Failures
+
+| Failure | What happens |
+| --- | --- |
+| The listener throws | the message is retried, then moved to the dead-letter queue after the retry limit |
+| Invalid payload, unknown listener | retrying would not help: the message goes to the dead-letter queue at once when the transport can, or fails until the retry limit |
+
+`onFailure(error, { envelope, attempt, final, reason })`, an option of the worker, is called for every failure: use it for alerts. Set `maxAttempts` to the retry limit of the queue, so that the last attempt is reported as `final`.
+
+## Testing
+
+The memory transport runs the listeners in the test, and `drain()` waits for them:
+
+```ts
+const transport = createMemoryTransport({ retryDelay: () => 0 })
+const events = createEventBus({ transport, listeners })
+
+await placeOrder(events, order)
+await transport.drain()
+expect(transport.sent).toMatchObject([{ event: 'order.placed', listener: 'notify-warehouse' }])
+```
+
+To test the code that emits without running the listeners, use `createFakeEventBus()` and `expectEventEmitted()` of `@dotpress/testing`:
+
+```ts
+const events = createFakeEventBus()
+await placeOrder(events, order)
+expectEventEmitted(events, orderPlaced, { orderId: order.id })
+```
+
+See [Testing helpers](./testing).

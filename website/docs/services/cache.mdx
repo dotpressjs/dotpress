@@ -1,0 +1,290 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Cache and memoization
+
+`@dotpress/cache` provides two tools, for two different problems:
+
+| | Memo | Cache |
+| --- | --- | --- |
+| **Avoids** | loading the same value several times **within one request** | loading the same value **on every request** |
+| **Lives** | as long as the request (or the event message, the job) | minutes, hours, days |
+| **Stored in** | the memory of the request | a store: memory, Redis, Upstash, Workers KV |
+| **Freshness** | always fresh: each request starts with an empty memo | can be outdated: expires with a `ttl`, or when you invalidate it |
+| **Typical use** | the current user, loaded by a middleware and a handler; the authors of a list of articles | a catalog, a price list, a dashboard, the response of a slow service |
+
+Start with the memo: it saves queries without any risk of serving outdated data. Add the cache for values that are expensive to load and change rarely.
+
+<PackageManagerTabs command="install @dotpress/cache" />
+
+## Set up
+
+The plugin gives each request a memo, `ctx.memo`, and the cache, `ctx.cache`:
+
+```ts
+import { createCache, createMemoryStore } from '@dotpress/cache'
+import { cachePlugin } from '@dotpress/cache/plugin'
+
+const cache = createCache({ store: createMemoryStore(), prefix: 'app' })
+
+const app = await createApp({ adapter, plugins: [cachePlugin({ cache })] })
+```
+
+`cachePlugin()` without `cache` provides the memo only.
+
+## Memo
+
+### Load a value once per request
+
+The authentication middleware loads the account of the user, and the handler needs it too. Declare how to load it, then ask the memo:
+
+```ts twoslash
+import { defineMiddleware, defineRoute, forbiddenError } from '@dotpress/core'
+import { defineMemo } from '@dotpress/cache'
+import '@dotpress/cache/plugin'
+
+interface Account {
+  id: string
+  plan: 'free' | 'pro'
+  suspended: boolean
+}
+declare const db: { accounts: { findById(id: string): Promise<Account | undefined> } }
+// ---cut---
+// How to load an account: declared once, in a module.
+export const loadAccount = defineMemo({
+  name: 'account',
+  load: (id: string) => db.accounts.findById(id),
+})
+
+const requireActiveAccount = defineMiddleware(async (ctx) => {
+  const account = await ctx.memo(loadAccount, ctx.req.params.accountId) // loads it
+  if (!account || account.suspended) return forbiddenError()
+})
+
+defineRoute({
+  path: '/accounts/:accountId/billing',
+  middlewares: [requireActiveAccount],
+  handler: async ({ req, memo }) => {
+    const account = await memo(loadAccount, req.params.accountId) // no query: memoized
+    return { plan: account?.plan }
+  },
+})
+```
+
+For `GET /accounts/42/billing`, the middleware and the handler both ask the memo for account `42`: the database is queried once. They stay independent: neither has to pass the account to the other.
+
+- **Single flight**: calls made while the value loads wait for the same load.
+- **Failures are not kept**: a failed load fails the calls in progress, and the next call loads again.
+- **Keys**: the arguments of `load`, compared by value.
+- After an update, `ctx.memo.set(loadAccount, id, account)` replaces the value, and `ctx.memo.delete(loadAccount, id)` loads it again next time.
+
+### Batch the loads
+
+A list of 50 articles shows the author of each. Loading the authors one by one makes 50 queries: the N+1 problem. With `batch` instead of `load`, the memo collects the keys requested in the same tick, and loads them in **one** call:
+
+```ts twoslash
+import { defineRoute } from '@dotpress/core'
+import { defineMemo } from '@dotpress/cache'
+import '@dotpress/cache/plugin'
+
+interface User {
+  id: string
+  name: string
+}
+declare const db: {
+  users: { findManyById(ids: readonly string[]): Promise<User[]> }
+  articles: { list(): Promise<{ id: string; title: string; authorId: string }[]> }
+}
+// ---cut---
+export const loadAuthor = defineMemo({
+  name: 'author',
+  // Receives every id requested in the same tick, without duplicates.
+  batch: async (ids: readonly string[]) => {
+    const users = await db.users.findManyById(ids) // WHERE id IN (…)
+    return new Map(users.map((user) => [user.id, user])) // unknown ids give undefined
+  },
+})
+
+defineRoute({
+  path: '/articles',
+  handler: async ({ memo }) => {
+    const articles = await db.articles.list()
+    // 50 calls to the memo, one query to the database
+    return Promise.all(
+      articles.map(async (article) => ({
+        ...article,
+        author: await memo(loadAuthor, article.authorId),
+      }))
+    )
+  },
+})
+```
+
+The code that renders one article does not change: it asks for one author, and the memo groups the requests. `batch` returns a `Map` by key, or an array in the order of the keys.
+
+### One memo per unit of work
+
+A memo lives as long as its request: each request starts empty, so it never serves outdated data. For the same reason, never keep a memo for the whole process: it would grow forever, and serve old values. In an event listener or a job, create one per message with `createMemo()` (see [Outside a route](#outside-a-route)).
+
+## Cache
+
+### Keep a value across requests
+
+The plans of a billing service change a few times a year, and the service takes 300 ms to answer. Declare a cache entry, and read through it:
+
+```ts twoslash
+import { defineRoute } from '@dotpress/core'
+import { defineCacheEntry } from '@dotpress/cache'
+import { z } from 'zod'
+import '@dotpress/cache/plugin'
+
+declare const billing: { getPlan(id: string): Promise<{ id: string; name: string; price: number }> }
+// ---cut---
+export const planCache = defineCacheEntry({
+  name: 'plan',
+  key: (id: string) => id,
+  schema: z.object({ id: z.string(), name: z.string(), price: z.number() }),
+  ttl: '1h',
+})
+
+defineRoute({
+  path: '/plans/:id',
+  handler: ({ req, cache }) =>
+    // From the cache, or from the service on a miss, then cached for an hour
+    cache.getOrSet(planCache, req.params.id, () => billing.getPlan(req.params.id)),
+})
+```
+
+- **`getOrSet`** returns the cached value, or calls the loader and caches its result. Concurrent requests for a missing value share one load. A failed load, or a load returning `undefined` (not found), is not cached.
+- **`get`**, **`set`** and **`delete`** are the usual operations.
+- **Durations** are seconds, or strings: `'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'`.
+- **The `schema`** types the value, and checks it when read: a value written by an older version of the app that no longer matches is a miss, not a crash. Values are stored as JSON: use `z.coerce.date()` for dates.
+- **Keys** are `prefix:name:v1:key`. Increase the `version` of an entry when the shape of its values changes: the old values are ignored.
+
+### Expire values when the data changes
+
+A cached value is outdated as soon as the data changes. Delete it after an update:
+
+```ts
+await db.plans.update(id, changes)
+await cache.delete(planCache, id)
+```
+
+When one change affects many values, tag them, and invalidate the tag:
+
+```ts
+export const productCache = defineCacheEntry({
+  name: 'product',
+  key: (id: string) => id,
+  tags: (id: string) => [`product:${id}`, 'catalog'],
+})
+
+await cache.invalidateTags(['catalog']) // after an import: every product expires
+```
+
+Tags are computed from the arguments of the entry, not from the value: a value expires without being read.
+
+### Serve outdated values when the source fails
+
+Some data is better a little outdated than missing. An entry decides how expired values are served:
+
+```ts
+export const catalogCache = defineCacheEntry({
+  name: 'catalog',
+  ttl: '5m',
+  grace: '1d', // when the loader fails, serve the expired value, for one more day
+  staleWhileRevalidate: '1m', // serve the expired value at once, and refresh it in the background
+  timeout: '300ms', // a slow loader serves the expired value, and goes on in the background
+})
+```
+
+| Option | Effect, once the `ttl` is over |
+| --- | --- |
+| `grace` | When the loader fails or times out, the expired value is served instead of the error. |
+| `graceBackoff` | After such a failure, the loader is not called again for this delay (`10s` by default). |
+| `staleWhileRevalidate` | The expired value is served at once, and reloaded in the background. |
+| `timeout` | A load slower than this serves the expired value of the grace period. |
+| `hardTimeout` | A load slower than this fails, or serves the expired value. |
+| `lock` | One instance loads a missing value, the others wait for it (Redis). |
+
+### When the store fails
+
+The cache is an optimization: by default, it **fails open**. When the store is down, a read becomes a miss (the loader runs), a write is skipped, and the app keeps working. Every failure is logged, and passed to `onError`:
+
+```ts
+const cache = createCache({
+  store,
+  prefix: 'app',
+  storeTimeout: '200ms', // a slower store counts as a failure
+  onError: (error, { operation }) => metrics.increment('cache.store_error', { operation }),
+})
+```
+
+Set `storeTimeout`: while a Redis client reconnects, its commands wait, and the requests would wait with them.
+
+### Stores
+
+| Store | Import | Use |
+| --- | --- | --- |
+| `createMemoryStore()` | `@dotpress/cache` | one instance, development, tests |
+| `createRedisStore({ client })` | `@dotpress/cache/redis` | Redis or Valkey, with a node-redis or ioredis client |
+| `createUpstashStore()` | `@dotpress/cache/upstash` | Upstash Redis, over HTTP |
+| `createCloudflareKvStore()` | `@dotpress/cache/cloudflare-kv` | Cloudflare Workers KV |
+
+With several instances of the API, use a shared store: with the memory store, each instance has its own cache, and an invalidation only reaches one of them.
+
+```ts
+import { createClient } from 'redis'
+import { createRedisStore } from '@dotpress/cache/redis'
+
+const client = createClient({ url: env.REDIS_URL })
+client.on('error', (error) => logger.error({ error }, 'Redis error'))
+await client.connect()
+
+const cache = createCache({ store: createRedisStore({ client }), prefix: 'app', storeTimeout: '200ms' })
+// On shutdown: await client.close()
+```
+
+## Using both
+
+The two tools combine: the cache keeps the result across requests, and the memo avoids repeated queries while computing it on a miss. In the [Cache example](/examples/cache) (simplified here), the list of articles is cached for a minute; when it is computed, the authors are loaded with one batched query:
+
+```ts
+handler: ({ cache, memo }) =>
+  cache.getOrSet(articleListCache, async () => {
+    const articles = await db.articles.list()
+    // On a miss only: one query for every author, through the memo
+    return Promise.all(articles.map((article) => toView(memo, loadAuthor, article)))
+  })
+```
+
+The example counts the queries of its fake database: its tests show what each tool saves.
+
+## Outside a route
+
+Both tools work without an app, in a worker or a script:
+
+```ts
+import { createCache, createMemo } from '@dotpress/cache'
+
+const memo = createMemo() // one per message or job
+const account = await memo(loadAccount, id)
+
+const cache = createCache({ store, prefix: 'app' })
+const plan = await cache.getOrSet(planCache, planId, () => billing.getPlan(planId))
+```
+
+### Memo without passing the context
+
+Services deep in the code do not always receive `ctx`. With `memoScope: asyncLocalMemo`, each request runs in the scope of its memo (`AsyncLocalStorage`), and a memoized loader works anywhere during the request:
+
+```ts
+import { asyncLocalMemo, memoized } from '@dotpress/cache/als'
+
+const app = await createApp({ adapter, plugins: [cachePlugin({ cache, memoScope: asyncLocalMemo })] })
+
+export const getAccount = memoized(loadAccount)
+// in any service called during the request:
+const account = await getAccount(id)
+```
+
+In an event listener or a job, open a scope with `runWithMemo(() => …)`: one memo per message.

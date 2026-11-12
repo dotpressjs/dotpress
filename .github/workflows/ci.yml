@@ -9,6 +9,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Lint, build, test (Node ${{ matrix.node }})
@@ -112,6 +115,11 @@ jobs:
     # (Verdaccio): versions, dist-tags, @dotpress/auth 1.x kept as latest.
     name: Release dry run
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The changelogs link each changeset to its pull request: reading the
+      # pull request of a commit needs this permission.
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:

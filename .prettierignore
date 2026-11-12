@@ -8,4 +8,5 @@ dev
 
 # Hand-written documentation: no automatic reformatting
 *.md
+*.mdx
 **/__snapshots__/**

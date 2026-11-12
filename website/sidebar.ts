@@ -1,24 +1,44 @@
 import type { Sidebar, SidebarGroup } from '@rspress/core'
 
-// The pages of the documentation, in reading order. One sidebar for the
-// whole site: each section stays visible from any page.
-const groups: SidebarGroup[] = [
+// The pages of the site, in reading order: the concepts, then HTTP routing
+// on the adapter of your choice, then authentication, then the services.
+// The guides share one sidebar; the reference and the examples have their
+// own, so that the API details do not get in the way of the guides.
+
+const guides: SidebarGroup[] = [
   {
     text: 'Getting started',
     items: [
+      { text: 'Introduction', link: '/getting-started/introduction' },
       { text: 'Installation', link: '/getting-started/installation' },
-      { text: 'Your first app', link: '/getting-started/first-app' },
+      { text: 'Quickstart', link: '/getting-started/quickstart' },
       { text: 'Project structure', link: '/getting-started/project-structure' },
     ],
   },
   {
     text: 'Concepts',
     items: [
+      { text: 'How Dotpress works', link: '/concepts/how-it-works' },
       { text: 'Request pipeline', link: '/concepts/request-pipeline' },
-      { text: 'Returned errors', link: '/concepts/errors' },
-      { text: 'Validation and typing', link: '/concepts/validation' },
       { text: 'Request context', link: '/concepts/context' },
-      { text: 'Plugins', link: '/concepts/plugins' },
+      { text: 'End-to-end typing', link: '/concepts/typing' },
+      { text: 'Returned errors', link: '/concepts/errors' },
+    ],
+  },
+  {
+    text: 'HTTP routing',
+    items: [
+      { text: 'Routes', link: '/routing/routes' },
+      { text: 'Route groups', link: '/routing/groups' },
+      { text: 'Validation', link: '/routing/validation' },
+      { text: 'Responses', link: '/routing/responses' },
+      { text: 'Errors', link: '/routing/errors' },
+      { text: 'Middlewares and filters', link: '/routing/middlewares' },
+      { text: 'Bodies and file uploads', link: '/routing/bodies' },
+      { text: 'CORS, cookies and base path', link: '/routing/http-options' },
+      { text: 'Logging and error hooks', link: '/routing/logging' },
+      { text: 'Plugins', link: '/routing/plugins' },
+      { text: 'Testing', link: '/routing/testing' },
     ],
   },
   {
@@ -32,14 +52,27 @@ const groups: SidebarGroup[] = [
     ],
   },
   {
-    text: 'Packages',
+    text: 'Authentication',
     items: [
-      { text: 'Auth', link: '/packages/auth' },
-      { text: 'OpenAPI', link: '/packages/openapi' },
-      { text: 'Mailer', link: '/packages/mailer' },
-      { text: 'Events', link: '/packages/events' },
-      { text: 'Cache', link: '/packages/cache' },
-      { text: 'Testing', link: '/packages/testing' },
+      { text: 'Overview', link: '/auth/' },
+      { text: 'Data provider', link: '/auth/data-provider' },
+      { text: 'Protecting routes', link: '/auth/protecting-routes' },
+      { text: 'Sessions and tokens', link: '/auth/sessions' },
+      { text: 'Cookie mode and CSRF', link: '/auth/cookies' },
+      { text: 'Clients', link: '/auth/clients' },
+      { text: 'Passwords and brute force', link: '/auth/passwords' },
+      { text: 'Keys and rotation', link: '/auth/keys' },
+      { text: 'Security checklist', link: '/auth/security' },
+    ],
+  },
+  {
+    text: 'Services',
+    items: [
+      { text: 'OpenAPI and API docs', link: '/services/openapi' },
+      { text: 'Emails', link: '/services/mailer' },
+      { text: 'Events and workers', link: '/services/events' },
+      { text: 'Cache and memoization', link: '/services/cache' },
+      { text: 'Testing helpers', link: '/services/testing' },
     ],
   },
   {
@@ -50,37 +83,52 @@ const groups: SidebarGroup[] = [
       { text: 'Event workers', link: '/deployment/event-workers' },
     ],
   },
+]
+
+const reference: SidebarGroup[] = [
   {
-    text: 'Reference',
+    text: 'API reference',
     items: [
-      { text: 'Migrate from v1', link: '/migrate-from-v1' },
+      { text: 'Application', link: '/reference/application' },
+      { text: 'Routes and groups', link: '/reference/routes' },
+      { text: 'Request context', link: '/reference/context' },
+      { text: 'Responses and errors', link: '/reference/responses' },
+      { text: 'Plugin API', link: '/reference/plugins' },
+    ],
+  },
+  {
+    text: 'Upgrading',
+    items: [{ text: 'Migrate from v1', link: '/reference/migrate-from-v1' }],
+  },
+  {
+    text: 'Design decisions',
+    items: [
+      { text: 'Overview', link: '/reference/design-decisions/' },
       {
-        text: 'Design decisions',
-        link: '/design-decisions/',
-        collapsible: true,
-        collapsed: true,
-        items: [
-          {
-            text: 'Errors are returned',
-            link: '/design-decisions/returned-errors',
-          },
-          {
-            text: 'A declarative registry',
-            link: '/design-decisions/declarative-registry',
-          },
-          {
-            text: 'No decorators, no DI',
-            link: '/design-decisions/no-decorators',
-          },
-          {
-            text: 'A transport-agnostic core',
-            link: '/design-decisions/agnostic-core',
-          },
-          { text: 'No edge runtime in 2.0', link: '/design-decisions/edge' },
-        ],
+        text: 'Errors are returned',
+        link: '/reference/design-decisions/returned-errors',
+      },
+      {
+        text: 'A declarative registry',
+        link: '/reference/design-decisions/declarative-registry',
+      },
+      {
+        text: 'No decorators, no DI',
+        link: '/reference/design-decisions/no-decorators',
+      },
+      {
+        text: 'A transport-agnostic core',
+        link: '/reference/design-decisions/agnostic-core',
+      },
+      {
+        text: 'No edge runtime in 2.0',
+        link: '/reference/design-decisions/edge',
       },
     ],
   },
+]
+
+const examples: SidebarGroup[] = [
   {
     text: 'Examples',
     items: [
@@ -97,4 +145,8 @@ const groups: SidebarGroup[] = [
   },
 ]
 
-export const sidebar: Sidebar = { '/': groups }
+export const sidebar: Sidebar = {
+  '/reference/': reference,
+  '/examples/': examples,
+  '/': guides,
+}

@@ -1,0 +1,78 @@
+# Introduction
+
+Dotpress is a lightweight TypeScript framework for backend APIs. You declare each route with `defineRoute()`: a path, Zod schemas and a handler. Dotpress validates the request, types it from your schemas and from the path, and runs your app on the HTTP server you choose.
+
+```ts twoslash
+import { createRouteGroup, notFoundError } from '@dotpress/core'
+
+declare const members: {
+  find(orgId: string, id: string): Promise<{ id: string; name: string } | undefined>
+}
+
+// Every route of the group starts with /orgs/:orgId/members
+const orgMembers = createRouteGroup('/orgs/:orgId/members')
+
+orgMembers.defineRoute({
+  path: '/:memberId',
+  handler: async ({ req }) => {
+    const member = await members.find(req.params.orgId, req.params.memberId)
+    return member ?? notFoundError('Member not found')
+  },
+})
+```
+
+Hover `req.params`: `orgId` comes from the group, `memberId` from the route. No annotation, no decorator, no class.
+
+## Why Dotpress
+
+Building an API in TypeScript usually means picking one of two compromises:
+
+- **A minimal HTTP framework** (Express, Fastify, Hono): quick to start, but the validation, the request types, the error format and the documentation are yours to write, and to keep in sync by hand. Middleware chains grow, and nothing tells the handler what they did.
+- **A full framework** with decorators, classes and a dependency injection container: structured, but verbose, and tied to its own way of doing everything.
+
+With a minimal framework, the application also ends up coupled to it. Handlers take its request and response objects, middlewares follow its conventions, and errors go through its error handlers. Each framework does these differently, so moving to another one, or to another way of running the app, means rewriting the HTTP layer.
+
+Dotpress sits in between: the structure of a framework, with the syntax of plain functions and objects. It standardizes the HTTP layer and abstracts it from the server:
+
+- **one way to write your API**: the same routes, middlewares, errors and responses, whatever the HTTP framework underneath;
+- **the server is a choice you can change**: Express, Fastify or Hono, picked by an adapter, in one line;
+- **so is the way you run it**: a long-running Node.js instance or AWS Lambda for the API, and workers for the [events](/services/events), with the same code.
+
+## What you get
+
+- **Routes as declarations.** `defineRoute()` and `createRouteGroup()` take plain objects. Groups share a path prefix and middlewares, and nest.
+- **Validation and types from your schemas.** Zod schemas validate the path parameters, the query, the body, the uploaded files and the response. The handler receives the parsed values, typed. Path parameters are typed from the path itself.
+- **Errors are values.** A handler returns `notFoundError()` like any other value. Every error, from a failed validation to an unexpected exception, uses the same JSON format.
+- **Typed middlewares.** A middleware can guarantee a value to the handlers that use it, such as the authenticated user, and TypeScript knows it.
+- **Any HTTP server.** The core only relies on Web standards. The same app runs on Express, Fastify or Hono, on Node.js or AWS Lambda, with the same routing rules.
+- **Tested in memory.** The memory adapter runs requests without opening a port.
+- **Packages when you need them.** Authentication, OpenAPI documents, emails, events, cache and testing helpers, each in its own package, each optional.
+
+## What Dotpress is not
+
+- **Not a full-stack framework.** No views, no ORM: use the database library you prefer.
+- **No dependency injection container.** Services are plain functions and objects, given to the app or exposed through the request context (see [Project structure](./project-structure)).
+- **Not on edge runtimes in 2.0.** The core is portable, but Dotpress 2.0 supports Node.js and AWS Lambda (see [the design decision](/reference/design-decisions/edge)).
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| `@dotpress/core` | Routes, validation, request pipeline, responses, errors, plugins |
+| `@dotpress/adapter-express` | Express 4 and 5 |
+| `@dotpress/adapter-fastify` | Fastify 5, on Node.js and AWS Lambda |
+| `@dotpress/adapter-hono` | Hono 4, on Node.js and AWS Lambda |
+| `@dotpress/auth` | JWT authentication: login, refresh token rotation, cookie sessions, typed `ctx.user` |
+| `@dotpress/openapi` | OpenAPI 3.1 documents from your routes, and a Scalar API reference |
+| `@dotpress/mailer` | Typed, multilingual email templates (MJML or HTML) |
+| `@dotpress/events` | Typed events and listeners, run by workers |
+| `@dotpress/cache` | Request memoization with batching, and a resilient cache |
+| `@dotpress/testing` | Memory adapter and assertions for tests |
+
+:::warning Alpha
+Dotpress 2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
+:::
+
+:::tip Coming from v1
+Dotpress 2 is a rewrite. `dotpress` is replaced by `@dotpress/core` and an adapter, and most options changed name. See [Migrate from v1](/reference/migrate-from-v1).
+:::

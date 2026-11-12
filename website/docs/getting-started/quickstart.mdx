@@ -1,0 +1,195 @@
+import { PackageManagerTabs } from '@rspress/core/theme'
+
+# Quickstart
+
+Build a small tasks API on Express in a few minutes: a first route, validated routes, a returned error, the API reference, and a test.
+
+## 1. Create the project
+
+```sh
+mkdir tasks-api && cd tasks-api
+npm init -y
+npm pkg set type=module
+```
+
+<PackageManagerTabs command="install @dotpress/core @dotpress/adapter-express express zod" />
+
+Then add the `tsconfig.json` of [Installation](./installation#configure-typescript).
+
+## 2. Your first route
+
+```ts title="src/server.ts"
+import { createApp, defineRoute } from '@dotpress/core'
+import { expressAdapter } from '@dotpress/adapter-express'
+
+defineRoute({
+  path: '/hello/:name',
+  handler: ({ req }) => ({ message: `Hello, ${req.params.name}!` }),
+})
+
+const app = await createApp({ adapter: expressAdapter() })
+await app.listen(3000)
+```
+
+Run it, with Node.js 22.18 or later:
+
+```sh
+node --watch src/server.ts
+```
+
+```sh
+curl localhost:3000/hello/Ada
+# {"message":"Hello, Ada!"}
+```
+
+The handler returns a value: Dotpress sends it as JSON. `req.params.name` is typed `string`, from the path.
+
+## 3. Validated routes
+
+Move the routes to their own file, and add a group of routes for the tasks. The schemas validate each request, and type it:
+
+```ts twoslash title="src/routes.ts"
+import { createRouteGroup, defineRoute, notFoundError } from '@dotpress/core'
+import { z } from 'zod'
+
+defineRoute({
+  path: '/hello/:name',
+  handler: ({ req }) => ({ message: `Hello, ${req.params.name}!` }),
+})
+
+const Task = z.object({ id: z.uuid(), title: z.string(), done: z.boolean() })
+type Task = z.infer<typeof Task>
+
+const store = new Map<string, Task>()
+const tasks = createRouteGroup('/tasks')
+
+tasks.defineRoute({
+  method: 'post',
+  path: '/',
+  status: 201,
+  schema: (z) => ({
+    body: z.object({ title: z.string().trim().min(1) }),
+    response: Task,
+  }),
+  handler: ({ req }) => {
+    const task = { id: crypto.randomUUID(), title: req.body.title, done: false }
+    store.set(task.id, task)
+    return task
+  },
+})
+
+tasks.defineRoute({
+  path: '/:id',
+  schema: () => ({ response: Task }),
+  handler: ({ req }) => store.get(req.params.id) ?? notFoundError('Task not found'),
+})
+```
+
+Hover `req.body` and `req.params`. Then import the routes in `src/server.ts`, before creating the app:
+
+```ts title="src/server.ts"
+import { createApp } from '@dotpress/core'
+import { expressAdapter } from '@dotpress/adapter-express'
+import './routes.ts'
+
+const app = await createApp({ adapter: expressAdapter() })
+await app.listen(3000)
+```
+
+An invalid body never reaches the handler:
+
+```sh
+curl -X POST localhost:3000/tasks -H 'content-type: application/json' -d '{"title":""}'
+```
+
+```json
+{
+  "status": 400,
+  "error": "VALIDATION_FAILED",
+  "message": "Validation failed",
+  "data": {
+    "issues": [
+      {
+        "source": "body",
+        "path": ["title"],
+        "code": "too_small",
+        "message": "Too small: expected string to have >=1 characters"
+      }
+    ]
+  }
+}
+```
+
+And an unknown task gets the error returned by the handler:
+
+```sh
+curl localhost:3000/tasks/unknown
+# {"status":404,"error":"NOT_FOUND","message":"Task not found"}
+```
+
+## 4. The API reference
+
+<PackageManagerTabs command="install @dotpress/openapi" />
+
+The OpenAPI plugin builds the document from your routes and schemas. Create the app in its own file, so that the tests can create it too:
+
+```ts title="src/app.ts"
+import { createApp, type HttpAdapter } from '@dotpress/core'
+import { openapiPlugin } from '@dotpress/openapi'
+import './routes.ts'
+
+export const createTasksApp = <TAdapter extends HttpAdapter>(adapter: TAdapter) =>
+  createApp({
+    adapter,
+    plugins: [openapiPlugin({ info: { title: 'Tasks API', version: '1.0.0' } })],
+  })
+```
+
+```ts title="src/server.ts"
+import { expressAdapter } from '@dotpress/adapter-express'
+import { createTasksApp } from './app.ts'
+
+const app = await createTasksApp(expressAdapter())
+await app.listen(3000)
+```
+
+Open [localhost:3000/docs](http://localhost:3000/docs): every route is documented, with its parameters, body and responses. The document itself is served at `/openapi.json`.
+
+## 5. A test
+
+<PackageManagerTabs command="install -D vitest @dotpress/testing" />
+
+The memory adapter runs the requests in memory, without opening a port: the test uses the app as configured in production.
+
+```ts title="test/tasks.test.ts"
+import { memoryAdapter } from '@dotpress/testing'
+import { expect, it } from 'vitest'
+import { createTasksApp } from '../src/app.ts'
+
+it('creates a task', async () => {
+  const adapter = memoryAdapter()
+  await createTasksApp(adapter)
+
+  const res = await adapter.fetch(
+    new Request('http://localhost/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Write a test' }),
+    })
+  )
+
+  expect(res.status).toBe(201)
+  expect(await res.json()).toMatchObject({ title: 'Write a test', done: false })
+})
+```
+
+```sh
+npx vitest run
+```
+
+## Next steps
+
+- Understand [how Dotpress works](/concepts/how-it-works), then the [request pipeline](/concepts/request-pipeline).
+- Organize a growing app: [Project structure](./project-structure).
+- Go further with routes: [Route groups](/routing/groups), [Validation](/routing/validation), [Responses](/routing/responses), [Middlewares](/routing/middlewares).
+- See a complete project: the [Express example](/examples/express).

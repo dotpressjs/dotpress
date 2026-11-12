@@ -9,7 +9,7 @@ hero:
   actions:
     - theme: brand
       text: Get started
-      link: /getting-started/installation
+      link: /getting-started/introduction
     - theme: alt
       text: Examples
       link: /examples/
@@ -20,7 +20,7 @@ features:
     icon: 🔷
     span: 6
   - title: Errors are returned
-    details: Handlers return their errors instead of throwing them, so the errors of a route are part of its type.
+    details: Handlers return their errors like any other value. Every error, from a failed validation to an unexpected exception, has the same JSON format.
     icon: ↩️
     span: 6
   - title: Any HTTP server

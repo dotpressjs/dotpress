@@ -1,4 +1,4 @@
-# Auth
+# Data provider
 
 :::info Coming soon
 This page is being written.

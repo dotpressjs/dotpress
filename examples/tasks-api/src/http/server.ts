@@ -1,13 +1,15 @@
+// Entry point of the API: config → services → app → listen.
 import { fastifyAdapter } from '@dotpress/adapter-fastify'
 import { createConsoleLogger } from '@dotpress/core'
+import { loadConfig, requireInProduction } from '../config.ts'
+import { openDatabase } from '../db/database.ts'
+import { loadKeys } from '../features/auth/keys.ts'
+import { createNotifications } from '../features/notifications/listeners.ts'
+import { createBus, createTransport } from '../services/bus.ts'
+import { createCacheStore } from '../services/cache-store.ts'
+import { createRepositories } from '../services/index.ts'
+import { createAppMailer, createMailProvider } from '../services/mailer.ts'
 import { createTasksApp } from './app.ts'
-import { loadKeys } from './auth/keys.ts'
-import { createBus, createTransport } from './bus.ts'
-import { createCacheStore } from './cache-store.ts'
-import { loadConfig, requireInProduction } from './config.ts'
-import { openDatabase } from './db/database.ts'
-import { createNotifications } from './notifications/listeners.ts'
-import { createAppMailer, createMailProvider } from './notifications/mailer.ts'
 
 const config = loadConfig()
 requireInProduction(config, [
@@ -19,7 +21,8 @@ requireInProduction(config, [
 ])
 const logger = createConsoleLogger()
 
-const db = openDatabase(config.DATABASE_PATH)
+// The services of this process, created once, closed on shutdown.
+const repositories = createRepositories(openDatabase(config.DATABASE_PATH))
 const cacheStore = await createCacheStore(config.REDIS_URL)
 const mailProvider = createMailProvider(config)
 const transport = createTransport(config)
@@ -31,7 +34,7 @@ if (transport.kind === 'memory') {
 
 const app = await createTasksApp({
   adapter: fastifyAdapter(),
-  db,
+  repositories,
   keys: loadKeys(config),
   publicUrl: config.publicUrl,
   cacheStore: cacheStore.store,
@@ -40,7 +43,7 @@ const app = await createTasksApp({
   events: createBus(
     transport,
     createNotifications({
-      db,
+      repositories,
       mailer: createAppMailer(mailProvider, config.MAIL_FROM),
     }),
     { logger }
@@ -60,7 +63,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       .then(() => cacheStore.close())
       .then(() => {
         mailProvider.close?.()
-        db.close()
+        repositories.db.close()
       })
   })
 }

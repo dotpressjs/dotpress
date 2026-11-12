@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { all, get, run, transaction, type Database } from '../db/database.ts'
+import { all, get, run, transaction, type Database } from '../../db/database.ts'
 
 export type Role = 'owner' | 'member'
 

@@ -47,7 +47,7 @@ POST /users                         sign up (public)
   GET /:id  PATCH /:id              the membership is checked once the task is loaded
 ```
 
-`requireMember` (`src/loaders.ts`) checks the membership once for every route of the group, and memoizes the role: a handler that reads it again, to check the owner for instance, makes no other query.
+`requireMember` (`src/features/projects/access.ts`) checks the membership once for every route of the group, and memoizes the role: a handler that reads it again, to check the owner for instance, makes no other query.
 
 ## Run it
 
@@ -103,7 +103,7 @@ Stop the worker, assign a task, then start it again: the email is sent, as the m
 
 ## Notifications
 
-- **Events carry identifiers** (`taskId`, `assigneeId`), not data: queues store the messages, and the listeners load what they need from the database (`src/notifications/listeners.ts`).
+- **Events carry identifiers** (`taskId`, `assigneeId`), not data: queues store the messages, and the listeners load what they need from the database (`src/features/notifications/listeners.ts`).
 - **The worker opens the same SQLite file** as the API: one more reason for SQLite (see below).
 - **One email per message**: a queue delivers a message at least once, and may deliver it again after a timeout. The listeners record the messages they handled (`handled_messages` table), so a second delivery sends nothing.
 - **Outdated messages are ignored**: a task reassigned or reopened before the worker handles the event sends nothing.
@@ -117,7 +117,7 @@ The data lives in a SQLite file (`data/tasks.db`), through `node:sqlite`, built 
 - **real SQL**: tables, foreign keys, indexes, transactions, like the database of a real app;
 - **one file for several processes**: the API, the worker and `npm run seed` open the same database. The listeners of the worker load the tasks and the users the API wrote, which an in-memory store would not allow.
 
-`node:sqlite` is still experimental in Node.js 22, which prints an `ExperimentalWarning` once; Node.js 24 and later do not. For production with several instances, use a database server: the repositories (`src/*/repository.ts`) are asynchronous, so replacing SQLite with Postgres changes their queries, not their callers. The schema (`src/db/schema.sql`) is applied at startup; a real app would use migrations.
+`node:sqlite` is still experimental in Node.js 22, which prints an `ExperimentalWarning` once; Node.js 24 and later do not. For production with several instances, use a database server: the repositories (`src/features/*/repository.ts`) are asynchronous, so replacing SQLite with Postgres changes their queries, not their callers. The schema (`src/db/schema.sql`) is applied at startup; a real app would use migrations.
 
 ## Configuration
 
@@ -139,34 +139,40 @@ In production, each process checks the variables it needs: the API requires `PUB
 
 `data/` holds the database and the development keys: it is ignored by git.
 
-## Files
+## Project structure
 
-| File | Content |
-| --- | --- |
-| `src/config.ts` | The settings, from the environment, validated by Zod |
-| `src/db/` | The SQLite connection and the schema |
-| `src/users/` | Accounts: sign-up, language of the user |
-| `src/auth/` | The authentication service, its data provider on SQLite, the keys |
-| `src/projects/` | Projects, members, and the cached dashboard (`stats.ts`), in nested route groups |
-| `src/tasks/` | Tasks: creation, list with filters, updates, and their events (`events.ts`) |
-| `src/notifications/` | The listeners, the email templates (English and French), the mail provider |
-| `src/bus.ts` | The event transport (BullMQ or in-memory) and the event bus |
-| `src/loaders.ts` | Values loaded once per request (memo): roles and users; the `requireMember` middleware |
-| `src/cache-store.ts` | The cache store: Redis or memory |
-| `src/app.ts` | The app: routers and plugins |
-| `src/server.ts` | The Fastify server |
-| `src/worker.ts` | The worker, for `dotpress-events work` |
-| `compose.yaml` | Redis and Mailpit, for development |
-| `src/seed.ts`, `src/demo-data.ts` | The demo data (`npm run seed`) |
-| `test/scenario.test.ts` | The story of the demo, emails included |
-| `test/access.test.ts` | Who may do what |
-| `test/tasks.test.ts` | Filters, validation, queries counted for the memo (middleware and handler included) |
-| `test/stats.test.ts` | The cached dashboard, on memory and on Redis |
-| `test/app.test.ts` | Health check, OpenAPI, configuration, keys, demo data |
-| `test/notifications.test.ts` | The events of the routes, the listeners: no self-notification, one email per message, outdated messages, retries |
-| `test/mails.test.ts` | Every email in every language, escaping |
-| `test/redis.test.ts` | The queue and a worker on Redis (skipped without `REDIS_URL`) |
-| `test/mailpit.test.ts` | An email delivered over SMTP to Mailpit (skipped without it) |
-| `test/server.test.ts` | The demo data over HTTP, on Fastify |
+The code is organized by feature: everything a feature needs (routes, data access, events, emails) lives in its folder, next to a shared base. The [project structure guide](https://dotpress.dev) explains this layout.
+
+```
+src/
+  config.ts                 the settings, from the environment, validated by Zod
+  services/                 the services, created by functions (not singletons)
+    index.ts                createRepositories(): repositories and memos over one database
+    bus.ts                  the event transport (BullMQ or in-memory) and the event bus
+    cache-store.ts          the cache store (Redis or memory)
+    mailer.ts               the mail provider (SMTP or console) and the mailer
+  http/
+    server.ts               entry point of the API: config → services → app → listen
+    app.ts                  the app: plugins and routers
+    routes.ts               the routers of the features, and the health check
+    services-plugin.ts      ctx.services, typed in every handler
+  worker.ts                 entry point of the worker (dotpress-events work)
+  seed.ts, demo-data.ts     entry point of npm run seed, and the demo data
+  db/                       the SQLite connection and the schema
+  mails/layout.ts           the layout shared by every email
+  features/
+    auth/                   the authentication service, its data provider, the keys
+    users/                  sign-up, language of the user, the memo of the users
+    projects/               projects, members, access rules (access.ts), the cached dashboard
+    tasks/                  tasks, their routes and their events
+    notifications/          the listeners of the task events, and their emails
+test/                       one file per behavior: the story, access, tasks, cache, notifications…
+```
+
+**Services are created by each entry point, once.** The API, the worker and the seed script create the services they need (the worker needs no HTTP server, no cache, no key pair), and close them on shutdown. The tests create their own, in memory: an empty SQLite database, an in-memory queue and outbox for each test.
+
+**The handlers read the services from the context.** `servicesPlugin` (`src/http/services-plugin.ts`) exposes them as `ctx.services`, declared by module augmentation: the IDE completes `ctx.services.tasks.` with the methods of the repository and their arguments, as it does for `ctx.user`, `ctx.cache` or `ctx.events`. The route files stay plain modules: no singleton to import, no dependencies to pass around.
+
+**Events belong to the feature that emits them, listeners to the feature that reacts.** `features/tasks/events.ts` defines `task.assigned`; `features/notifications/listeners.ts` reacts to it.
 
 Each feature has its own example, closer to the details: `auth` (cookies, rotation, logout), `cache` (grace period, invalidation), `events` (worker command, retries), `mailer` (previews, SMTP) and `express` (OpenAPI).

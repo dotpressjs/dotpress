@@ -2,8 +2,8 @@ import { createWorker, startWorker } from '@dotpress/events'
 import { createBullmqSource } from '@dotpress/events/bullmq'
 import { expectMailSent } from '@dotpress/testing'
 import { afterEach, describe, it, vi } from 'vitest'
-import { createTransport, redisConnection } from '../src/bus.ts'
-import { taskAssignedMail } from '../src/notifications/mails.ts'
+import { createTransport, redisConnection } from '../src/services/bus.ts'
+import { taskAssignedMail } from '../src/features/notifications/mails.ts'
 import { startApp, type TestApi } from './support.ts'
 
 // The production setup: the API queues the events in Redis (BullMQ), and a

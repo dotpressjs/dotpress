@@ -4,9 +4,10 @@ import { createMemoryStore } from '@dotpress/cache'
 import { createFakeEventBus } from '@dotpress/events'
 import { createMemoryLogger } from '@dotpress/testing'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { createTasksApp } from '../src/app.ts'
-import { generateKeys } from '../src/auth/keys.ts'
+import { createTasksApp } from '../src/http/app.ts'
+import { generateKeys } from '../src/features/auth/keys.ts'
 import { openDatabase } from '../src/db/database.ts'
+import { createRepositories } from '../src/services/index.ts'
 import { DEMO_PASSWORD, seedDemo } from '../src/demo-data.ts'
 
 // The seeded app on a real Fastify server, reached over HTTP.
@@ -19,7 +20,7 @@ beforeAll(async () => {
   const adapter = fastifyAdapter()
   const app = await createTasksApp({
     adapter,
-    db,
+    repositories: createRepositories(db),
     keys: generateKeys(),
     publicUrl: 'https://tasks.example.com',
     cacheStore: createMemoryStore(),

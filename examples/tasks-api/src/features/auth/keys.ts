@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { generateKeyPairSync } from 'node:crypto'
 import type { KeyPairSettings } from '@dotpress/auth'
-import type { Config } from '../config.ts'
+import type { Config } from '../../config.ts'
 
 /** An RSA key pair, PEM encoded as @dotpress/auth expects it. */
 export const generateKeys = (): KeyPairSettings => {

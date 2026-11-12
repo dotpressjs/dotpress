@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   taskAssignedMail,
   taskCompletedMail,
-} from '../src/notifications/mails.ts'
+} from '../src/features/notifications/mails.ts'
 
 const data = {
   recipientName: 'Bob',

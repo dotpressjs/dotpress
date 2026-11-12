@@ -1,8 +1,8 @@
 import { generatePasswordHash } from '@dotpress/auth'
 import type { Database } from './db/database.ts'
-import { createProjectRepository } from './projects/repository.ts'
-import { createTaskRepository } from './tasks/repository.ts'
-import { createUserRepository } from './users/repository.ts'
+import { createProjectRepository } from './features/projects/repository.ts'
+import { createTaskRepository } from './features/tasks/repository.ts'
+import { createUserRepository } from './features/users/repository.ts'
 
 /** Password of the demo accounts: for development only. */
 export const DEMO_PASSWORD = 'correct horse battery staple'

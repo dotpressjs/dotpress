@@ -1,5 +1,5 @@
 import type { DataProvider, RefreshTokenData } from '@dotpress/auth'
-import { get, run, type Database } from '../db/database.ts'
+import { get, run, type Database } from '../../db/database.ts'
 import type { UserRepository } from '../users/repository.ts'
 
 interface RefreshTokenRow {

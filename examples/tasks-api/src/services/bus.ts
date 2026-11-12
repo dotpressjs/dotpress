@@ -6,7 +6,7 @@ import {
   type Transport,
 } from '@dotpress/events'
 import { createBullmqTransport } from '@dotpress/events/bullmq'
-import type { Config } from './config.ts'
+import type { Config } from '../config.ts'
 
 /** BullMQ connection options from a Redis URL (`redis://` or `rediss://`). */
 export const redisConnection = (redisUrl: string) => {

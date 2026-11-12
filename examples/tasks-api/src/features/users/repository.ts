@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { all, get, placeholders, run, type Database } from '../db/database.ts'
+import {
+  all,
+  get,
+  placeholders,
+  run,
+  type Database,
+} from '../../db/database.ts'
 
 export type Locale = 'en' | 'fr'
 export const LOCALES: readonly Locale[] = ['en', 'fr']

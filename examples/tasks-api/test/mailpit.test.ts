@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createMailProvider } from '../src/notifications/mailer.ts'
+import { createMailProvider } from '../src/services/mailer.ts'
 import { startApp } from './support.ts'
 
 // The emails sent over SMTP to Mailpit, read back with its API. Local only:

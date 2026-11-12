@@ -9,8 +9,8 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "start": "node src/server.ts",
-    "dev": "node --watch src/server.ts",
+    "start": "node src/http/server.ts",
+    "dev": "node --watch src/http/server.ts",
     "worker": "dotpress-events work src/worker.ts --watch",
     "seed": "node src/seed.ts",
     "typecheck": "tsc",

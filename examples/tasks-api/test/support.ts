@@ -6,12 +6,13 @@ import {
 } from '@dotpress/events'
 import { createMemoryProvider, type MailProvider } from '@dotpress/mailer'
 import { createMemoryLogger, memoryAdapter } from '@dotpress/testing'
-import { createTasksApp } from '../src/app.ts'
-import { generateKeys } from '../src/auth/keys.ts'
-import { createBus } from '../src/bus.ts'
+import { createTasksApp } from '../src/http/app.ts'
+import { generateKeys } from '../src/features/auth/keys.ts'
+import { createBus } from '../src/services/bus.ts'
 import { openDatabase } from '../src/db/database.ts'
-import { createNotifications } from '../src/notifications/listeners.ts'
-import { createAppMailer } from '../src/notifications/mailer.ts'
+import { createRepositories } from '../src/services/index.ts'
+import { createNotifications } from '../src/features/notifications/listeners.ts'
+import { createAppMailer } from '../src/services/mailer.ts'
 
 /** One key pair per test file: generating one takes about 100 ms. */
 const keys = generateKeys()
@@ -40,12 +41,13 @@ export const startApp = async (
   } = {}
 ) => {
   const adapter = memoryAdapter()
-  const db = openDatabase(':memory:')
+  const repositories = createRepositories(openDatabase(':memory:'))
+  const { db } = repositories
   const logger = createMemoryLogger()
   const outbox = createMemoryProvider()
   const transport = createMemoryTransport({ retryDelay: () => 0 })
   const listeners = createNotifications({
-    db,
+    repositories,
     mailer: createAppMailer(
       options.mailProvider ?? outbox,
       'Tasks <noreply@example.com>'
@@ -53,7 +55,7 @@ export const startApp = async (
   })
   const app = await createTasksApp({
     adapter,
-    db,
+    repositories,
     keys,
     publicUrl: 'https://tasks.example.com',
     cacheStore: options.cacheStore ?? createMemoryStore(),

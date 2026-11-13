@@ -127,4 +127,4 @@ Check access in the query itself when you can (`WHERE id = ? AND customer_id = ?
 
 ## Reading the cookies yourself
 
-In cookie mode, a route of the app that reads the auth cookies itself must apply the same protection against cross-site requests as the plugin: `auth.isCookieAuthenticationAllowed(ctx.req)`. See [Cookie mode and CSRF](./cookies).
+In cookie mode, a route of the app that reads the auth cookies itself must apply the same protection against cross-site requests as the plugin: `await auth.isCookieAuthenticationAllowed(ctx.req)`, which resolves to `false` for a request the plugin would refuse. See [Cookie mode and CSRF](./cookies).

@@ -241,7 +241,7 @@ client.on('error', (error) => logger.error({ error }, 'Redis error'))
 await client.connect()
 
 const cache = createCache({ store: createRedisStore({ client }), prefix: 'app', storeTimeout: '200ms' })
-// On shutdown: await client.close()
+// On shutdown: await client.close() (node-redis 5 or later; quit() with node-redis 4 and ioredis)
 ```
 
 ## Using both

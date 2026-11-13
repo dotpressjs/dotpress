@@ -456,8 +456,8 @@ await createApp({ adapter, plugins: [mailerPlugin(mailer)] })
 defineRoute({
   method: 'post',
   path: '/invitations',
-  handler: async ({ mailer, body }) => {
-    await mailer.send(invitation, { to: body.email, data: { team: body.team } })
+  handler: async ({ req, mailer }) => {
+    await mailer.send(invitation, { to: req.body.email, data: { team: req.body.team } })
     return { sent: true }
   },
 })

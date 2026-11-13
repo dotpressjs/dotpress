@@ -92,7 +92,7 @@ For older browsers without `Sec-Fetch-Site`, the `Origin` is compared with the `
 
 ### Routes that read the cookies
 
-A route of your app that reads the auth cookies itself applies the same check with `auth.isCookieAuthenticationAllowed(ctx.req)`.
+A route of your app that reads the auth cookies itself applies the same check with `await auth.isCookieAuthenticationAllowed(ctx.req)`: it returns a promise, so never test it without `await`.
 
 ## An application on another site
 

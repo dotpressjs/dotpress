@@ -447,8 +447,9 @@ A refresh token can only be used once. When a used token is presented again, it 
 const { accessToken, refreshToken } = await auth.generateTokensForUser({ userId, username })
 const session = await auth.verifyAccessToken(accessToken)
 const hash = await auth.hashPassword('secret') // or generatePasswordHash()
-auth.setAuthCookies(ctx.res, { accessToken, refreshToken })
 ```
+
+In a route of the app, `auth.setAuthCookies(ctx.res, { accessToken, refreshToken })` sets the cookies of tokens generated this way.
 
 ## License
 

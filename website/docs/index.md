@@ -4,7 +4,7 @@ pageType: home
 hero:
   name: Dotpress
   text: End-to-end typed backend APIs
-  tagline: A lightweight, decorator-free TypeScript framework. Your schemas type each request, its response and its errors, on the HTTP server you choose.
+  tagline: A lightweight, decorator-free TypeScript framework. Your schemas type each request and its response, on the HTTP server you choose.
   badge: 2.0 alpha
   actions:
     - theme: brand

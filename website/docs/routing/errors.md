@@ -62,7 +62,47 @@ return errorResponse(422, 'INVALID_STATE', 'Invalid state transition', {
 
 `data` is sent to the client: never put internal details in it.
 
-All helpers return an `HttpError`, which can also be thrown, with the same result. `isHttpError(value)` recognizes one.
+All helpers return an `HttpError`, which a handler or a middleware can also throw, with the same result. `isHttpError(value)` recognizes one.
+
+## Errors of your services
+
+HTTP errors belong to the routes. A service never throws an `HttpError`: it returns `undefined` when nothing is found, and throws its own error when a business rule is broken. The handler translates it:
+
+```ts
+// services/invoices.ts
+export class InvoiceAlreadyPaidError extends Error {}
+
+export const payInvoice = async (id: string) => {
+  const invoice = await db.invoices.find(id)
+  if (!invoice) return undefined
+  if (invoice.paidAt) throw new InvoiceAlreadyPaidError(id)
+  return db.invoices.update(id, { paidAt: new Date() })
+}
+
+// routes/invoices.ts
+handler: async ({ req }) => {
+  try {
+    return (await payInvoice(req.params.id)) ?? notFoundError('Invoice not found')
+  } catch (error) {
+    if (error instanceof InvoiceAlreadyPaidError) return conflictError('Invoice already paid')
+    throw error // anything else: 500, reported by onError
+  }
+}
+```
+
+When several routes call the same service, share the translation in a function of the feature:
+
+```ts
+const toHttpError = (error: unknown) => {
+  if (error instanceof InvoiceAlreadyPaidError) return conflictError('Invoice already paid')
+  if (error instanceof InvoiceCancelledError) return unprocessableError('Invoice cancelled')
+  throw error
+}
+
+handler: ({ req }) => payInvoice(req.params.id).catch(toHttpError)
+```
+
+The service stays usable from a worker or a script, and the client only receives messages written for it. A business error left untranslated is a `500`, without details: a forgotten case shows up in `onError`, not in the response. See [the design decision](/reference/design-decisions/returned-errors#business-errors-and-http-errors).
 
 ## Errors produced by Dotpress
 

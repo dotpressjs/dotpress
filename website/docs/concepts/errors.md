@@ -68,11 +68,9 @@ return errorResponse(422, 'INVALID_TRANSITION', 'A paid invoice cannot be cancel
 
 ## Thrown errors work too
 
-Returning is the convention, but a thrown `HttpError` gives the same response. It is useful deep inside a service called by the handler:
+Returning is the convention, but a thrown `HttpError` gives the same response, from a handler, a middleware or a helper of the routes.
 
-```ts
-throw notFoundError('Customer not found')
-```
+Services do not throw `HttpError`: they throw their own business errors, and the handler translates them into the HTTP error the client receives. See [Errors of your services](/routing/errors#errors-of-your-services).
 
 ## Unexpected errors
 

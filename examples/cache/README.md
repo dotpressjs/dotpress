@@ -67,4 +67,4 @@ The cache fails open: when Redis is down or slower than 200 ms (`storeTimeout`),
 | `test/grace.test.ts` | The grace period, with a failing database and a simulated clock |
 | `test/server.test.ts` | Tests over HTTP |
 
-The [cache guide](https://dotpress.dev) covers the other stores (Upstash, Cloudflare Workers KV), the distributed lock, stale-while-revalidate, timeouts, and memos without `ctx` (`asyncLocalMemo`).
+The [cache guide](https://dotpress.dev/services/cache) covers the other stores (Upstash, Cloudflare Workers KV), the distributed lock, stale-while-revalidate, timeouts, and memos without `ctx` (`asyncLocalMemo`).

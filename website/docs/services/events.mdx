@@ -27,7 +27,7 @@ From the [Events example](/examples/events):
 ```ts file="<root>/../examples/events/src/events.ts"
 ```
 
-`load` imports the code of a listener only in the worker: the API that emits only needs the names of the listeners, not their dependencies. A listener can also be written inline, with `handle`:
+`load` imports the code of a listener, the default export of its module, only in the worker: the API that emits only needs the names of the listeners, not their dependencies. Event names use letters, digits, `.`, `_`, `:` and `-`; a listener name is unique, and renaming it orphans the messages still in queues under the old name. A listener can also be written inline, with `handle`:
 
 ```ts twoslash
 import { defineEvent, defineListener } from '@dotpress/events'
@@ -62,7 +62,7 @@ The listener receives the parsed `payload`, typed by the schema, and:
 
 ### Payloads
 
-**Payloads travel as JSON.** The bus serializes the payload, then validates it with the schema: an invalid payload throws at `emit()`, not later in a worker. Dates travel as ISO strings.
+**Payloads travel as JSON.** The bus serializes the payload, then validates it with the schema: an invalid payload throws an `EventPayloadError` at `emit()`, not later in a worker. Dates travel as ISO strings: convert them in the schema (`z.coerce.date()`, `.transform()`) if listeners need `Date` objects. Workers validate the payload again, against the current schema: a message emitted by a previous version of your code is checked too.
 
 :::warning Pass identifiers, not secrets
 Messages are stored by queues, shown in their consoles and kept in dead-letter queues. Send `{ userId }`, never a password, a token or personal data the listener can load itself.
@@ -96,13 +96,13 @@ await events.emit(
 )
 ```
 
-The payload is typed by the schema of the event. `delay`, in seconds, postpones the listeners, within the limit of the transport.
+The payload is typed by the schema of the event. `delay`, in seconds, postpones the listeners, within the limit of the transport. `emit()` returns the `emissionId`, and one `{ id, listener, transport }` per listener; an event without listeners is not sent.
 
 :::warning Emit after the transaction commits
 An event describes something that happened. Emitted inside a database transaction that rolls back, it describes something that did not. Commit first, then emit.
 :::
 
-When some messages cannot be sent (the queue is down), `emit()` throws an `EventEmitError`. Emitting again is safe: the message ids depend on the emission and the listener, so idempotent listeners ignore the duplicates.
+When some messages cannot be sent (the queue is down), `emit()` throws an `EventEmitError`, which lists the `sent` and `failed` messages. Emitting again starts a new emission, with new message ids: the listeners whose message was already sent run twice. Make listeners idempotent on the data they change (a unique constraint on the order, an idempotency key derived from it), not only on the message `id`.
 
 ## In a route
 
@@ -122,7 +122,7 @@ defineRoute({
 })
 ```
 
-`ctx.events` logs with the request logger, and adds the `requestId` to the metadata of the events: the logs of the listeners link back to the request.
+`ctx.events` logs with the request logger, and adds the `requestId` to the metadata of the events: the logs of the listeners link back to the request. Using `ctx.events` without the plugin throws an explicit error. Outside a route, `events.withContext({ logger, metadata })` does the same.
 
 ## Transports
 
@@ -142,7 +142,7 @@ The example picks its transport from the configuration: BullMQ with Redis, an in
 ```ts file="<root>/../examples/events/src/bus.ts"
 ```
 
-Several transports can be used together: name them in the bus with `transports: { default, … }`, and route an event, or a single listener, with its `transport` option. The setup of each platform (queues, dead letters, Lambda, containers) is described in [Event workers](/deployment/event-workers).
+Several transports can be used together: name them in the bus with `transports: { default, … }`, and route an event, or a single listener, with its `transport` option. Declare the names in the `EventTransports` interface to type-check them; the bus checks at startup that every listener has its transport. The setup of each platform (queues, dead letters, Lambda, containers) is described in [Event workers](/deployment/event-workers).
 
 ## Workers
 
@@ -166,7 +166,9 @@ Ctrl+C or `SIGTERM` stops the worker after the messages in progress; a second si
 | The listener throws | the message is retried, then moved to the dead-letter queue after the retry limit |
 | Invalid payload, unknown listener | retrying would not help: the message goes to the dead-letter queue at once when the transport can, or fails until the retry limit |
 
-`onFailure(error, { envelope, attempt, final, reason })`, an option of the worker, is called for every failure: use it for alerts. Set `maxAttempts` to the retry limit of the queue, so that the last attempt is reported as `final`.
+`onFailure(error, { envelope, attempt, final, reason })`, an option of the worker, is called for every failure: use it for alerts. Set `maxAttempts` to the retry limit of the queue, so that the last attempt is reported as `final`. An `unknown-listener` failure usually means a deployment mistake: a listener routed to a queue whose workers do not run it.
+
+The options, the failure reasons, the logs and the errors are listed in the [Events reference](/reference/events).
 
 ## Testing
 

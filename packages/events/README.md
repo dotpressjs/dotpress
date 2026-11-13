@@ -128,7 +128,7 @@ const user = await db.transaction(async (tx) => createUser(tx, input))
 await events.emit(userCreated, { userId: user.id })
 ```
 
-When some messages cannot be sent (a queue is down), `emit()` throws an `EventEmitError` listing the `sent` and `failed` messages. Emitting again is safe: message ids depend on the emission and the listener, so listeners that use `id` ignore the duplicates.
+When some messages cannot be sent (a queue is down), `emit()` throws an `EventEmitError` listing the `sent` and `failed` messages. Emitting again starts a new emission, with new message ids: the listeners whose message was already sent run twice. Make listeners idempotent on the data they change, not only on the message `id`.
 
 ## Several transports
 
@@ -320,7 +320,7 @@ export default {
 }
 ```
 
-Each message becomes a [BullMQ](https://docs.bullmq.io) job named after its listener, with the message id as job id: emitting again adds no duplicate while the job exists. `delay` has no upper limit.
+Each message becomes a [BullMQ](https://docs.bullmq.io) job named after its listener, with the message id as job id: the same message sent again adds no duplicate while the job exists. `delay` has no upper limit.
 
 **Job options** (`jobOptions`, merged with the defaults): 3 `attempts`, `exponential` backoff from 1 second, completed jobs removed (`removeOnComplete: true`), failed jobs kept (`removeOnFail: false`). Set `maxAttempts` of the worker to the same number of attempts, so that `onFailure` reports the last one as `final`.
 
@@ -443,7 +443,7 @@ export default {
 
 **Queues** are created on first use when they do not exist, with `queueOptions` merged with the defaults: 3 attempts (`retryLimit: 2`), exponential backoff from 1 second (`retryDelay: 1`, `retryBackoff: true`). Existing queues are not changed. With `deadLetter`, the dead-letter queue is created too: failed jobs go there after their last attempt, and messages that can never be handled at once. Set `maxAttempts` of the worker to `retryLimit + 1`.
 
-Each message is a job whose id is the message id: emitting again is ignored by pg-boss, which keeps the first job. `delay` has no upper limit.
+Each message is a job whose id is the message id: the same message sent again is ignored by pg-boss, which keeps the first job. `delay` has no upper limit.
 
 **Source**: `batchSize` jobs at a time (1 by default), handled in parallel, each with its own result (`perJobResults`): one failure does not retry the others. `pollingIntervalSeconds` sets the wait on an empty queue (0.5 at least). On stop, the source waits for the jobs in progress, up to `closeTimeout` (30 seconds by default). pg-boss errors are logged.
 
@@ -573,7 +573,7 @@ export default {
 
 The SDK speaks AMQP: Node.js only. With a connection string, the transport and the source create their own client (`close()` closes the one of the transport); pass a `client` to share it, or to use Microsoft Entra ID credentials (`@azure/identity`, with the Azure Service Bus Data Sender or Data Receiver role).
 
-Each message carries the envelope as JSON, `subject` (the event) and the application properties `event` and `listener`. Its `messageId` is the message id: with duplicate detection on the queue (`requiresDuplicateDetection`, set when the queue is created; Standard and Premium tiers), emitting again within the detection window is ignored. `delay` schedules the message (`scheduledEnqueueTimeUtc`).
+Each message carries the envelope as JSON, `subject` (the event) and the application properties `event` and `listener`. Its `messageId` is the message id: with duplicate detection on the queue (`requiresDuplicateDetection`, set when the queue is created; Standard and Premium tiers), the same message sent again within the detection window is ignored. `delay` schedules the message (`scheduledEnqueueTimeUtc`).
 
 | Limit | Value |
 | --- | --- |

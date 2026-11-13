@@ -220,7 +220,7 @@ Messages are sent in batches of 10 (`SendMessageBatch`), with `event` and `liste
 import { createSqsHandler } from '@dotpress/events/aws-sqs'
 
 export const handler = createSqsHandler(
-  createWorker({ listeners: [sendWelcomeMail, geocodeUser], logger }),
+  createWorker({ listeners: [sendWelcomeMail, geocodeUser], logger, maxAttempts: 5 }), // the maxReceiveCount
   {
     deadLetterQueueUrl: process.env.EVENTS_DLQ_URL, // optional, see below
     retryDelay: (attempt) => 30 * 2 ** (attempt - 1), // optional backoff, in seconds
@@ -360,10 +360,10 @@ import { createCloudflareQueueTransport } from '@dotpress/events/cloudflare-queu
 
 // Inside a Worker: the producer binding
 import { env } from 'cloudflare:workers'
-const transport = createCloudflareQueueTransport({ queue: () => env.EVENTS_QUEUE })
+const workerTransport = createCloudflareQueueTransport({ queue: () => env.EVENTS_QUEUE })
 
 // Anywhere else (Node.js, Lambda…): the REST API
-const transport = createCloudflareQueueTransport({
+const restTransport = createCloudflareQueueTransport({
   accountId: process.env.CF_ACCOUNT_ID!,
   queueId: process.env.CF_QUEUE_ID!, // the queue ID, not its name
   apiToken: process.env.CF_API_TOKEN!, // Queues Write permission
@@ -383,7 +383,7 @@ const transport = createCloudflareQueueTransport({
 import { createCloudflareQueueHandler } from '@dotpress/events/cloudflare-queues'
 
 export default {
-  queue: createCloudflareQueueHandler(createWorker({ listeners, maxAttempts: 5 }), {
+  queue: createCloudflareQueueHandler(createWorker({ listeners, maxAttempts: 6 }), { // max_retries + 1
     retryDelay: (attempt) => 30 * attempt, // optional, in seconds
     deadLetterQueue: () => env.EVENTS_DLQ, // optional producer binding, see below
   }),
@@ -667,8 +667,8 @@ await createApp({ adapter, plugins: [eventsPlugin(events)] })
 defineRoute({
   method: 'post',
   path: '/users',
-  handler: async ({ events, body }) => {
-    const user = await createUser(body)
+  handler: async ({ req, events }) => {
+    const user = await createUser(req.body)
     await events.emit(userCreated, { userId: user.id })
     return user
   },

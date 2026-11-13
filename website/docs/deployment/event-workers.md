@@ -36,7 +36,7 @@ node_modules/.bin/dotpress-events work src/worker.ts
 
 - **Stop**: `SIGTERM` (or Ctrl+C) stops reading, and waits for the messages in progress; a second signal, a second later or more, exits at once. Give the platform a stop delay above your slowest listener.
 - **Logs**: JSON lines on the standard error.
-- **Scale**: raise the `concurrency` of the source (messages handled at once by a worker), then the number of worker instances.
+- **Scale**: raise the number of messages a worker handles at once (`concurrency` for BullMQ, `batchSize` for SQS, pg-boss and Cloudflare, `maxMessages` for Pub/Sub, `maxConcurrentCalls` for Service Bus), then the number of worker instances.
 - **In a container**: the image of the API, with another command. See [Containers](./node#containers).
 
 In code, `startWorker(worker, source, { logger, signal })` does the same, and returns `{ stop() }`.
@@ -163,9 +163,9 @@ import {
 } from '@dotpress/events/cloudflare-queues'
 
 // Sending, inside a Worker
-const transport = createCloudflareQueueTransport({ queue: () => env.EVENTS_QUEUE })
+const workerTransport = createCloudflareQueueTransport({ queue: () => env.EVENTS_QUEUE })
 // Sending from elsewhere, with the REST API
-const transport = createCloudflareQueueTransport({ accountId, queueId, apiToken })
+const restTransport = createCloudflareQueueTransport({ accountId, queueId, apiToken })
 
 // The consumer Worker
 export default {

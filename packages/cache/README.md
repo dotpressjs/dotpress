@@ -185,7 +185,7 @@ client.on('error', (error) => logger.error({ error }, 'Redis error'))
 await client.connect()
 
 const cache = createCache({ store: createRedisStore({ client }), prefix: 'app', storeTimeout: '200ms' })
-// On shutdown: await client.close()
+// On shutdown: await client.close() (node-redis 5 or later; quit() with node-redis 4 and ioredis)
 ```
 
 The store uses the client of the app, which connects and closes it: [node-redis](https://github.com/redis/node-redis) (`redis`, v4 or later; the client recommended by Redis), or [ioredis](https://github.com/redis/ioredis) (`new Redis(url)`; also used by BullMQ). It works with Redis and [Valkey](https://valkey.io), and any server of the same protocol (Dragonfly, KeyDB…). Commands: `GET`, `MGET` (tags), `SET … PX`, `DEL`, and for the `lock` option `SET … NX PX` and a Lua script that releases a lock only with its token (no `DELEX`, which needs Redis 8.4).
@@ -244,17 +244,17 @@ import { cachePlugin } from '@dotpress/cache/plugin'
 
 await createApp({ adapter, plugins: [cachePlugin({ cache })] })
 
-const authenticate = defineMiddleware(async (ctx) => {
-  ctx.session = await ctx.memo(loadSession, ctx.req.headers.authorization)
+const requireUser = defineMiddleware(async (ctx) => {
+  const user = await ctx.memo(loadUser, ctx.req.params.userId) // loads
+  if (!user) return notFoundError('User not found')
 })
 
 defineRoute({
-  path: '/me',
-  middlewares: [authenticate],
-  handler: async ({ memo, cache, session }) => {
-    const user = await memo(loadUser, session.userId) // loaded once per request
-    const plan = await cache.getOrSet(planCache, user.planId, () => billing.getPlan(user.planId))
-    return { user, plan }
+  path: '/users/:userId/plan',
+  middlewares: [requireUser],
+  handler: async ({ req, memo, cache }) => {
+    const user = (await memo(loadUser, req.params.userId))! // memoized: no query
+    return cache.getOrSet(planCache, user.planId, () => billing.getPlan(user.planId))
   },
 })
 ```

@@ -59,7 +59,7 @@ Applications with privileged users (backoffices, admin consoles) should have an 
 `POST /auth/logout` revokes the **current session**: the other devices of the user stay logged in. With `{ "scope": "all" }`, it revokes every session of the user.
 
 - The session is identified by the refresh token (cookie, or `refreshToken` field), or by the access token. An expired access token does not prevent a logout.
-- The route is idempotent (RFC 7009): an unknown or missing token still answers `200` and clears the cookies, so that a client can always log out. Only `scope: 'all'` requires a valid token.
+- The route is idempotent (RFC 7009): an unknown or missing token still answers `200` and clears the cookies, so that a client can always log out. Only `scope: 'all'` requires a valid access token or an active refresh token, and answers `401` without.
 
 Outside the routes, `auth.revokeSession(refreshToken, { scope })` does the same. `ctx.auth.sessionId` lets an app list the sessions of a user, and log out one device with `dataProvider.revokeTokenFamily(sessionId)`.
 

@@ -36,10 +36,12 @@ The handler of Fastify sends the events to `inject()` of the instance, through [
 
 - **Lazy creation.** The app is created at the first invocation (the cold start), and reused by the next invocations of the execution environment. Invocations received meanwhile wait for the same app. The `handler` export stays synchronous: no top-level `await` in the module.
 - **Recoverable failures.** When the app cannot be created (a missing secret, a database down), the error is logged, the invocation gets the standard `500` error, and the next invocation tries again.
-- **Buffered responses.** Responses are sent once complete. `stream()` works for finite streams; Server-Sent Events (`sse()`) are not supported. Lambda response streaming is not supported yet.
-- **Binary responses** are sent in base64: every content type except text, JSON and XML, or as decided by the `isContentTypeBinary(contentType)` option.
-- **`ctx.req.ip`** is the source IP of API Gateway, or the last `X-Forwarded-For` entry behind a load balancer. Behind CloudFront or another proxy, read the right header with the `getIp(c)` option of `honoAdapter()`, or the `trustProxy` option of Fastify.
+- **Buffered responses.** Responses are sent once complete. `stream()` works for finite streams; Server-Sent Events (`sse()`) are not supported. A stream that fails is never sent truncated: with Fastify, the invocation gets an empty `500`; with Hono, it fails, and API Gateway answers `502`. Lambda response streaming is not supported yet.
+- **Binary responses** are sent in base64: every content type except text, JSON and XML (and, with Fastify, compressed responses), or as decided by the `isContentTypeBinary(contentType)` option.
+- **Query strings**, with Fastify, are read as sent when the event has them (payload v2, load balancers): plus signs and commas keep their meaning, as on the other adapters.
+- **`ctx.req.ip`** is the source IP of API Gateway, or the last `X-Forwarded-For` entry behind a load balancer (`127.0.0.1` with Fastify when the event has no address). Behind CloudFront or another proxy, read the right header with the `getIp(c)` option of `honoAdapter()`, or the `trustProxy` option of Fastify.
 - **Load balancers**: enable the multi-value headers of the target group, to receive repeated query keys and send several cookies.
+- **The Lambda event and context** are not given to the routes.
 
 | Option of `createLambdaHandler()` | Description |
 | --- | --- |

@@ -30,6 +30,9 @@ const app = await createApp({
 - **Every response** to an allowed origin gets the CORS headers, errors included, so that the client can read a `401` or a `422`.
 - **Other origins** get responses without CORS headers: the browser blocks them. CORS is not an access control: the server still answers, and authentication protects the routes.
 - `Vary: Origin` is added to every response, unless `origin` is `'*'`, so that caches do not mix origins.
+- An `origin` function that throws is logged, and refuses the origin.
+- The CORS headers are added before the `onResponse` hooks, which see the final response.
+- Native routes of the HTTP server (registered in `beforeRoutes`, for instance) are not covered: configure CORS on the server for them.
 
 :::warning
 List the origins you trust explicitly. A function that accepts any origin, combined with `credentials: true`, lets any website make requests with the cookies of your users.

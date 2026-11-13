@@ -97,6 +97,10 @@ const reference: SidebarGroup[] = [
     ],
   },
   {
+    text: 'Packages',
+    items: [{ text: 'Auth', link: '/reference/auth' }],
+  },
+  {
     text: 'Upgrading',
     items: [{ text: 'Migrate from v1', link: '/reference/migrate-from-v1' }],
   },

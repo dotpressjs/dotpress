@@ -43,7 +43,7 @@ keys: {
 
 Keep the old public key for the inactivity timeout of the sessions, not only for the lifetime of the access tokens: a refresh verifies the signature of the expired access token, so a client that was inactive for a week still presents a token of the old key.
 
-Each token carries a `kid` header, the thumbprint of its public key (RFC 7638), or `keys.kid`: the right key is picked among the configured ones only.
+Each token carries a `kid` header, the thumbprint of its public key (RFC 7638), or `keys.kid`: the right key is picked among the configured ones only. Tokens without `kid`, issued by Dotpress 1, are tried with every configured key.
 
 ### After a compromise
 

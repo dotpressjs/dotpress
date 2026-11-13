@@ -23,13 +23,13 @@ When a used refresh token comes back, it was probably stolen: the attacker and t
 ```ts
 createAuth({
   // …
-  onRefreshTokenReuse: ({ userId, familyId }) => {
+  onRefreshTokenReuse: ({ userId, familyId, jwtId }) => {
     securityLog.warn({ userId, sessionId: familyId }, 'Refresh token reused: session revoked')
   },
 })
 ```
 
-Within 10 seconds after its first use (`refreshTokenReuseInterval`), a token presented again gets a new pair in the same session, like with Auth0 or Okta: concurrent refreshes from several tabs, and retries after a lost response, keep working.
+Within 10 seconds after its first use (`refreshTokenReuseInterval`), a token presented again gets a new pair in the same session, like with Auth0 or Okta: concurrent refreshes from several tabs, and retries after a lost response, keep working. The interval is counted from the first use, and is not extended by later presentations: after it, the whole session is revoked, including the pairs issued within the interval. `refreshTokenReuseInterval: 0` disables it.
 
 ## Session lifetimes
 
@@ -48,7 +48,7 @@ session: { idleTimeout: DAY, absoluteTimeout: DAY } // backoffice: log in every 
 session: { idleTimeout: 7 * DAY, absoluteTimeout: 28 * DAY } // log in every 4 weeks
 ```
 
-With an absolute timeout, no token or cookie outlives the session, and the responses return `sessionExpiresAt`, so that the client can warn the user. An ended session makes `/auth/refresh` answer `401 EXPIRED_REFRESH_TOKEN`: the user logs in again.
+With an absolute timeout, no token or cookie outlives the session, and the responses return `sessionExpiresAt`, so that the client can warn the user. The session starts at login (the `auth_time` claim): adding an absolute timeout also ends the sessions opened before, once they are older than it. An ended session makes `/auth/refresh` answer `401 EXPIRED_REFRESH_TOKEN`: the user logs in again.
 
 :::tip
 Applications with privileged users (backoffices, admin consoles) should have an absolute timeout: a session stolen from an admin then ends within the day. Each [client](./clients#session-lifetimes-per-client) can have its own lifetimes.
@@ -61,7 +61,9 @@ Applications with privileged users (backoffices, admin consoles) should have an 
 - The session is identified by the refresh token (cookie, or `refreshToken` field), or by the access token. An expired access token does not prevent a logout.
 - The route is idempotent (RFC 7009): an unknown or missing token still answers `200` and clears the cookies, so that a client can always log out. Only `scope: 'all'` requires a valid access token or an active refresh token, and answers `401` without.
 
-Outside the routes, `auth.revokeSession(refreshToken, { scope })` does the same. `ctx.auth.sessionId` lets an app list the sessions of a user, and log out one device with `dataProvider.revokeTokenFamily(sessionId)`.
+- In cookie mode, the refresh token cookie of a cross-origin request gets `403 CROSS_ORIGIN_REQUEST`, as on `/auth/refresh`.
+
+Outside the routes, `auth.revokeSession(refreshToken, { scope })` does the same, and returns `{ userId, sessionId }`, or `undefined` when nothing was revoked. `ctx.auth.sessionId` lets an app list the sessions of a user, and log out one device with `dataProvider.revokeTokenFamily(sessionId)`.
 
 ## Revoke every session after a password change
 
@@ -90,7 +92,7 @@ The access tokens are verified without a database lookup: revoking a session doe
 
 ### Immediate revocation
 
-Implement the optional `isSessionRevoked(sessionId)` method of the data provider: the access tokens of a revoked session are rejected at once (the request stays anonymous). It costs one lookup per authenticated request, in a store shared by every instance of the API.
+Implement the optional `isSessionRevoked(sessionId)` method of the data provider: the access tokens of a revoked session are rejected at once (`SESSION_REVOKED`: the request stays anonymous). It costs one lookup per authenticated request, in a store shared by every instance of the API.
 
 The revoked sessions are already in the refresh tokens table:
 

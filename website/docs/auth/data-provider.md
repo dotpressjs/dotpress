@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | `findUserIdentifiers(username)` | ✓ | At login: `{ userId, passwordHash, role? }`, or `undefined` for an unknown username. `passwordHash` is `null` for an account without password (SSO). |
 | `findUserById(userId)` | ✓ | On every authenticated request and every refresh: the user, which becomes `ctx.user` |
-| `storeRefreshToken(token)` | ✓ | At login and at each refresh |
-| `findRefreshToken(tokenHash)` | ✓ | At each refresh and logout |
+| `storeRefreshToken(payload)` | ✓ | At login and at each refresh: `{ token, tokenHash, userId, jwtId, familyId, expiresAt }`. Store the hash, never the token. |
+| `findRefreshToken(tokenHash)` | ✓ | At each refresh and logout: `{ userId, jwtId, familyId, expiresAt, isUsed, usedAt, revokedAt }`, or `undefined`. `isUsed` can be derived from `usedAt`. |
 | `markRefreshTokenAsUsed(tokenHash, usedAt)` | ✓ | At each refresh |
 | `revokeTokenFamily(familyId)` | ✓ | At logout, and when a stolen refresh token is detected: revokes one session |
 | `revokeTokens(userId)` | ✓ | At logout of every device: revokes every session of the user |

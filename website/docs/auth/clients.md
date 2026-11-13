@@ -38,7 +38,7 @@ clients: {
 }
 ```
 
-Customers stay logged in while they use the app; admins log in every day.
+Customers stay logged in while they use the app; admins log in every day. Each timeout of a client overrides the global one, which applies when it is not set; an explicit `absoluteTimeout: undefined` removes the global absolute timeout for this client.
 
 ## Without the setting
 

@@ -2,304 +2,39 @@
 
 Caching for [Dotpress](https://dotpress.dev), at two levels:
 
-- **memo**: values loaded once per unit of work (an HTTP request, an event message, a job), shared by every function that needs them, with single flight and batching;
-- **cache**: values kept across requests and instances, in interchangeable stores, failing open when the store is down.
+- **memo**: values loaded once per request, event message or job, with single flight and batching (no N+1 queries);
+- **cache**: values kept across requests and instances, with tags, a grace period when the source fails, and stores for Redis, Valkey, Upstash and Cloudflare Workers KV. It fails open when the store is down.
 
 Works without a Dotpress app: in a script, a worker or a Lambda function.
 
 > 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ```sh
-pnpm add @dotpress/cache
-pnpm add @dotpress/core # for cachePlugin
+npm install @dotpress/cache
 ```
 
-## Memo
-
-A middleware, a route handler and a service all need the current user: with a memo, it is loaded once per request.
-
 ```ts
-import { createMemo, defineMemo } from '@dotpress/cache'
+import { createCache, createMemo, createMemoryStore, defineCacheEntry, defineMemo } from '@dotpress/cache'
 
-export const loadUser = defineMemo({
-  name: 'user',
-  load: (id: string) => db.users.findById(id),
-})
+// Memo: loaded once per unit of work
+export const loadUser = defineMemo({ name: 'user', load: (id: string) => db.users.findById(id) })
 
 const memo = createMemo() // one per request, message or job
-const user = await memo(loadUser, id) // loads
-const same = await memo(loadUser, id) // memoized
+const user = await memo(loadUser, '42') // loads; the next calls are memoized
+
+// Cache: kept across requests
+export const planCache = defineCacheEntry({ name: 'plan', key: (id: string) => id, ttl: '1h' })
+
+const cache = createCache({ store: createMemoryStore(), prefix: 'app' })
+const plan = await cache.getOrSet(planCache, user.planId, () => billing.getPlan(user.planId))
 ```
 
-- **Single flight**: calls made while a value loads share the same load. Three parallel calls with the same id make one query.
-- **Failures are shared, not kept**: the calls in progress fail together, and the next call loads again.
-- **Keys**: the arguments are compared by value (strings, numbers, booleans, `null`, `undefined`, bigints, dates, arrays, plain objects; the order of object properties does not matter). For other arguments, add a `key` option that returns a string: `key: (user) => user.id`.
-- **Updates**: `memo.set(loadUser, id, user)` after an update, `memo.delete(loadUser, id)` to load again, `memo.clear(loadUser)` or `memo.clear()`.
+With `cachePlugin()` of `@dotpress/cache/plugin`, every request gets `ctx.memo` and `ctx.cache`.
 
-A memo lives as long as its unit of work: create one per request, per event message, per job, never one per process (it would grow forever and serve old values). Values shared across requests belong in the cache.
+## Documentation
 
-Values are the objects returned by `load`, not copies: a caller that mutates one changes it for the others.
-
-### Batching
-
-With `batch` instead of `load`, the keys requested in the same tick are loaded in one call: no N+1 queries when a list renders the author of each item.
-
-```ts
-export const loadAuthor = defineMemo({
-  name: 'author',
-  // A Map by id: missing ids give undefined.
-  batch: async (ids: readonly string[]) => {
-    const users = await db.users.findManyById(ids)
-    return new Map(users.map((user) => [user.id, user]))
-  },
-  maxBatchSize: 100, // optional: keys per call
-})
-
-const authors = await Promise.all(posts.map((post) => memo(loadAuthor, post.authorId))) // one query
-```
-
-`batch` receives the keys without duplicates, and returns either a `Map` by key, or an array of values in the order of the keys, where an `Error` fails its key only. An array of the wrong length fails every key with a `MemoBatchError`.
-
-Keys requested before the batch runs join it: it runs on a timer (`setTimeout(run, 0)`), after the code that requested them, awaits included. Replace it with `schedule: (run) => …`. Keys requested once it has started go to the next batch.
-
-## Cache
-
-```ts
-import { createCache, createMemoryStore, defineCacheEntry } from '@dotpress/cache'
-import { z } from 'zod'
-
-export const userCache = defineCacheEntry({
-  name: 'user',
-  key: (id: string) => id,
-  schema: z.object({ id: z.string(), name: z.string(), createdAt: z.coerce.date() }), // optional
-  ttl: '1h',
-})
-
-const cache = createCache({ store: createMemoryStore(), prefix: 'app', ttl: '10m', logger })
-
-const user = await cache.getOrSet(userCache, id, () => db.users.findById(id))
-await cache.get(userCache, id) // undefined when missing or expired
-await cache.set(userCache, id, user)
-await cache.delete(userCache, id) // after an update
-```
-
-- **`getOrSet`** reads the value, or loads it with the last argument and caches it. Calls made while it loads share the load (single flight, per cache). A failed load is not cached: the error reaches the caller, unless the grace period serves a stale value (see [Resilience](#resilience)). A load that returns `undefined` (not found) is not cached either: `getOrSet` returns `undefined`, and the type of the result includes it.
-- **`get`** returns fresh values only: undefined when missing, expired or invalidated by a tag.
-- **Keys**: `prefix:name:vVersion:key`, like `app:user:v1:42`. `key` returns a string, a number, or a value compared like the arguments of a memo; without `key`, the argument (or the arguments) is the key. Keys longer than the store accepts are hashed (SHA-256).
-- **`version`** (1 by default) is part of the key: increase it when the shape of the values changes, and the values written by the previous version are ignored.
-- **Durations**: a number of seconds, or a string: `'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'`. The `ttl` of an entry overrides the `ttl` of the cache (1 hour by default).
-- **Types**: with a `schema`, the value type comes from it; without, `getOrSet` returns the type of the loader, and `get` returns `unknown`. `defineCacheEntry<[id: string], User>({ … })` declares it.
-- **`withLogger(logger)`** returns the same cache with another logger (the logger of a request).
-
-### Values
-
-Values are serialized with JSON (or `serializer: { serialize, deserialize }`, like superjson). `undefined` is not cached; `null` is.
-
-With a `schema`, every value read is validated: a value written by an older version of the app that no longer matches is a miss, not a crash. Values are also checked when written, as they will read back: JSON turns dates into strings, so `z.date()` fails and the value is not cached (with a warning), while `z.coerce.date()` works. `getOrSet` then returns the value as it reads back, so a cache hit and a miss return the same thing.
-
-The memory store serializes too: it behaves like a shared store, and a caller cannot change a cached object.
-
-### Resilience
-
-Some data is better a little outdated than missing: a price list, a catalog, a configuration. An entry (or the cache, for every entry) sets how stale values are served:
-
-```ts
-export const catalogCache = defineCacheEntry({
-  name: 'catalog',
-  ttl: '5m',
-  grace: '1d', // stale-if-error: serve the expired value when the loader fails
-  graceBackoff: '30s', // then do not call the failing loader again for 30 seconds
-  staleWhileRevalidate: '1m', // serve the expired value and refresh it in the background
-  timeout: '300ms', // a slower loader serves the stale value, and goes on in the background
-  hardTimeout: '5s', // a slower loader fails (or serves the stale value)
-})
-```
-
-| Option | Default | Effect, once the `ttl` is over |
-| --- | --- | --- |
-| `grace` | 0 (disabled) | During this time, when the loader fails or times out, `getOrSet` returns the expired value instead of the error, with a `warn` log. |
-| `graceBackoff` | `'10s'` | After such a failure, the loader is not called again during this delay: the expired value is served directly. A successful load ends it. |
-| `staleWhileRevalidate` | 0 (disabled) | During this time, `getOrSet` returns the expired value at once and reloads it in the background (once per key). Failed refreshes are logged. |
-| `timeout` | none | With an expired value in its grace period, a load slower than this returns that value (`warn` log); the load goes on and caches its result. |
-| `hardTimeout` | none | A load slower than this fails with a `CacheTimeoutError`, or returns the expired value of the grace period. The load goes on and caches its result. |
-| `lock` | none | Distributed single flight (stores with locks, like Redis): before loading a missing value, the instance takes a lock for at most this duration; the other instances wait for the value meanwhile (reading it every 50 ms), then load it themselves if the lock was not released. Set it above the duration of the loader. |
-
-Values stay in the store for `ttl` plus the longer of `grace` and `staleWhileRevalidate`. Without a grace period, a failing loader fails the call, as without cache.
-
-### Tags
-
-Tags expire related values at once, on every store:
-
-```ts
-export const productCache = defineCacheEntry({
-  name: 'product',
-  key: (id: string) => id,
-  tags: (id: string) => [`product:${id}`, 'catalog'],
-})
-
-await cache.invalidateTags(['catalog']) // after an import
-```
-
-Each tag has a random token in the store (`prefix:_tag:name`, kept 30 days or longer); a value records the tokens of its tags when written, and `invalidateTags` replaces them. Reading a value with tags reads their tokens too (one more round trip, grouped with `getMany` when the store has it). A value whose token changed or vanished is expired: `get` returns undefined and `getOrSet` reloads it, but with a `grace` period it can still be served when the loader fails, until `ttl` plus `grace` (never by `staleWhileRevalidate`: the data changed). When the tokens cannot be read, values with tags are treated as invalidated, and new values are not cached (creating tokens again would invalidate every value of their tags). `delete` removes a value for good.
-
-### Events
-
-`onEvent(event)` is called for each result of `get` and `getOrSet`, for metrics: `{ type: 'hit' | 'miss' | 'stale', reason?: 'revalidate' | 'error' | 'timeout' | 'backoff', entry, key }`. The same events are logged at `debug` level.
-
-### Store failures
-
-The cache is an optimization: by default it **fails open**. When the store fails, a read is a miss (the loader runs), a write is skipped, and the app keeps working. Every failure is reported:
-
-- a log: `warn` for reads and writes, `error` for deletions and invalidations (they may leave outdated values), with the store, the operation, the key and the entry;
-- `onError(error, { operation, key, entry })`, for metrics or alerts (its own errors are logged and ignored); `operation` is `get`, `set`, `delete` or `invalidate`.
-
-```ts
-const cache = createCache({
-  store,
-  logger,
-  onError: (error, { operation }) => metrics.increment('cache.store_error', { operation }),
-  storeTimeout: '200ms', // a slower store counts as a failure
-  failOpen: true, // false: throw a CacheStoreError instead
-})
-```
-
-## Stores
-
-| Store | Import | Use |
-| --- | --- | --- |
-| `createMemoryStore({ maxEntries })` | `@dotpress/cache` | memory of the process: one instance, development, tests. Least recently used entries are removed beyond `maxEntries` (10,000 by default) |
-| `createRedisStore({ client })` | `@dotpress/cache/redis` | Redis or Valkey, with a node-redis or ioredis client |
-| `createUpstashStore({ url, token })` | `@dotpress/cache/upstash` | Upstash Redis over its REST API: every runtime, edge included |
-| `createCloudflareKvStore({ kv })` | `@dotpress/cache/cloudflare-kv` | Workers KV, through the binding of a Worker: values read often and changed rarely |
-
-A store implements `CacheStore`: `name`, `get(key)`, `set(key, value, ttl)` (strings, `ttl` in milliseconds), `delete(key)`, and optionally `getMany(keys)` (one round trip for the tokens of tags), `lock(key, ttl)` / `unlock(key, token)` (the `lock` option) and `maxKeyLength` (bytes).
-
-### Redis and Valkey
-
-```ts
-import { createClient } from 'redis' // or: import { Redis } from 'ioredis'
-import { createRedisStore } from '@dotpress/cache/redis'
-
-const client = createClient({ url: process.env.REDIS_URL })
-client.on('error', (error) => logger.error({ error }, 'Redis error'))
-await client.connect()
-
-const cache = createCache({ store: createRedisStore({ client }), prefix: 'app', storeTimeout: '200ms' })
-// On shutdown: await client.close() (node-redis 5 or later; quit() with node-redis 4 and ioredis)
-```
-
-The store uses the client of the app, which connects and closes it: [node-redis](https://github.com/redis/node-redis) (`redis`, v4 or later; the client recommended by Redis), or [ioredis](https://github.com/redis/ioredis) (`new Redis(url)`; also used by BullMQ). It works with Redis and [Valkey](https://valkey.io), and any server of the same protocol (Dragonfly, KeyDB…). Commands: `GET`, `MGET` (tags), `SET … PX`, `DEL`, and for the `lock` option `SET … NX PX` and a Lua script that releases a lock only with its token (no `DELEX`, which needs Redis 8.4).
-
-- Cluster clients (`createCluster()`, `new Cluster()`) are refused for now: use a standalone server, or the primary of a replicated one.
-- Set `storeTimeout`: while the client reconnects, its commands wait, and the cache would wait with them.
-- Valkey on a managed service (ElastiCache, Memorystore, Upstash with its Redis protocol endpoint) works the same way.
-
-### Upstash
-
-```ts
-import { createUpstashStore } from '@dotpress/cache/upstash'
-
-const store = createUpstashStore({
-  url: env.UPSTASH_REDIS_REST_URL,
-  token: env.UPSTASH_REDIS_REST_TOKEN, // the standard token: the read-only one cannot write
-})
-const cache = createCache({ store, prefix: 'app', storeTimeout: '500ms' })
-```
-
-The store calls the [REST API](https://upstash.com/docs/redis/features/restapi) of [Upstash Redis](https://upstash.com/docs/redis) with `fetch`: no dependency, no connection to open or close, and it runs on Cloudflare Workers, Vercel, Deno, Bun and Node.js. Each operation is one HTTPS request (`GET`, `MGET` for tags, `SET … PX`, `DEL`, and `SET … NX PX` plus a Lua script for the `lock` option). Errors of the API (`401`, `400 ERR …`) are store failures: logged, and the cache fails open. A request is limited to 10 MB on the free and pay-as-you-go plans. The `fetch` option replaces the global `fetch`.
-
-The `@upstash/redis` SDK is not needed: by default it applies `JSON.parse` to every reply, which would change the values of the cache.
-
-### Cloudflare Workers KV
-
-```jsonc
-// wrangler.jsonc
-{ "kv_namespaces": [{ "binding": "CACHE", "id": "<namespace id>" }] }
-```
-
-```ts
-import { env } from 'cloudflare:workers'
-import { createCloudflareKvStore } from '@dotpress/cache/cloudflare-kv'
-
-const cache = createCache({ store: createCloudflareKvStore({ kv: () => env.CACHE }), prefix: 'app' })
-```
-
-`kv` is the binding, or a function that returns it (resolved on use). [Workers KV](https://developers.cloudflare.com/kv) suits values read often and changed rarely (configuration, catalogs, rendered pages); keep in mind its limits:
-
-| Limit | Effect |
-| --- | --- |
-| Eventual consistency | A write, deletion or invalidation can take 60 seconds or more to reach other locations: other locations serve the previous value meanwhile. |
-| Expiration of 60 seconds at least | Shorter `ttl` are kept in the value: the cache expires them on time, KV removes them after 60 seconds. |
-| One write per second per key | Faster writes fail with a 429: a store failure (logged, fails open). Tags write a token per tag on `invalidateTags()`. |
-| Keys of 512 bytes | Longer keys are hashed. |
-| No locks | The `lock` option is ignored: single flight stays per instance. |
-| Free plan: 1,000 writes per day | Cache misses write: count them before choosing KV. |
-
-`cacheTtl` (30 seconds at least) keeps read values in the cache of the location for longer: faster reads, but changes are seen even later. Tokens of tags are read in bulk (100 keys per read).
-
-## Dotpress plugin
-
-```ts
-import { cachePlugin } from '@dotpress/cache/plugin'
-
-await createApp({ adapter, plugins: [cachePlugin({ cache })] })
-
-const requireUser = defineMiddleware(async (ctx) => {
-  const user = await ctx.memo(loadUser, ctx.req.params.userId) // loads
-  if (!user) return notFoundError('User not found')
-})
-
-defineRoute({
-  path: '/users/:userId/plan',
-  middlewares: [requireUser],
-  handler: async ({ req, memo, cache }) => {
-    const user = (await memo(loadUser, req.params.userId))! // memoized: no query
-    return cache.getOrSet(planCache, user.planId, () => billing.getPlan(user.planId))
-  },
-})
-```
-
-- `ctx.memo`: a new memo for each request, created on first use.
-- `ctx.cache` (with `cache`): the cache, logging with the request logger (request ID).
-
-### Memo without passing the context
-
-Services deep in the code do not always receive `ctx`. With `memoScope: asyncLocalMemo`, each request runs in the scope of its memo ([`AsyncLocalStorage`](https://nodejs.org/api/async_context.html): Node.js, Bun, Deno, and Cloudflare Workers with the `nodejs_compat` flag), and a memoized loader works anywhere during the request:
-
-```ts
-import { asyncLocalMemo, memoized } from '@dotpress/cache/als'
-
-await createApp({ adapter, plugins: [cachePlugin({ cache, memoScope: asyncLocalMemo })] })
-
-export const getUser = memoized(loadUser)
-
-// A service, called by a middleware, a handler or another service
-export const canEdit = async (userId: string, doc: Doc) => (await getUser(userId)).role === 'admin'
-```
-
-Outside a request (an event listener, a job, a script), open a scope with `runWithMemo()`; `currentMemo()` returns the memo of the scope (for `set` and `delete`). Outside a scope, both throw an explicit error: there is no global memo.
-
-```ts
-import { runWithMemo } from '@dotpress/cache/als'
-
-export default defineListener(orderPaid, {
-  name: 'send-invoice',
-  handle: ({ payload }) => runWithMemo(() => sendInvoice(payload.orderId)), // one memo per message
-})
-```
-
-Without `/als`, create a memo per message: `const memo = createMemo()`.
-
-## Errors
-
-| Error | Thrown when |
-| --- | --- |
-| `CacheError` | Base class of the errors of the package |
-| `MemoBatchError` | `batch` returned values that do not match the keys (`memo`: name of the memo) |
-| `CacheTimeoutError` | A load exceeded `hardTimeout`, without stale value to serve (`entry`, `key`, `timeout`) |
-| `CacheStoreError` | The store failed or timed out, with `failOpen: false` (`store`, `operation`, `key`, `cause`); also passed to `onError` |
-
-Invalid options and arguments throw a `TypeError` that names the option.
+- [Cache and memoization](https://dotpress.dev/services/cache): memo and batching, cache, invalidation and tags, resilience, store failures, stores
+- [Cache reference](https://dotpress.dev/reference/cache): every option, the stores and their limits, errors
 
 ## License
 

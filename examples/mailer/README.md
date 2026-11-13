@@ -74,4 +74,4 @@ The previews are not served when `NODE_ENV` is `production`.
 | `test/server.test.ts` | Tests over HTTP: the form, the previews, the provider |
 | `test/mailpit.test.ts` | The emails sent over SMTP to Mailpit (skipped without it) |
 
-The [mailer guide](https://dotpress.dev) covers the other providers (Amazon SES, Resend, SendGrid, Postmark, Brevo, Mailjet, Mailgun, Scaleway), attachments, tags and metadata.
+The [mailer guide](https://dotpress.dev/services/mailer) covers the other providers (Amazon SES, Resend, SendGrid, Postmark, Brevo, Mailjet, Mailgun, Scaleway), attachments, tags and metadata.

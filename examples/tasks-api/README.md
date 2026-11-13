@@ -141,7 +141,7 @@ In production, each process checks the variables it needs: the API requires `PUB
 
 ## Project structure
 
-The code is organized by feature: everything a feature needs (routes, data access, events, emails) lives in its folder, next to a shared base. The [project structure guide](https://dotpress.dev) explains this layout.
+The code is organized by feature: everything a feature needs (routes, data access, events, emails) lives in its folder, next to a shared base. The [project structure guide](https://dotpress.dev/getting-started/project-structure) explains this layout.
 
 ```
 src/

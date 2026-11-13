@@ -79,4 +79,4 @@ In cookie mode, the API accepts the cookies from its own origin only. A front-en
 | `test/keys.test.ts` | The key pair |
 | `test/server.test.ts` | Tests over HTTP, on Express |
 
-The [authentication guide](https://dotpress.dev) covers the other settings: client applications, key rotation, session timeouts, public keys for other services.
+The [authentication guide](https://dotpress.dev/auth/) covers the other settings: client applications, key rotation, session timeouts, public keys for other services.

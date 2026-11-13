@@ -70,4 +70,4 @@ Listeners can run twice: a retry after a timeout, a duplicate delivery. `notify-
 | `test/server.test.ts` | The API over HTTP, without Redis |
 | `test/redis.test.ts` | The API and the `dotpress-events work` command, with Redis |
 
-The [events guide](https://dotpress.dev) covers the other transports (Amazon SQS, Cloudflare Queues, Postgres, Google Cloud Pub/Sub, Azure Service Bus), several transports in one bus, and serverless workers.
+The [event workers guide](https://dotpress.dev/deployment/event-workers) covers the other transports (Amazon SQS, Cloudflare Queues, Postgres, Google Cloud Pub/Sub, Azure Service Bus), several transports in one bus, and serverless workers.

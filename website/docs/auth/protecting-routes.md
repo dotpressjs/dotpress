@@ -38,9 +38,11 @@ admin.defineRoute({
 | `requireRole(...roles)` | `401` | `403` without one of the roles |
 | `requireClient(...clientIds)` | `401` | `403` when the token was issued for another client, see [Clients](./clients) |
 
-A `401` carries a `WWW-Authenticate: Bearer` header (RFC 6750), with `error="invalid_token"` when the request sent an expired, revoked or invalid token: the client knows it must refresh.
+A `401` carries a `WWW-Authenticate: Bearer` header (RFC 6750), with `error="invalid_token"` when the request sent an expired, revoked or invalid token: the client knows it must refresh. Every `401` of the app gets this header, unless it already has one.
 
-Guards are [typed middlewares](/concepts/typing#middlewares-that-guarantee-a-value): in the routes using them, directly or through a group, `ctx.user` and `ctx.auth` are defined. They also declare the `bearerAuth` security scheme: the [OpenAPI document](/services/openapi) marks these routes as secured, and the API reference shows an Authorize button.
+The plugin reads the access token from the `Authorization: Bearer` header, then from its cookie in cookie mode. It never reads the request body: a route of the app can receive an `accessToken` field of its own, a third-party token for instance, without side effects.
+
+Guards are [typed middlewares](/concepts/typing#middlewares-that-guarantee-a-value): in the routes using them, directly or through a group, `ctx.user` and `ctx.auth` are defined. They also declare the `bearerAuth` security scheme (`AUTH_SECURITY_SCHEMES`), without `meta.security`: the [OpenAPI document](/services/openapi) marks these routes as secured, and the API reference shows an Authorize button.
 
 ## The type of the user
 

@@ -9,7 +9,7 @@ const passwordHash = await auth.hashPassword(password) // at sign-up
 const valid = await auth.verifyPassword(password, passwordHash)
 ```
 
-`generatePasswordHash(password, rounds)` hashes without an auth service, in a script that creates accounts.
+`generatePasswordHash(password, rounds)` hashes without an auth service, in a script that creates accounts. Like `hashPassword()`, it throws a `RangeError` beyond 72 bytes.
 
 ### The 72-byte limit
 
@@ -33,13 +33,13 @@ Follow the NIST guidelines (SP 800-63B): require long passwords rather than comp
 
 ### Raising the cost
 
-Implement the optional `updatePasswordHash(userId, passwordHash)` method of the data provider: at each successful login, a hash with another cost than `passwordHashRounds` is replaced by a new one, computed from the password just verified. Raising the cost then upgrades the users as they log in.
+Implement the optional `updatePasswordHash(userId, passwordHash)` method of the data provider: at each successful login, a hash with another cost than `passwordHashRounds` is replaced by a new one, computed from the password just verified. Raising the cost then upgrades the users as they log in. An error of the method is logged, and does not fail the login.
 
 While hashes with the previous cost remain, their accounts answer faster than unknown usernames, which reveals that they exist (see below). Accept it during the migration, or keep `passwordHashRounds` at the cost of your hashes (`10` for hashes created by Dotpress 1).
 
 ## Account enumeration
 
-A failed login gets the same `401 INVALID_LOGIN` response, in the same time, whether the username is unknown, the account has no password, or the password is wrong: unknown users are checked against a dummy hash. An attacker cannot learn which usernames exist. Two things keep it effective:
+A failed login gets the same `401 INVALID_LOGIN` response, in the same time, whether the username is unknown, the account has no password, or the password is wrong: unknown users are checked against a dummy hash, computed at startup with `passwordHashRounds`. An attacker cannot learn which usernames exist. Two things keep it effective:
 
 - `passwordHashRounds` must match the cost of the hashes in your database;
 - `onLoginFailed` must do the same work whatever the `errorType`: do not update the user row only on `invalid_password`.
@@ -55,7 +55,7 @@ Failed logins are throttled by default, before the password is checked:
 | username + IP address | 5 per minute | brute force from one client, without letting others lock the account |
 | username | 100 per hour | distributed brute force on one account |
 
-Over a limit, the login answers `429 TOO_MANY_LOGIN_ATTEMPTS` with a `Retry-After` header, and `onLoginFailed` gets `errorType: 'too_many_attempts'`. Attempts are counted whether the account exists or not, so a `429` reveals nothing. A successful login clears the counter of the client.
+Over a limit, the login answers `429 TOO_MANY_LOGIN_ATTEMPTS` with a `Retry-After` header, and `onLoginFailed` gets `errorType: 'too_many_attempts'`. Attempts are counted whether the account exists or not, so a `429` reveals nothing. A successful login clears the counter of the client. Usernames are normalized (letter case, spaces), and the keys of the counters are hashed.
 
 ```ts
 createAuth({

@@ -46,7 +46,7 @@ const res = await fetch('/auth/restore', { method: 'POST', credentials: 'include
 const session = res.ok ? await res.json() : undefined // { userId, user, expiresIn, expiresAt }
 ```
 
-Then refresh before `expiresAt` with `POST /auth/refresh`: the cookies are renewed.
+Then refresh before `expiresAt` with `POST /auth/refresh`: the cookies are renewed. `/auth/restore` requires `cookies.accessTokenInCookie`.
 
 ## The cookies
 
@@ -58,7 +58,12 @@ Then refresh before `expiresAt` with `POST /auth/refresh`: the cookies are renew
 - **The prefixes** protect the cookies: `__Host-` (secure, path `/`, no `domain`) prevents a subdomain or an insecure page from overwriting the cookie, `__Secure-` prevents an insecure page from overwriting it.
 - **The refresh token is only sent to the auth routes**, never to the rest of the API, and never with a navigation from another site (`SameSite=Strict`).
 - Its path follows the prefix of the plugin and the [base path](/routing/http-options#base-path) of the app. `cookies.refreshTokenPath` forces another one.
+- **Both cookies live as long as the refresh token**, not `accessTokenTTL`: a refresh needs the access token, even expired.
+- **The path** of the refresh token cookie must be the browser path of the auth routes: with a wrong path, the browser does not send it, and refreshes fail with `401 NO_TOKENS_PROVIDED`. It is set by `authPlugin()`, after the `basePath` or `publicBasePath` of the app; without the plugin, it is `/auth`. An auth service serves one path: create one per app when several apps serve the auth routes under different paths.
+- **Names**: without `secure`, the default names have no prefix. Custom names (`accessTokenName`, `refreshTokenName`) are kept as is, and checked at startup: a `__Host-` or `__Secure-` name without the attributes it requires would be silently rejected by browsers.
 - `secure` is `true` by default. Browsers accept secure cookies on `http://localhost`; set `secure: false` only for another plain HTTP host in development.
+
+Every setting of the cookie mode is listed in the [Auth reference](/reference/auth#cookie-settings).
 
 ## Protection against cross-site request forgery
 
@@ -66,7 +71,7 @@ The browser attaches cookies to every request, including the ones that another s
 
 - Requests from the origin of the API are accepted, as well as requests without these headers (clients that are not browsers).
 - Requests from another origin, **including another subdomain of the same site**, are accepted only from **trusted origins**.
-- Otherwise, the access token cookie is ignored (the request is anonymous, and a warning is logged), and `/auth/refresh` and `/auth/restore` answer `403 CROSS_ORIGIN_REQUEST`.
+- Otherwise, the access token cookie is ignored (the request is anonymous, and a warning is logged), and `/auth/refresh`, `/auth/restore` and `/auth/logout` answer `403 CROSS_ORIGIN_REQUEST`.
 - `GET`, `HEAD` and `OPTIONS` requests are not checked: they must not change data. Never change data in a `GET` route.
 - Requests authenticated by the `Authorization` header are not checked: another site cannot set it.
 

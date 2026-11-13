@@ -6,7 +6,7 @@ import { PackageManagerTabs } from '@rspress/core/theme'
 
 <PackageManagerTabs command="install @dotpress/mailer zod mjml" />
 
-`mjml` is only needed for MJML templates.
+`mjml` is only needed for MJML templates: with `html` templates, it is never loaded. `@dotpress/core` is only needed for the plugin.
 
 ## A layout and a template
 
@@ -46,7 +46,7 @@ await mailer.send(invoiceReady, {
 2. **MJML** compiles it to HTML. This step only depends on the template and the locale: it is cached.
 3. **Mustache** inserts the data (`{{name}}`) in the HTML, the subject and the text version.
 
-Translations can use the data too (`{ en: 'Hello {{name}}' }`), and contain HTML.
+Translations can use the data too (`{ en: 'Hello {{name}}' }`), and contain HTML. A layout and its templates use the same format, MJML or HTML; the `t()` of a layout only reads its own translations. Without a `schema`, a template accepts no data; with one, the parsed data is rendered.
 
 | Syntax | HTML version | Subject and text version |
 | --- | --- | --- |
@@ -54,14 +54,14 @@ Translations can use the data too (`{ en: 'Hello {{name}}' }`), and contain HTML
 | `{{{value}}}` | as is | as is |
 
 :::warning Escaping
-Use `{{value}}` for any data, and in particular for user input: it is HTML-escaped. Keep `{{{url}}}` for the URLs built by your app.
+Use `{{value}}` for any data, and in particular for user input: it is HTML-escaped. Keep `{{{url}}}` for the URLs built by your app. `/`, `=` and `` ` `` are not escaped, so that links work in every email client.
 :::
 
-Without a `text` source, the text version is converted from the HTML: lines wrapped at 78 characters, links followed by their URL.
+Without a `text` source, the text version is converted from the HTML: lines wrapped at 78 characters, links followed by their URL, images and hidden elements left out. The subject is a single line: line breaks become spaces.
 
 ## Locales
 
-The locales of a template are those of its subject and translations: every text needs all of them. The rendered locale is the first available among the requested locale (`fr-CA`), its language (`fr`), then the `defaultLocale` of the mailer.
+The locales of a template are those of its subject and translations: every text needs all of them. The rendered locale is the first available among the requested locale (`fr-CA`, in any case), its language (`fr`), then the `defaultLocale` of the mailer and its language. Otherwise, rendering fails. A template without translations takes the locales of its layout.
 
 ## Sending
 
@@ -84,6 +84,8 @@ await mailer.send(contactReceived, {
 
 `send()` also takes `cc`, `bcc`, `replyTo`, `from`, `subject`, `attachments` (inline ones with `contentId`), `headers`, and `tags` and `metadata` for the statistics and webhooks of the provider. Addresses, headers and attachments are checked before rendering: a line break in a name or a header throws, so user input cannot inject headers.
 
+`send()` returns the `messageId` given by the provider. `createMailer()` also takes a default `replyTo`, and a `logger` that logs each sent message, without the addresses.
+
 `mailer.sendMessage({ to, subject, html })` sends a message rendered elsewhere. `mailer.render(template, { locale, data })` renders without sending: previews and tests.
 
 ## Providers
@@ -102,7 +104,7 @@ await mailer.send(contactReceived, {
 | `createMailgunProvider()` | `@dotpress/mailer/mailgun` | Mailgun |
 | `createScalewayProvider()` | `@dotpress/mailer/scaleway` | Scaleway Transactional Email |
 
-The HTTP API providers have no dependency (`fetch`). Most email services also have an SMTP interface. A provider is an object with a `name` and a `send(message)` method: write your own for another service.
+The HTTP API providers have no dependency (`fetch`). Most email services also have an SMTP interface. A provider is an object with a `name` and a `send(message)` method: write your own for another service. The settings of each provider and their limits are in the [Mailer reference](/reference/mailer#providers).
 
 Switching provider changes one line: templates and calls stay the same. A message that the API of a provider cannot accept (too many recipients, an attachment type it refuses) throws before any request.
 
@@ -121,7 +123,7 @@ import { mailerPlugin } from '@dotpress/mailer/plugin'
 const app = await createApp({ adapter, plugins: [mailerPlugin(mailer)] })
 ```
 
-`ctx.mailer` is the mailer, logging with the request logger. From the [Mailer example](/examples/mailer): a contact form that notifies the team, and acknowledges receipt to the visitor in their language, without repeating their message (otherwise, anyone could send any text to any address through the form):
+`ctx.mailer` is the mailer, logging with the request logger. Using it without the plugin throws an explicit error. From the [Mailer example](/examples/mailer): a contact form that notifies the team, and acknowledges receipt to the visitor in their language, without repeating their message (otherwise, anyone could send any text to any address through the form):
 
 ```ts
 handler: async ({ req, mailer }) => {
@@ -163,3 +165,5 @@ Render each locale of a template in a test, to catch a missing translation or an
 | `MailRenderError` | invalid MJML, unknown translation key, no available locale |
 | `MailMessageError` | invalid address, header or attachment, or a limit of the provider |
 | `MailSendError` | the provider failed (`status`, `cause`) |
+
+The first render of an MJML template loads MJML (about 100 to 300 ms); later renders are cached by template and locale. See the [Mailer reference](/reference/mailer) for every option.

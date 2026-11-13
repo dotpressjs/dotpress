@@ -30,7 +30,7 @@ With the plugin, give the fake bus to `eventsPlugin()`: `ctx.events` records int
 
 ## Emails
 
-`expectMailSent()` checks the messages kept by the memory provider of the mailer, and returns the last matching one:
+`expectMailSent()` checks the messages kept by the memory provider of the mailer (`outbox.sent`, `last()`, `clear()`), and returns the last matching one. `renderMail(template, { locale, defaultLocale, data })` renders a template without a mailer, to test each locale:
 
 ```ts
 import { createMailer, createMemoryProvider } from '@dotpress/mailer'

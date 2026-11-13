@@ -101,6 +101,7 @@ const reference: SidebarGroup[] = [
     items: [
       { text: 'Auth', link: '/reference/auth' },
       { text: 'Events', link: '/reference/events' },
+      { text: 'Mailer', link: '/reference/mailer' },
     ],
   },
   {

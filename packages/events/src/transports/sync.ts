@@ -1,5 +1,5 @@
 import { PartialSendError } from '../errors.js'
-import type { Transport } from '../transport.js'
+import { runsInProcess, type Transport } from '../transport.js'
 import type { Worker } from '../worker.js'
 
 /**
@@ -10,12 +10,8 @@ import type { Worker } from '../worker.js'
 export const createSyncTransport = (): Transport => {
   let worker: Worker | undefined
 
-  return {
+  const transport: Transport = {
     kind: 'sync',
-    maxAttempts: 1,
-    bind: (bound) => {
-      worker = bound
-    },
     send: async (envelopes) => {
       if (!worker) {
         throw new Error('The sync transport is not used by an event bus.')
@@ -31,4 +27,10 @@ export const createSyncTransport = (): Transport => {
       if (failed.length > 0) throw new PartialSendError(failed)
     },
   }
+  return runsInProcess(transport, {
+    maxAttempts: 1,
+    bind: (bound) => {
+      worker = bound
+    },
+  })
 }

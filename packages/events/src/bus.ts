@@ -13,8 +13,9 @@ import {
   type FailedMessage,
   type MessageRef,
 } from './errors.js'
+import { toSeconds, type Duration } from './duration.js'
 import { checkLogger, silentLogger, type EventsLogger } from './logger.js'
-import { isTransport, type Transport } from './transport.js'
+import { inProcessOf, isTransport, type Transport } from './transport.js'
 import { createWorker, listenersByName, type FailureHook } from './worker.js'
 
 /** Options of `createEventBus()`. */
@@ -55,8 +56,11 @@ export interface EmitOptions {
    * only its entity. 1 to 200 characters, without control characters.
    */
   emissionId?: string | undefined
-  /** Delay before delivery, in seconds, within the limit of the transport. */
-  delay?: number | undefined
+  /**
+   * Delay before delivery, within the limit of the transport: a number of
+   * seconds, or a duration like `'5m'`, rounded up to the second.
+   */
+  delay?: Duration | undefined
   /** Metadata of the emission, passed to the listeners. */
   metadata?: Readonly<Record<string, string>> | undefined
 }
@@ -87,6 +91,12 @@ export interface EventBus {
   ): Promise<EmitResult>
   /** The same bus, with another logger and additional metadata. */
   withContext(context: EventBusContext): EventBus
+  /**
+   * Closes the transports that have a `close()` (BullMQ, pg-boss, Service
+   * Bus…), once: `eventsPlugin()` calls it when the app closes. Every
+   * transport is closed, then the first error is thrown.
+   */
+  close(): Promise<void>
 }
 
 const OPTIONS = new Set([
@@ -159,11 +169,8 @@ export const checkEmission = async (
       `${emitLabel}: emissionId must be a string of 1 to ${MAX_EMISSION_ID} characters, without control characters.`
     )
   }
-  if (delay !== undefined && (!Number.isInteger(delay) || delay < 0)) {
-    throw new TypeError(
-      `${emitLabel}: delay must be a non-negative integer (seconds).`
-    )
-  }
+  const seconds =
+    delay === undefined ? undefined : toSeconds(delay, `${emitLabel}: delay`)
   const checked = {
     ...contextMetadata,
     ...checkMetadata(emitLabel, metadata),
@@ -191,7 +198,7 @@ export const checkEmission = async (
       }))
     )
   }
-  return { event, json, emissionId, delay, metadata: checked }
+  return { event, json, emissionId, delay: seconds, metadata: checked }
 }
 
 /**
@@ -270,15 +277,31 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
 
   // In-process transports run their listeners themselves.
   for (const [name, transport] of transports) {
-    transport.bind?.(
+    const hooks = inProcessOf(transport)
+    hooks?.bind(
       createWorker({
         listeners: routed.get(name) ?? [],
         logger,
         onFailure,
-        maxAttempts: transport.maxAttempts,
+        maxAttempts: hooks.maxAttempts,
       })
     )
   }
+
+  let closing: Promise<void> | undefined
+  const close = () =>
+    (closing ??= (async () => {
+      const results = await Promise.allSettled(
+        [...new Set(transports.values())].map((transport) =>
+          transport.close?.()
+        )
+      )
+      const failure = results.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected'
+      )
+      if (failure) throw failure.reason
+    })())
 
   const listenersOf = (event: string) =>
     [...listeners.values()].filter((listener) => listener.event.name === event)
@@ -392,6 +415,7 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
 
     return Object.freeze({
       emit,
+      close,
       withContext: ({ logger: other, metadata }: EventBusContext = {}) =>
         create({
           logger:

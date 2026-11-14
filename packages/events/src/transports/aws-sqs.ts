@@ -1,3 +1,5 @@
+import { retryDelayOf, toSeconds, type Duration } from '../duration.js'
+import { queueUrlOf } from './aws-sqs-internal.js'
 import {
   ChangeMessageVisibilityCommand,
   DeleteMessageBatchCommand,
@@ -46,16 +48,17 @@ export interface SqsTransportOptions extends SqsClientOptions {
 /** How failed messages are handled, by the Lambda handler and the source. */
 export interface SqsFailureOptions extends SqsClientOptions {
   /**
-   * Dead-letter queue of the queue: messages that can never be handled
-   * (invalid payload, unknown listener) are copied there at once, instead
-   * of failing until the `maxReceiveCount` of the queue.
+   * URL of the dead-letter queue of the queue: messages that can never be
+   * handled (invalid payload, unknown listener) are copied there at once,
+   * instead of failing until the `maxReceiveCount` of the queue.
    */
-  deadLetterQueueUrl?: string | undefined
+  deadLetter?: string | undefined
   /**
-   * Delay before a failed message is delivered again, in seconds, given its
-   * attempt number. Defaults to the visibility timeout of the queue.
+   * Delay before a failed message is delivered again, given its attempt
+   * number: a number of seconds, or a duration like `'30s'`, rounded up to
+   * the second. Defaults to the visibility timeout of the queue.
    */
-  retryDelay?: ((attempt: number) => number) | undefined
+  retryDelay?: ((attempt: number) => Duration) | undefined
   logger?: EventsLogger | undefined
 }
 
@@ -71,16 +74,20 @@ export interface SqsHandlerOptions extends SqsFailureOptions {
 /** Options of `createSqsSource()`. */
 export interface SqsSourceOptions extends SqsFailureOptions {
   queueUrl: string
-  /** Long polling, in seconds (0 to 20). Defaults to 20. */
-  waitTimeSeconds?: number | undefined
-  /** Messages per request (1 to 10). Defaults to 10. */
-  batchSize?: number | undefined
+  /** Long polling, from 0 to 20 seconds. Defaults to 20 seconds. */
+  waitTime?: Duration | undefined
   /**
-   * Visibility timeout of the received messages, in seconds. When set, the
-   * source extends it while a message is being handled, so that a long
-   * listener is not delivered twice. Defaults to the one of the queue.
+   * Messages received per request and handled at once (1 to 10). Defaults
+   * to 10.
    */
-  visibilityTimeout?: number | undefined
+  concurrency?: number | undefined
+  /**
+   * Visibility timeout of the received messages, rounded up to the second.
+   * When set, the source extends it while a message is being handled, so
+   * that a long listener is not delivered twice. Defaults to the one of the
+   * queue.
+   */
+  visibilityTimeout?: Duration | undefined
   /**
    * Warns at startup when the queue has no dead-letter queue (redrive
    * policy). Defaults to true; needs `sqs:GetQueueAttributes`.
@@ -161,6 +168,24 @@ const checkInteger = (
     )
   }
   return value as number | undefined
+}
+
+/** A duration option in whole seconds (rounded up), within bounds. */
+const checkSeconds = (
+  label: string,
+  key: string,
+  value: unknown,
+  min: number,
+  max: number
+) => {
+  if (value === undefined) return undefined
+  const seconds = toSeconds(value, `${label}: ${key}`)
+  if (seconds < min || seconds > max) {
+    throw new TypeError(
+      `${label}: ${key} must be from ${min} to ${max} seconds.`
+    )
+  }
+  return seconds
 }
 
 const checkFunction = (label: string, key: string, value: unknown) => {
@@ -315,14 +340,6 @@ export const createSqsTransport = (options: SqsTransportOptions): Transport => {
   }
 }
 
-/** URL of the queue of an ARN (`arn:aws:sqs:region:account:name`). */
-export const queueUrlOf = (arn: string) => {
-  const [, partition, , region, account, name] = arn.split(':')
-  if (!partition || !region || !account || !name) return undefined
-  const domain = partition === 'aws-cn' ? 'amazonaws.com.cn' : 'amazonaws.com'
-  return `https://sqs.${region}.${domain}/${account}/${name}`
-}
-
 /** Applies the result of a message: whether to delete it from its queue. */
 const settle = async (
   result: HandleResult,
@@ -333,19 +350,20 @@ const settle = async (
     queueUrl: string | undefined
   },
   context: {
+    label: string
     client: () => SqsClient
-    deadLetterQueueUrl: string | undefined
-    retryDelay: ((attempt: number) => number) | undefined
+    deadLetter: string | undefined
+    retryDelay: ((attempt: number) => Duration) | undefined
     logger: EventsLogger
   }
 ): Promise<boolean> => {
   if (result.status === 'success') return true
 
-  if (result.status === 'dead' && context.deadLetterQueueUrl) {
+  if (result.status === 'dead' && context.deadLetter) {
     try {
       await context.client().send(
         new SendMessageCommand({
-          QueueUrl: context.deadLetterQueueUrl,
+          QueueUrl: context.deadLetter,
           MessageBody: message.body,
           MessageAttributes: {
             reason: { DataType: 'String', StringValue: result.reason },
@@ -360,7 +378,7 @@ const settle = async (
     } catch (error) {
       context.logger.error(
         {
-          deadLetterQueueUrl: context.deadLetterQueueUrl,
+          deadLetter: context.deadLetter,
           error: describe(error),
         },
         'Cannot copy the message to the dead-letter queue'
@@ -370,11 +388,14 @@ const settle = async (
   }
 
   if (result.status === 'retry' && context.retryDelay && message.queueUrl) {
-    const delay = Math.min(
-      MAX_VISIBILITY_SECONDS,
-      Math.max(0, Math.round(context.retryDelay(message.attempt)))
-    )
     try {
+      const delay = Math.min(
+        MAX_VISIBILITY_SECONDS,
+        Math.ceil(
+          retryDelayOf(context.label, context.retryDelay, message.attempt) /
+            1000
+        )
+      )
       await context.client().send(
         new ChangeMessageVisibilityCommand({
           QueueUrl: message.queueUrl,
@@ -393,15 +414,17 @@ const settle = async (
 }
 
 const failureOptions = (label: string, values: Record<string, unknown>) => {
-  const deadLetterQueueUrl =
-    values.deadLetterQueueUrl === undefined
+  const deadLetter =
+    values.deadLetter === undefined
       ? undefined
-      : checkUrl(label, 'deadLetterQueueUrl', values.deadLetterQueueUrl)
+      : checkUrl(label, 'deadLetter', values.deadLetter)
   checkFunction(label, 'retryDelay', values.retryDelay)
   return {
+    label,
     client: clientOf(label, values),
-    deadLetterQueueUrl,
-    retryDelay: values.retryDelay as ((attempt: number) => number) | undefined,
+    deadLetter,
+    retryDelay: values.retryDelay as
+      ((attempt: number) => Duration) | undefined,
     logger:
       values.logger === undefined
         ? silentLogger
@@ -412,7 +435,7 @@ const failureOptions = (label: string, values: Record<string, unknown>) => {
 const FAILURE_OPTIONS = [
   'client',
   'clientConfig',
-  'deadLetterQueueUrl',
+  'deadLetter',
   'retryDelay',
   'logger',
 ]
@@ -522,24 +545,24 @@ export const createSqsSource = (options: SqsSourceOptions): Source => {
   const values = checkOptions(label, options, [
     ...FAILURE_OPTIONS,
     'queueUrl',
-    'waitTimeSeconds',
-    'batchSize',
+    'waitTime',
+    'concurrency',
     'visibilityTimeout',
     'checkRedrivePolicy',
   ])
   const queueUrl = checkUrl(label, 'queueUrl', values.queueUrl)
   const waitTimeSeconds =
+    checkSeconds(label, 'waitTime', values.waitTime, 0, MAX_WAIT_SECONDS) ??
+    MAX_WAIT_SECONDS
+  const batchSize =
     checkInteger(
       label,
-      'waitTimeSeconds',
-      values.waitTimeSeconds,
-      0,
-      MAX_WAIT_SECONDS
-    ) ?? MAX_WAIT_SECONDS
-  const batchSize =
-    checkInteger(label, 'batchSize', values.batchSize, 1, MAX_BATCH_ENTRIES) ??
-    MAX_BATCH_ENTRIES
-  const visibilityTimeout = checkInteger(
+      'concurrency',
+      values.concurrency,
+      1,
+      MAX_BATCH_ENTRIES
+    ) ?? MAX_BATCH_ENTRIES
+  const visibilityTimeout = checkSeconds(
     label,
     'visibilityTimeout',
     values.visibilityTimeout,

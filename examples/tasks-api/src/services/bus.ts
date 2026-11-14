@@ -36,7 +36,7 @@ export const createTransport = (
 ): ClosableTransport => {
   if (config.REDIS_URL) {
     return createBullmqTransport({
-      name: config.EVENTS_QUEUE,
+      queue: config.EVENTS_QUEUE,
       connection: redisConnection(config.REDIS_URL),
     })
   }

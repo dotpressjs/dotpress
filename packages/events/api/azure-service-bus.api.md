@@ -6,7 +6,13 @@
 
 ```ts
 import type { ServiceBusClient } from '@azure/service-bus'
-import type { Source, Transport, Worker } from '@dotpress/events'
+import type {
+  Duration,
+  EventsLogger,
+  Source,
+  Transport,
+  Worker,
+} from '@dotpress/events'
 
 export type ServiceBusConnection =
   | {
@@ -18,8 +24,9 @@ export type ServiceBusConnection =
       client?: never
     }
 
-export interface ServiceBusFunctionHandlerOptions {
+export interface ServiceBusHandlerOptions {
   deadLetter?: ServiceBusTransportOptions | undefined
+  logger?: EventsLogger | undefined
 }
 
 export interface ServiceBusInvocationContext {
@@ -28,9 +35,9 @@ export interface ServiceBusInvocationContext {
 
 export type ServiceBusSourceOptions = ServiceBusConnection & {
   queue: string
-  maxConcurrentCalls?: number | undefined
-  maxAutoLockRenewalDurationInMs?: number | undefined
-  closeTimeout?: number | undefined
+  concurrency?: number | undefined
+  maxLockRenewal?: Duration | undefined
+  closeTimeout?: Duration | undefined
 }
 
 export interface ServiceBusTransport extends Transport {
@@ -41,9 +48,9 @@ export type ServiceBusTransportOptions = ServiceBusConnection & {
   queue: string
 }
 
-export declare const createServiceBusFunctionHandler: (
+export declare const createServiceBusHandler: (
   worker: Worker,
-  options?: ServiceBusFunctionHandlerOptions
+  options?: ServiceBusHandlerOptions
 ) => (message: unknown, context?: ServiceBusInvocationContext) => Promise<void>
 
 export declare const createServiceBusSource: (

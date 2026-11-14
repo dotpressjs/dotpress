@@ -38,7 +38,7 @@ describe.skipIf(!redisUrl)('with Redis', () => {
       const worker = startWorker(
         createWorker({ listeners: api.listeners }),
         createBullmqSource({
-          name: config.EVENTS_QUEUE,
+          queue: config.EVENTS_QUEUE,
           connection: redisConnection(redisUrl!),
         })
       )

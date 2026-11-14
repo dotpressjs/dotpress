@@ -21,9 +21,10 @@ const app = await createOrdersApp({
 await app.listen(port)
 logger.info(`Orders API: http://localhost:${port}/orders`)
 
-// Waits for pending requests, then closes the connection to the queue.
+// Waits for pending requests, then closes the connection to the queue
+// (eventsPlugin closes the transports of the bus with the app).
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
-    void app.close().then(() => transport.close())
+    void app.close()
   })
 }

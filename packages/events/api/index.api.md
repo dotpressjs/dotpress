@@ -15,9 +15,11 @@ export interface ConsumeOptions {
 export type DeadReason =
   'invalid-envelope' | 'unknown-listener' | 'invalid-payload'
 
+export type Duration = number | `${number}${'ms' | 's' | 'm' | 'h' | 'd'}`
+
 export interface EmitOptions {
   emissionId?: string | undefined
-  delay?: number | undefined
+  delay?: Duration | undefined
   metadata?: Readonly<Record<string, string>> | undefined
 }
 
@@ -44,6 +46,7 @@ export interface EventBus {
     options?: EmitOptions
   ): Promise<EmitResult>
   withContext(context: EventBusContext): EventBus
+  close(): Promise<void>
 }
 
 export interface EventBusContext {
@@ -92,6 +95,12 @@ export declare class EventEmitError extends EventsError {
 export type EventInput<E> =
   E extends EventDefinition<infer S> ? z.input<S> : never
 
+export interface EventOptions<S extends z.ZodType = z.ZodType> {
+  name: string
+  schema: S
+  transport?: TransportName | undefined
+}
+
 export type EventPayload<E> =
   E extends EventDefinition<infer S> ? z.output<S> : never
 
@@ -131,7 +140,7 @@ export type FailureHook = (
 
 export interface FailureInfo {
   readonly envelope: Envelope | undefined
-  readonly reason: 'listener-error' | DeadReason
+  readonly reason: RetryReason | DeadReason
   readonly attempt: number
   readonly final: boolean
 }
@@ -203,7 +212,7 @@ export interface MemoryTransport extends Transport {
 
 export interface MemoryTransportOptions {
   maxAttempts?: number | undefined
-  retryDelay?: ((attempt: number) => number) | undefined
+  retryDelay?: ((attempt: number) => Duration) | undefined
 }
 
 export interface MessageRef {
@@ -235,6 +244,8 @@ export interface RecordedEmission {
   readonly emittedAt: Date
 }
 
+export type RetryReason = 'listener-error' | 'unsupported-version'
+
 export interface RunningWorker {
   stop(): Promise<void>
   readonly done: Promise<void>
@@ -257,8 +268,7 @@ export interface StartWorkerOptions {
 export interface Transport {
   readonly kind: string
   send(envelopes: readonly Envelope[], options: SendOptions): Promise<void>
-  bind?(worker: Worker): void
-  readonly maxAttempts?: number
+  close?(): Promise<void>
 }
 
 export type TransportName = 'default' | Extract<keyof EventTransports, string>
@@ -271,6 +281,12 @@ export interface Worker {
       attempt?: number | undefined
     }
   ): Promise<HandleResult>
+}
+
+export interface WorkerEntry {
+  worker: Worker
+  source: Source
+  logger?: EventsLogger | undefined
 }
 
 export interface WorkerOptions {
@@ -292,24 +308,14 @@ export declare const createSyncTransport: () => Transport
 
 export declare const createWorker: (options: WorkerOptions) => Worker
 
-export declare const defineEvent: <S extends z.ZodType>(options: {
-  name: string
-  schema: S
-  transport?: TransportName | undefined
-}) => EventDefinition<S>
+export declare const defineEvent: <S extends z.ZodType>(
+  options: EventOptions<S>
+) => EventDefinition<S>
 
 export declare const defineListener: <S extends z.ZodType>(
   event: EventDefinition<S>,
   options: ListenerOptions<z.output<S>>
 ) => ListenerDefinition<S>
-
-export declare const parseEnvelope: (message: unknown) =>
-  | {
-      envelope: Envelope
-    }
-  | {
-      problem: string
-    }
 
 export declare const startWorker: (
   worker: Worker,

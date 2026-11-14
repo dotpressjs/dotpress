@@ -10,9 +10,11 @@ import {
 import {
   createPgBossSource,
   createPgBossTransport,
+} from '../src/transports/pg-boss.js'
+import {
   DEFAULT_QUEUE_OPTIONS,
   handlerOf,
-} from '../src/transports/pg-boss.js'
+} from '../src/transports/pg-boss-internal.js'
 import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const listenerOf = (
@@ -260,8 +262,8 @@ describe('pg-boss source', () => {
     const source = createPgBossSource({
       boss: boss as never,
       queue: 'events',
-      batchSize: 5,
-      pollingIntervalSeconds: 0.5,
+      concurrency: 5,
+      pollInterval: 0.5,
     })
     const running = startWorker(createWorker({ listeners: [] }), source, {
       signal: controller.signal,
@@ -348,7 +350,7 @@ describe('pg-boss source', () => {
       createPgBossSource({
         boss: boss as never,
         queue: 'events',
-        closeTimeout: 50,
+        closeTimeout: '50ms',
       }),
       { logger }
     )
@@ -375,43 +377,43 @@ describe('pg-boss source', () => {
   it.each([
     [
       'an unknown option',
-      { boss: 'postgres://x', queue: 'q', concurrency: 2 },
-      'createPgBossSource(): unknown option "concurrency".',
+      { boss: 'postgres://x', queue: 'q', batchSize: 2 },
+      'createPgBossSource(): unknown option "batchSize".',
     ],
     [
       'a batch of 0',
-      { boss: 'postgres://x', queue: 'q', batchSize: 0 },
-      'createPgBossSource(): batchSize must be a positive integer.',
+      { boss: 'postgres://x', queue: 'q', concurrency: 0 },
+      'createPgBossSource(): concurrency must be a positive integer.',
     ],
     [
       'a batch size that is not an integer',
-      { boss: 'postgres://x', queue: 'q', batchSize: 1.5 },
-      'createPgBossSource(): batchSize must be a positive integer.',
+      { boss: 'postgres://x', queue: 'q', concurrency: 1.5 },
+      'createPgBossSource(): concurrency must be a positive integer.',
     ],
     [
       'a polling interval under 0.5',
-      { boss: 'postgres://x', queue: 'q', pollingIntervalSeconds: 0.4 },
-      'createPgBossSource(): pollingIntervalSeconds must be a number of seconds, at least 0.5.',
+      { boss: 'postgres://x', queue: 'q', pollInterval: '400ms' },
+      'createPgBossSource(): pollInterval must be at least 0.5 seconds.',
     ],
     [
       'a polling interval that is not a number',
-      { boss: 'postgres://x', queue: 'q', pollingIntervalSeconds: '2' },
-      'createPgBossSource(): pollingIntervalSeconds must be a number of seconds, at least 0.5.',
+      { boss: 'postgres://x', queue: 'q', pollInterval: '2' },
+      "createPgBossSource(): pollInterval must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
     [
       'a NaN polling interval',
-      { boss: 'postgres://x', queue: 'q', pollingIntervalSeconds: Number.NaN },
-      'createPgBossSource(): pollingIntervalSeconds must be a number of seconds, at least 0.5.',
+      { boss: 'postgres://x', queue: 'q', pollInterval: Number.NaN },
+      "createPgBossSource(): pollInterval must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
     [
       'a negative close timeout',
       { boss: 'postgres://x', queue: 'q', closeTimeout: -1 },
-      'createPgBossSource(): closeTimeout must be a non-negative integer (milliseconds).',
+      "createPgBossSource(): closeTimeout must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
     [
-      'a close timeout that is not an integer',
-      { boss: 'postgres://x', queue: 'q', closeTimeout: 0.5 },
-      'createPgBossSource(): closeTimeout must be a non-negative integer (milliseconds).',
+      'a close timeout without unit',
+      { boss: 'postgres://x', queue: 'q', closeTimeout: '30' },
+      "createPgBossSource(): closeTimeout must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
   ])('rejects %s', (_, options, message) => {
     expect(() => createPgBossSource(options as never)).toThrow(
@@ -456,8 +458,8 @@ describe.skipIf(!databaseUrl)('pg-boss with Postgres', () => {
         boss,
         queue,
         queueOptions,
-        pollingIntervalSeconds: 0.5,
-        batchSize: 5,
+        pollInterval: 0.5,
+        concurrency: 5,
       }),
       { logger }
     )

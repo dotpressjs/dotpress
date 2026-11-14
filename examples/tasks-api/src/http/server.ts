@@ -57,9 +57,9 @@ logger.info(`API reference: ${config.publicUrl}/docs`)
 // Waits for pending requests, then closes the connections.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
+    // eventsPlugin closes the transports of the bus with the app.
     void app
       .close()
-      .then(() => transport.close())
       .then(() => cacheStore.close())
       .then(() => {
         mailProvider.close?.()

@@ -20,8 +20,8 @@ import {
   type ListenerHandler,
 } from '../src/index.js'
 import {
-  createPubSubPullSource,
-  createPubSubPushHandler,
+  createPubSubSource,
+  createPubSubHandler,
   createPubSubTransport,
 } from '../src/transports/google-pubsub.js'
 import { startPubSubServer } from './google-pubsub-server.js'
@@ -466,7 +466,7 @@ describe('Pub/Sub push handler', () => {
     handle: ListenerHandler<{ userId: string }> = () => {},
     options: object = {}
   ) =>
-    createPubSubPushHandler(
+    createPubSubHandler(
       createWorker({
         listeners: [listenerOf('send-welcome-mail', handle)],
         maxAttempts: 5,
@@ -558,7 +558,7 @@ describe('Pub/Sub push handler', () => {
   })
 
   it('skips the verification with verifyToken: false', async () => {
-    const push = createPubSubPushHandler(
+    const push = createPubSubHandler(
       createWorker({ listeners: [listenerOf('send-welcome-mail', () => {})] }),
       { verifyToken: false }
     )
@@ -567,7 +567,7 @@ describe('Pub/Sub push handler', () => {
 
   it('asks Pub/Sub to deliver failed messages again', async () => {
     const onFailure = vi.fn()
-    const push = createPubSubPushHandler(
+    const push = createPubSubHandler(
       createWorker({
         listeners: [
           listenerOf('send-welcome-mail', () => {
@@ -617,7 +617,7 @@ describe('Pub/Sub push handler', () => {
 
   it('fails messages that are not envelopes without dead-letter topic', async () => {
     const onFailure = vi.fn()
-    const push = createPubSubPushHandler(
+    const push = createPubSubHandler(
       createWorker({ listeners: [], onFailure }),
       { verifyToken: false }
     )
@@ -635,7 +635,7 @@ describe('Pub/Sub push handler', () => {
 
   it('publishes dead messages to the dead-letter topic', async () => {
     const getAccessToken = vi.fn(async () => 'dlq-token')
-    const push = createPubSubPushHandler(createWorker({ listeners: [] }), {
+    const push = createPubSubHandler(createWorker({ listeners: [] }), {
       verifyToken: false,
       deadLetter: { topic: DLQ, getAccessToken, baseUrl: server.url },
     })
@@ -664,7 +664,7 @@ describe('Pub/Sub push handler', () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({ messageIds: ['1'] })
     )
-    const push = createPubSubPushHandler(createWorker({ listeners: [] }), {
+    const push = createPubSubHandler(createWorker({ listeners: [] }), {
       verifyToken: false,
       deadLetter: { topic: DLQ, getAccessToken: false },
       fetch,
@@ -681,7 +681,7 @@ describe('Pub/Sub push handler', () => {
       `Unknown listener "${listener}": this worker runs no listener.`
     )
 
-    const long = createPubSubPushHandler(
+    const long = createPubSubHandler(
       createWorker({ listeners: [listenerOf('send-welcome-mail', () => {})] }),
       {
         verifyToken: false,
@@ -714,7 +714,7 @@ describe('Pub/Sub push handler', () => {
         error: new Error('e'.repeat(2000)),
       }),
     }
-    const push = createPubSubPushHandler(worker, {
+    const push = createPubSubHandler(worker, {
       verifyToken: false,
       deadLetter: { topic: DLQ, getAccessToken: false },
       fetch,
@@ -728,7 +728,7 @@ describe('Pub/Sub push handler', () => {
 
   it('keeps retrying when the dead-letter topic fails', async () => {
     const logger = createLogger()
-    const push = createPubSubPushHandler(createWorker({ listeners: [] }), {
+    const push = createPubSubHandler(createWorker({ listeners: [] }), {
       verifyToken: false,
       deadLetter: { topic: DLQ, getAccessToken: false, baseUrl: server.url },
       logger,
@@ -744,7 +744,7 @@ describe('Pub/Sub push handler', () => {
 
   it('does not publish retried messages to the dead-letter topic', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
-    const push = createPubSubPushHandler(
+    const push = createPubSubHandler(
       createWorker({
         listeners: [
           listenerOf('send-welcome-mail', () => {
@@ -769,7 +769,7 @@ describe('Pub/Sub push handler', () => {
       payload: { email: ACCOUNT, email_verified: true },
     }))
     vi.doMock('jose', () => ({ createRemoteJWKSet, jwtVerify }))
-    const { createPubSubPushHandler: create } =
+    const { createPubSubHandler: create } =
       await import('../src/transports/google-pubsub.js')
     const push = create(
       createWorker({ listeners: [listenerOf('send-welcome-mail', () => {})] }),
@@ -793,7 +793,7 @@ describe('Pub/Sub push handler', () => {
       if (!installed) throw new Error('Cannot find package')
       return actual
     })
-    const { createPubSubPushHandler: create } =
+    const { createPubSubHandler: create } =
       await import('../src/transports/google-pubsub.js')
     const logger = createLogger()
     const push = create(
@@ -817,8 +817,8 @@ describe('Pub/Sub push handler', () => {
     const create =
       (options: object, target: unknown = worker) =>
       () =>
-        createPubSubPushHandler(target as never, options as never)
-    const label = 'createPubSubPushHandler()'
+        createPubSubHandler(target as never, options as never)
+    const label = 'createPubSubHandler()'
     expect(create({}, {})).toThrow(
       `${label}: expected a worker created by createWorker().`
     )
@@ -826,7 +826,7 @@ describe('Pub/Sub push handler', () => {
     expect(create(null as never)).toThrow(
       `${label}: expected an object of options.`
     )
-    expect(() => createPubSubPushHandler(worker)).toThrow(
+    expect(() => createPubSubHandler(worker)).toThrow(
       `${label}: audience is required to verify push tokens (or set verifyToken: false behind a proxy that checks them).`
     )
     expect(create({ audience: '' })).toThrow('audience is required')
@@ -915,10 +915,10 @@ describe('Pub/Sub pull source', () => {
     })
     const running = startWorker(
       worker,
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: SUBSCRIPTION,
         client: client as never,
-        maxMessages: 4,
+        concurrency: 4,
       })
     )
     await vi.waitFor(() => expect(client.subscription).toHaveBeenCalled())
@@ -955,10 +955,10 @@ describe('Pub/Sub pull source', () => {
     const logger = createLogger()
     const running = startWorker(
       createWorker({ listeners: [] }),
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: SUBSCRIPTION,
         client: client as never,
-        deadLetterTopic: DLQ,
+        deadLetter: { topic: DLQ },
       }),
       { logger }
     )
@@ -1005,10 +1005,10 @@ describe('Pub/Sub pull source', () => {
     }
     const running = startWorker(
       worker,
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: SUBSCRIPTION,
         client: client as never,
-        deadLetterTopic: DLQ,
+        deadLetter: { topic: DLQ },
       })
     )
     await vi.waitFor(() => expect(client.subscription).toHaveBeenCalled())
@@ -1032,10 +1032,10 @@ describe('Pub/Sub pull source', () => {
           }),
         ],
       }),
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: SUBSCRIPTION,
         client: client as never,
-        deadLetterTopic: DLQ,
+        deadLetter: { topic: DLQ },
       })
     )
     await vi.waitFor(() => expect(client.subscription).toHaveBeenCalled())
@@ -1052,7 +1052,7 @@ describe('Pub/Sub pull source', () => {
     const logger = createLogger()
     const running = startWorker(
       createWorker({ listeners: [] }),
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: SUBSCRIPTION,
         client: client as never,
       }),
@@ -1076,7 +1076,7 @@ describe('Pub/Sub pull source', () => {
     const logger = createLogger()
     const running = startWorker(
       createWorker({ listeners: [] }),
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: SUBSCRIPTION,
         client: client as never,
       }),
@@ -1093,10 +1093,10 @@ describe('Pub/Sub pull source', () => {
     const logger = createLogger()
     const running = startWorker(
       createWorker({ listeners: [] }),
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: SUBSCRIPTION,
         client: client as never,
-        closeTimeout: 50,
+        closeTimeout: '50ms',
       }),
       { logger }
     )
@@ -1112,7 +1112,7 @@ describe('Pub/Sub pull source', () => {
 
   it('stops at once when already aborted', async () => {
     const { client, subscription } = fakeClient()
-    const source = createPubSubPullSource({
+    const source = createPubSubSource({
       subscription: SUBSCRIPTION,
       client: client as never,
     })
@@ -1129,7 +1129,7 @@ describe('Pub/Sub pull source', () => {
       Object.assign(this, client, { config })
     })
     vi.doMock('@google-cloud/pubsub', () => ({ PubSub }))
-    const { createPubSubPullSource: create } =
+    const { createPubSubSource: create } =
       await import('../src/transports/google-pubsub.js')
     const running = startWorker(
       createWorker({ listeners: [] }),
@@ -1143,10 +1143,10 @@ describe('Pub/Sub pull source', () => {
   })
 
   it('checks its options', () => {
-    const label = 'createPubSubPullSource()'
+    const label = 'createPubSubSource()'
     const create = (options: object) => () =>
-      createPubSubPullSource({ subscription: SUBSCRIPTION, ...options })
-    expect(() => createPubSubPullSource(null as never)).toThrow(
+      createPubSubSource({ subscription: SUBSCRIPTION, ...options })
+    expect(() => createPubSubSource(null as never)).toThrow(
       `${label}: expected an object of options.`
     )
     expect(create({ topic: TOPIC })).toThrow(
@@ -1170,21 +1170,24 @@ describe('Pub/Sub pull source', () => {
         `${label}: client must be a PubSub client.`
       )
     }
-    for (const maxMessages of [0, 1.5, '10']) {
-      expect(create({ maxMessages })).toThrow(
-        `${label}: maxMessages must be a positive integer.`
+    for (const concurrency of [0, 1.5, '10']) {
+      expect(create({ concurrency })).toThrow(
+        `${label}: concurrency must be a positive integer.`
       )
     }
-    expect(create({ deadLetterTopic: 'dlq' })).toThrow(
-      `${label}: deadLetterTopic must be a full name, like projects/my-project/topics/events-dlq.`
+    expect(create({ deadLetter: { topic: 'dlq' } })).toThrow(
+      `${label}: deadLetter.topic must be a full name, like projects/my-project/topics/events-dlq.`
     )
-    for (const closeTimeout of [-1, 0.5, '1000']) {
+    expect(create({ deadLetter: { topic: DLQ, name: 'x' } })).toThrow(
+      `${label}: deadLetter: unknown option "name".`
+    )
+    for (const closeTimeout of [-1, '1000']) {
       expect(create({ closeTimeout })).toThrow(
-        `${label}: closeTimeout must be a non-negative integer (milliseconds).`
+        `${label}: closeTimeout must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.`
       )
     }
     expect(
-      create({ maxMessages: 1, closeTimeout: 0, deadLetterTopic: DLQ })
+      create({ concurrency: 1, closeTimeout: 0, deadLetter: { topic: DLQ } })
     ).not.toThrow()
   })
 })
@@ -1237,7 +1240,7 @@ describe.skipIf(!emulator)('Pub/Sub (emulator)', () => {
     await events.emit(userCreated, { userId: '42' })
     const running = startWorker(
       createWorker({ listeners }),
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: pull,
         clientConfig: { projectId: project },
       })
@@ -1264,10 +1267,10 @@ describe.skipIf(!emulator)('Pub/Sub (emulator)', () => {
     })
     const running = startWorker(
       createWorker({ listeners: [listener] }),
-      createPubSubPullSource({
+      createPubSubSource({
         subscription: pull,
         client: pubsub,
-        deadLetterTopic: deadTopic,
+        deadLetter: { topic: deadTopic },
       })
     )
     await vi.waitFor(() => expect(attempts).toBe(2), { timeout: 15_000 })
@@ -1294,7 +1297,7 @@ describe.skipIf(!emulator)('Pub/Sub (emulator)', () => {
 
   it('handles push deliveries', async () => {
     const handle = vi.fn()
-    const handler = createPubSubPushHandler(
+    const handler = createPubSubHandler(
       createWorker({ listeners: [listenerOf('pushed', handle)] }),
       { verifyToken: false }
     )

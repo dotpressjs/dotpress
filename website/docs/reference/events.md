@@ -72,12 +72,14 @@ const { emissionId, messages } = await events.emit(event, payload, { emissionId,
 | Option | Description |
 | --- | --- |
 | `emissionId` | The identifier of the emission, random by default: the message ids derive from it. Emitting again with the same `emissionId` gives the same ids. It names one occurrence of the fact (`${order.id}:${order.version}`), not its entity. 1 to 200 characters, without control characters. |
-| `delay` | Seconds before the listeners run, within the limit of the transport. |
+| `delay` | Delay before the listeners run, within the limit of the transport: a number of seconds, or a [duration](/concepts/options#durations) like `'5m'`, rounded up to the second. |
 | `metadata` | Strings passed to the listeners. Keys: 1 to 128 characters among letters, digits, `.`, `_` and `-`; values on one line. |
 
 `messages` lists one `{ id, listener, transport }` per listener. An event without listeners is not sent. Without `emissionId`, each call is a new emission, with new message ids: emitting again after an `EventEmitError` runs again the listeners whose message was sent. `error.retry()` sends only the failed messages.
 
 `events.withContext({ logger, metadata })` returns a bus that logs with this logger and adds this metadata: `ctx.events` is one.
+
+`events.close()` closes the transports that have a `close()` (BullMQ, pg-boss, Service Bus), each one once, then throws the first error. `eventsPlugin()` calls it when the app closes.
 
 ## Transports in the process
 
@@ -89,7 +91,7 @@ const { emissionId, messages } = await events.emit(event, payload, { emissionId,
 | Option of the memory transport | Default | Description |
 | --- | --- | --- |
 | `maxAttempts` | `3` | Attempts of a message. |
-| `retryDelay(attempt)` | 100 ms, doubled each attempt | Delay before a retry, in milliseconds. `() => 0` in tests. |
+| `retryDelay(attempt)` | 100 ms, doubled each attempt | Delay before a retry: a number of seconds, or a duration like `'100ms'`. `() => 0` in tests. |
 
 The memory transport has `sent` (the envelopes sent), `drain()` (waits for every message, retries included) and `clear()`.
 
@@ -109,13 +111,14 @@ The memory transport has `sent` (the envelopes sent), `drain()` (waits for every
 | Reason | Result | Meaning |
 | --- | --- | --- |
 | `listener-error` | `retry` | The listener threw. |
+| `unsupported-version` | `retry` | An envelope of a later version, emitted by a newer deployment: retried until a newer worker handles it (rolling deployments). |
 | `invalid-envelope` | `dead` | The message is not an envelope of Dotpress. |
 | `unknown-listener` | `dead` | The worker does not run this listener: usually a deployment mistake. |
 | `invalid-payload` | `dead` | The payload does not match the current schema of the event. |
 
 `worker.handle(message, { attempt })` returns `success`, `retry` or `dead`, and never throws: the entry points of the transports (Lambda handler, `queue()` handler…) are built on it.
 
-`startWorker(worker, source, { logger, signal })` reads a source until stopped, and returns `{ stop() }`, which finishes the messages in progress.
+`startWorker(worker, source, { logger, signal })` reads a source until stopped, and returns `{ stop(), done }`: `stop()` finishes the messages in progress, and `done` resolves when the worker has stopped, or rejects when the source failed. The module given to `dotpress-events work` exports a `WorkerEntry`: `{ worker, source, logger? }`.
 
 ## eventsPlugin()
 
@@ -125,7 +128,7 @@ import { eventsPlugin } from '@dotpress/events/plugin'
 await createApp({ adapter, plugins: [eventsPlugin(events)] })
 ```
 
-The plugin, named `events`, provides `ctx.events`: the bus, with the request logger, and the `requestId` in the metadata. Using `ctx.events` without the plugin throws an explicit error.
+The plugin, named `events`, provides `ctx.events`: the bus, with the request logger, and the `requestId` in the metadata. Using `ctx.events` without the plugin throws an explicit error. The transports of the bus are closed with the app (`events.close()`).
 
 ## Logs
 
@@ -145,14 +148,16 @@ Payloads are never logged.
 | `TypeError` | Invalid options of `defineEvent()`, `defineListener()`, `createEventBus()`, `emit()`… |
 | `EventPayloadError` | At `emit()`: the payload does not match the schema, or is not serializable as JSON. Fields: `event`, `issues`. |
 | `EventEmitError` | Some messages could not be sent. Fields: `sent`, `failed`, `cause`. `retry()` sends the failed messages again, with the same ids: it resolves like `emit()`, or throws a new `EventEmitError` whose `sent` adds up the attempts. |
-| `PartialSendError` | For transport authors: some messages of a `send()` call failed. |
+| `PartialSendError` | For transport authors: some messages of a `send()` call failed. `failed` lists them: `{ id, error }`, by message id. |
 
 The error classes extend `EventsError`.
 
 ## Custom transports
 
-A transport has a `kind` and a `send(envelopes, { delay })` method; a source has a `kind` and a `consume(worker, { signal, logger })` method. Envelopes are plain JSON objects:
+A transport has a `kind`, a `send(envelopes, { delay })` method, where `delay` is a number of whole seconds, and optionally `close()`. A source has a `kind` and a `consume(worker, { signal, logger })` method. Envelopes are plain JSON objects:
 
 ```ts
 { v: 1, id, emissionId, event, listener, payload, emittedAt, metadata }
 ```
+
+Adding a field to the envelope keeps `v: 1`: workers ignore the fields they do not know. Only an incompatible change raises the version, and workers retry the envelopes of a later version until a newer worker handles them.

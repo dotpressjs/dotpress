@@ -5,16 +5,8 @@
 ## Exports
 
 ```ts
-import type { Envelope, Source, Transport, Worker } from '@dotpress/events'
-import type {
-  ConstructorOptions,
-  Job,
-  JobResult,
-  PgBoss,
-  QueueOptions,
-} from 'pg-boss'
-
-export declare const DEFAULT_QUEUE_OPTIONS: QueueOptions
+import type { Duration, Source, Transport } from '@dotpress/events'
+import type { ConstructorOptions, PgBoss, QueueOptions } from 'pg-boss'
 
 export interface PgBossOptions {
   boss: PgBoss | string | ConstructorOptions
@@ -27,9 +19,9 @@ export interface PgBossQueueOptions extends QueueOptions {
 }
 
 export interface PgBossSourceOptions extends PgBossOptions {
-  batchSize?: number | undefined
-  pollingIntervalSeconds?: number | undefined
-  closeTimeout?: number | undefined
+  concurrency?: number | undefined
+  pollInterval?: Duration | undefined
+  closeTimeout?: Duration | undefined
 }
 
 export interface PgBossTransport extends Transport {
@@ -43,9 +35,4 @@ export declare const createPgBossSource: (
 export declare const createPgBossTransport: (
   options: PgBossOptions
 ) => PgBossTransport
-
-export declare const handlerOf: (
-  worker: Worker,
-  deadLetter: () => string | undefined
-) => (jobs: Job<Envelope>[]) => Promise<JobResult[]>
 ```

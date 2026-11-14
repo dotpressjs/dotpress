@@ -4,7 +4,10 @@ import type { Worker } from './worker.js'
 
 /** Options of `transport.send()`. */
 export interface SendOptions {
-  /** Delay before delivery, in seconds. */
+  /**
+   * Delay before delivery, in whole seconds: the `delay` of `emit()`,
+   * rounded up.
+   */
   readonly delay: number | undefined
 }
 
@@ -18,13 +21,34 @@ export interface Transport {
   readonly kind: string
   send(envelopes: readonly Envelope[], options: SendOptions): Promise<void>
   /**
-   * In-process transports only (`sync`, `memory`): receives the worker
-   * that runs the listeners routed to this transport.
+   * Releases the connections of the transport. `bus.close()` calls it, and
+   * `eventsPlugin()` when the app closes.
    */
-  bind?(worker: Worker): void
-  /** Attempts of an in-process transport, for `FailureInfo.final`. */
-  readonly maxAttempts?: number
+  close?(): Promise<void>
 }
+
+/** What the bus gives an in-process transport (`sync`, `memory`). */
+interface InProcess {
+  /** Receives the worker that runs the listeners routed to the transport. */
+  bind(worker: Worker): void
+  /** Attempts per message, for `FailureInfo.final`. */
+  readonly maxAttempts: number
+}
+
+const inProcess = new WeakMap<Transport, InProcess>()
+
+/** Marks a transport as in-process: the bus binds it to a worker. */
+export const runsInProcess = <T extends Transport>(
+  transport: T,
+  hooks: InProcess
+): T => {
+  inProcess.set(transport, hooks)
+  return transport
+}
+
+/** The in-process hooks of a transport, if it has some. */
+export const inProcessOf = (transport: Transport): InProcess | undefined =>
+  inProcess.get(transport)
 
 /** Options of `source.consume()`. */
 export interface ConsumeOptions {

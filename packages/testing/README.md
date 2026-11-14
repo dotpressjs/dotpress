@@ -5,7 +5,7 @@ Testing helpers for [Dotpress](https://dotpress.dev): a test app in memory, the 
 > 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
 
 ```sh
-npm install --save-dev @dotpress/testing
+npm install --save-dev @dotpress/testing vitest
 ```
 
 ```ts

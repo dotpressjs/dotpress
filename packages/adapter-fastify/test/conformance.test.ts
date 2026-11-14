@@ -1,4 +1,4 @@
-import { runConformanceSuite } from '@dotpress/testing'
+import { runConformanceSuite } from '@dotpress/testing/conformance'
 import Fastify from 'fastify'
 import { fastifyAdapter, startApp, startLambda } from './support.js'
 

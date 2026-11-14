@@ -13,19 +13,6 @@ import type {
   Logger,
 } from '@dotpress/core'
 
-export type ConformanceAppOptions = Omit<AppOptions, 'adapter'>
-
-export interface ConformanceSuiteOptions {
-  name: string
-  setup(options: ConformanceAppOptions): Promise<ConformanceTarget>
-  bufferedResponses?: boolean
-}
-
-export interface ConformanceTarget {
-  fetch(path: string, init?: RequestInit): Promise<Response>
-  close(): Promise<void>
-}
-
 export interface Emission {
   readonly emissionId: string
   readonly event: string
@@ -61,7 +48,7 @@ export type LambdaEventFormat = 'v1' | 'v2' | 'alb'
 
 export interface LambdaTargetOptions {
   format: LambdaEventFormat
-  close: () => Promise<void>
+  close?: () => Promise<void>
   sourceIp?: string
 }
 
@@ -141,20 +128,15 @@ export interface TestAppOptions extends Omit<AppOptions, 'adapter' | 'logger'> {
   logger?: MemoryLogger
 }
 
-export declare const createFetchTarget: (
-  handle: (request: Request) => Promise<Response>,
-  close: () => Promise<void>
-) => ConformanceTarget
-
-export declare const createHttpTarget: (
-  baseUrl: string,
-  close: () => Promise<void>
-) => ConformanceTarget
+export interface TestTarget {
+  fetch(path: string, init?: RequestInit): Promise<Response>
+  close(): Promise<void>
+}
 
 export declare const createLambdaTarget: (
   handler: LambdaTestHandler,
   options: LambdaTargetOptions
-) => ConformanceTarget
+) => TestTarget
 
 export declare const createMemoryLogger: () => MemoryLogger
 
@@ -198,10 +180,6 @@ export declare const fromLambdaResult: (result: unknown) => Response
 export declare const memoryAdapter: (
   options?: MemoryAdapterOptions
 ) => MemoryAdapter
-
-export declare const runConformanceSuite: (
-  options: ConformanceSuiteOptions
-) => void
 
 export declare const toLambdaEvent: (
   request: Request,

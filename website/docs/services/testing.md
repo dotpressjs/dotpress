@@ -68,7 +68,7 @@ expect(logger.entries).toContainEqual({
 
 ## AWS Lambda
 
-`createLambdaTarget(handler, { format })` sends requests to a Lambda handler as simulated events, and converts the results back: test the handler without an AWS account. `format` is `'v1'` (API Gateway REST API), `'v2'` (HTTP API, Function URLs) or `'alb'` (Application Load Balancer). A failed invocation gets a `502`, like API Gateway. To run the conformance suite on a Lambda handler, pass `bufferedResponses: true`: the scenarios that need incremental streaming or client disconnections are skipped.
+`createLambdaTarget(handler, { format, close? })` sends requests to a Lambda handler as simulated events, and converts the results back: test the handler without an AWS account. `format` is `'v1'` (API Gateway REST API), `'v2'` (HTTP API, Function URLs) or `'alb'` (Application Load Balancer). A failed invocation gets a `502`, like API Gateway. To run the conformance suite on a Lambda handler, pass `bufferedResponses: true`: the scenarios that need incremental streaming or client disconnections are skipped.
 
 `toLambdaEvent()` and `fromLambdaResult()` are exported for finer tests. The [Fastify](/examples/fastify) and [Hono](/examples/hono) examples test their handler, and their bundle, this way.
 
@@ -79,7 +79,7 @@ Every adapter of Dotpress passes the conformance suite, `runConformanceSuite()`:
 ```ts
 import type { AddressInfo } from 'node:net'
 import { createApp } from '@dotpress/core'
-import { createHttpTarget, runConformanceSuite } from '@dotpress/testing'
+import { createHttpTarget, runConformanceSuite } from '@dotpress/testing/conformance'
 import { myAdapter } from '../src/index.ts'
 
 runConformanceSuite({
@@ -90,9 +90,9 @@ runConformanceSuite({
     await app.listen(0, '127.0.0.1')
 
     const { port } = adapter.server().address() as AddressInfo
-    return createHttpTarget(`http://127.0.0.1:${port}`, () => app.close())
+    return createHttpTarget(`http://127.0.0.1:${port}`, { close: () => app.close() })
   },
 })
 ```
 
-An adapter that does not listen on a port returns `createFetchTarget(handle, close)`, where `handle` takes a Web `Request` and returns a `Response`.
+The suite has its own entry, `@dotpress/testing/conformance`. A target sends the requests of the suite (`fetch(path, init)`) and stops the app (`close()`, the option of the same name, which does nothing by default). An adapter that does not listen on a port returns `createFetchTarget(handle, { close })`, where `handle` takes a Web `Request` and returns a `Response`.

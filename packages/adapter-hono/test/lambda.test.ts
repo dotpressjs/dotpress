@@ -72,6 +72,14 @@ const INTERNAL_ERROR = JSON.stringify({
 })
 
 describe('createLambdaHandler()', () => {
+  it('rejects unknown options', () => {
+    expect(() =>
+      createLambdaHandler(() => createHonoApp(), {
+        binary: () => true,
+      } as never)
+    ).toThrow(new TypeError('createLambdaHandler(): unknown option "binary".'))
+  })
+
   it('creates the app at the first invocation, then reuses it', async () => {
     const factory = vi.fn(() => createHonoApp())
     const handler = createLambdaHandler(factory)

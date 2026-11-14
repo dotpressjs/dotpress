@@ -1,4 +1,4 @@
-import { createFetchTarget, type ConformanceTarget } from './conformance.js'
+import { closeOf, createFetchTarget, type TestTarget } from './target.js'
 
 /**
  * Lambda event formats: API Gateway REST API (payload v1), HTTP API and
@@ -9,8 +9,8 @@ export type LambdaEventFormat = 'v1' | 'v2' | 'alb'
 
 export interface LambdaTargetOptions {
   format: LambdaEventFormat
-  /** Stops the application. */
-  close: () => Promise<void>
+  /** Stops the application. Defaults to doing nothing. */
+  close?: () => Promise<void>
   /** Client IP address of the events. Defaults to `127.0.0.1`. */
   sourceIp?: string
 }
@@ -241,23 +241,35 @@ const lambdaContext = () => ({
 export const createLambdaTarget = (
   handler: LambdaTestHandler,
   options: LambdaTargetOptions
-): ConformanceTarget => {
+): TestTarget => {
+  const close = closeOf('createLambdaTarget()', options, [
+    'format',
+    'close',
+    'sourceIp',
+  ] satisfies (keyof LambdaTargetOptions)[])
   const invoke = handler as unknown as (
     event: unknown,
     context: unknown
   ) => Promise<unknown>
 
-  return createFetchTarget(async (request) => {
-    const event = await toLambdaEvent(request, options.format, options.sourceIp)
-    let result: unknown
-    try {
-      result = await invoke(event, lambdaContext())
-    } catch {
-      return Response.json(
-        { message: 'Internal server error' },
-        { status: 502 }
+  return createFetchTarget(
+    async (request) => {
+      const event = await toLambdaEvent(
+        request,
+        options.format,
+        options.sourceIp
       )
-    }
-    return fromLambdaResult(result)
-  }, options.close)
+      let result: unknown
+      try {
+        result = await invoke(event, lambdaContext())
+      } catch {
+        return Response.json(
+          { message: 'Internal server error' },
+          { status: 502 }
+        )
+      }
+      return fromLambdaResult(result)
+    },
+    { close }
+  )
 }

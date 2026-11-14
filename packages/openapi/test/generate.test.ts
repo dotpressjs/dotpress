@@ -20,6 +20,15 @@ describe('generateOpenApi()', () => {
       }
     })
 
+    it('rejects unknown options', () => {
+      expect(() =>
+        generateOpenApi([], {
+          info: { title: 'API', version: '1.0.0' },
+          server: [],
+        } as never)
+      ).toThrow(new TypeError('generateOpenApi(): unknown option "server".'))
+    })
+
     it('generates an OpenAPI 3.1 document', async () => {
       const { document } = await generate((router) => {
         router.defineRoute({ path: '/health', handler })

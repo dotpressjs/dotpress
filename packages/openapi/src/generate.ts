@@ -16,6 +16,7 @@ import type {
   ServerObject,
   TagObject,
 } from './types.js'
+import { assertKnownOptions } from './options.js'
 
 export interface OpenApiOptions {
   info: InfoObject
@@ -114,6 +115,14 @@ export const generateOpenApi = (
   source: OpenApiSource,
   options: OpenApiOptions
 ): OpenApiDocument => {
+  assertKnownOptions('generateOpenApi()', options, [
+    'info',
+    'servers',
+    'tags',
+    'externalDocs',
+    'securitySchemes',
+    'onWarning',
+  ] satisfies (keyof OpenApiOptions)[])
   if (!options?.info?.title || !options.info.version) {
     throw new TypeError(
       'generateOpenApi() requires info.title and info.version.'

@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest'
 import * as z from 'zod'
 import {
   openapiPlugin,
-  SCALAR_CDN_URL,
   SCALAR_NEUTRAL_CONFIGURATION,
   type OpenApiDocument,
   type OpenApiPluginOptions,
 } from '../src/index.js'
+import { SCALAR_CDN_URL } from '../src/ui.js'
 import { createKeys, expectValid, INFO } from './support.js'
 
 const keys = await createKeys()
@@ -41,6 +41,16 @@ describe('openapiPlugin()', () => {
     // @ts-expect-error missing info
     expect(() => openapiPlugin({})).toThrow(
       'openapiPlugin() requires info.title and info.version.'
+    )
+  })
+
+  it('rejects unknown options', () => {
+    const info = { title: 'API', version: '1.0.0' }
+    expect(() => openapiPlugin({ info, middleware: [] } as never)).toThrow(
+      new TypeError('openapiPlugin(): unknown option "middleware".')
+    )
+    expect(() => openapiPlugin({ info, ui: { cdn: 'x' } } as never)).toThrow(
+      new TypeError('openapiPlugin(): unknown option "ui.cdn".')
     )
   })
 

@@ -1,0 +1,13 @@
+# Cloudflare Workers static assets: the pages of the Dotpress 1 site, moved
+# to their Dotpress 2 equivalents.
+/quickstart /getting-started/quickstart 301
+/routing /routing/routes 301
+/schema-validation /routing/validation 301
+/typing /concepts/typing 301
+/middlewares /routing/middlewares 301
+/error-handling /routing/errors 301
+/file-upload /routing/bodies#file-uploads 301
+/writing-plugins /routing/plugins#writing-a-plugin 301
+/api/application /reference/application 301
+/api/plugin /reference/plugins 301
+/api/routing /reference/routes 301

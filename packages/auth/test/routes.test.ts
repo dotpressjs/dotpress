@@ -18,6 +18,9 @@ import {
 
 const COOKIES = { enabled: true, accessTokenInCookie: true }
 const DAY = 24 * 60 * 60
+// The seconds left until the `exp` claim of a new access token, a whole
+// second: 899 when a second starts between the signature and the response.
+const EXPIRES_IN = expect.toBeOneOf([899, 900])
 
 describe('auth routes', () => {
   describe('POST /auth/login', () => {
@@ -36,7 +39,7 @@ describe('auth routes', () => {
         userId: 'u1',
         accessToken: expect.any(String),
         refreshToken: expect.stringMatching(/^[0-9a-f]{256}$/),
-        expiresIn: 900,
+        expiresIn: EXPIRES_IN,
         expiresAt: expect.any(String),
       })
       expect(new Date(body.expiresAt).getTime() - Date.now()).toBeGreaterThan(
@@ -182,7 +185,7 @@ describe('auth routes', () => {
       // Tokens set as HttpOnly cookies must not be readable by JavaScript.
       expect(body).toEqual({
         userId: 'u1',
-        expiresIn: 900,
+        expiresIn: EXPIRES_IN,
         expiresAt: expect.any(String),
       })
       const refreshToken = cookies[REFRESH_COOKIE]?.value
@@ -241,7 +244,7 @@ describe('auth routes', () => {
       const refreshed = (await res.json()) as typeof tokens
 
       expect(res.status).toBe(200)
-      expect(refreshed).toMatchObject({ userId: 'u1', expiresIn: 900 })
+      expect(refreshed).toMatchObject({ userId: 'u1', expiresIn: EXPIRES_IN })
       expect(refreshed.refreshToken).not.toBe(tokens.refreshToken)
 
       // Retry within the reuse interval (lost response): a new pair.
@@ -274,7 +277,7 @@ describe('auth routes', () => {
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({
         userId: 'u1',
-        expiresIn: 900,
+        expiresIn: EXPIRES_IN,
         expiresAt: expect.any(String),
       })
       const cookies = cookiesOf(res)
@@ -427,7 +430,7 @@ describe('auth routes', () => {
 
       expect(await res.json()).toEqual({
         userId: 'u1',
-        expiresIn: 900,
+        expiresIn: EXPIRES_IN,
         expiresAt: expect.any(String),
         user: { id: 'u1', username: 'ada', roles: ['admin'] },
       })

@@ -1,5 +1,10 @@
-import type { DotpressRequest, HttpError, PluginCors } from '@dotpress/core'
-import type { RateLimitStore } from '@dotpress/core'
+import type {
+  DotpressRequest,
+  Duration,
+  HttpError,
+  PluginCors,
+  RateLimitStore,
+} from '@dotpress/core'
 
 /**
  * Authenticated user, as returned by `DataProvider.findUserById()`.
@@ -23,14 +28,13 @@ export interface AuthSession {
   readonly userId: string
   /** `username` claim, with the `usernameClaim` setting only. */
   readonly username: string | undefined
-  /** Token identifier (`jti`), shared with its refresh token. */
-  readonly tokenId: string
+  /** Identifier of the access token (`jti` claim), stored with its refresh token. */
+  readonly accessTokenId: string
   /**
    * Session of the token (`sid` claim): shared by the tokens rotated from
-   * the same login. `undefined` for tokens issued without refresh token
-   * (`generateAccessToken()`).
+   * the same login.
    */
-  readonly sessionId: string | undefined
+  readonly sessionId: string
   /** Client the token was issued for (`client_id` claim). */
   readonly clientId: string | undefined
   /** Roles of the user, used by `requireRole()`. */
@@ -39,9 +43,9 @@ export interface AuthSession {
   readonly claims: Readonly<Record<string, unknown>>
 }
 
-export interface KeyPairSettings {
+export interface KeyPairOptions {
   /** RSA private key, PEM encoded in PKCS#8 (`BEGIN PRIVATE KEY`). */
-  secretKey: string
+  privateKey: string
   /** RSA public key, PEM encoded in SPKI (`BEGIN PUBLIC KEY`). */
   publicKey: string
   /**
@@ -62,7 +66,7 @@ export interface AdditionalPublicKey {
   kid?: string
 }
 
-export interface CookieSettings {
+export interface AuthCookieOptions {
   /** Enables cookie mode. Defaults to `false`. */
   enabled?: boolean
   /** Defaults to `true`. */
@@ -112,20 +116,23 @@ export interface CookieSettings {
   accessTokenInCookie?: boolean
 }
 
-export type ResolvedCookieSettings = Required<
-  Omit<CookieSettings, 'domain'>
+export type ResolvedCookieOptions = Required<
+  Omit<AuthCookieOptions, 'domain'>
 > & {
   domain: string | undefined
 }
 
+/** Why a login failed. */
+export type LoginErrorType =
+  | 'invalid_username'
+  | 'invalid_password'
+  | 'invalid_role'
+  /** Blocked by the login throttle, before checking the password. */
+  | 'too_many_attempts'
+
 export interface LoginFailedEvent {
   username: string
-  errorType:
-    | 'invalid_username'
-    | 'invalid_password'
-    | 'invalid_role'
-    /** Blocked by the login throttle, before checking the password. */
-    | 'too_many_attempts'
+  errorType: LoginErrorType
   /** `clientId` sent at login; empty when missing. */
   clientId: string
   ipAddress: string
@@ -140,8 +147,15 @@ export interface BeforeLoginEvent {
   req: DotpressRequest
 }
 
-/** At most `max` failed logins per `window` seconds. */
+/** At most `max` failed logins per `window`. */
 export interface RateLimit {
+  max: number
+  /** A number of seconds, or a duration like `'1m'` or `'1h'`. */
+  window: Duration
+}
+
+/** A rate limit, with its window in seconds. */
+export interface ResolvedRateLimit {
   max: number
   window: number
 }
@@ -150,7 +164,7 @@ export interface RateLimit {
  * Login throttle: failed logins are counted per username and IP address,
  * and per username, whether the account exists or not.
  */
-export interface LoginThrottleSettings {
+export interface LoginThrottleOptions {
   /**
    * Counters storage. Defaults to an in-memory store, for a single
    * instance: use a shared store (Redis, database) with several instances.
@@ -170,20 +184,20 @@ export interface LoginThrottleSettings {
   }
 }
 
-export interface ResolvedLoginThrottleSettings {
+export interface ResolvedLoginThrottleOptions {
   store: RateLimitStore
   limits: {
-    usernameAndIp: RateLimit | undefined
-    username: RateLimit | undefined
+    usernameAndIp: ResolvedRateLimit | undefined
+    username: ResolvedRateLimit | undefined
   }
 }
 
 export interface RefreshTokenReuseEvent {
   userId: string
-  /** Revoked session; undefined for tokens stored without family. */
-  familyId: string | undefined
+  /** Revoked session; undefined for tokens stored before sessions (V1). */
+  sessionId: string | undefined
   /** `jti` of the access token the reused refresh token was issued with. */
-  jwtId: string
+  accessTokenId: string
 }
 
 export interface LoginSuccessEvent {
@@ -194,16 +208,20 @@ export interface LoginSuccessEvent {
   ipAddress: string
 }
 
-export interface StoreRefreshTokenDto {
-  token: string
+/**
+ * Refresh token to store. The token itself is never given: only its
+ * SHA-256 hash, which `findRefreshToken()` receives.
+ */
+export interface NewRefreshToken {
   tokenHash: string
   userId: string
-  jwtId: string
+  /** `jti` of the access token issued with the refresh token. */
+  accessTokenId: string
   /**
    * Session the token belongs to: created at login, kept by every
    * rotation. Used to revoke the whole session when a token is reused.
    */
-  familyId: string
+  sessionId: string
   expiresAt: Date
 }
 
@@ -216,15 +234,15 @@ export type LogoutScope = 'current' | 'all'
 /** Session revoked by `revokeSession()`. */
 export interface RevokedSession {
   userId: string
-  /** `undefined` for tokens stored without family (before V2). */
+  /** `undefined` for tokens stored before sessions (V1). */
   sessionId: string | undefined
 }
 
 export interface RefreshTokenData {
   userId: string
-  jwtId: string
-  /** `null` or missing for tokens stored before families existed. */
-  familyId?: string | null
+  accessTokenId: string
+  /** `null` or missing for tokens stored before sessions (V1). */
+  sessionId?: string | null
   expiresAt: Date
   isUsed: boolean
   /** When the token was used (see `refreshTokenReuseInterval`). */
@@ -248,14 +266,14 @@ export interface UserIdentifiers {
  * (Prisma, Drizzle, SQL…).
  */
 export interface DataProvider {
-  storeRefreshToken(payload: StoreRefreshTokenDto): Promise<void>
+  storeRefreshToken(payload: NewRefreshToken): Promise<void>
   findRefreshToken(tokenHash: string): Promise<RefreshTokenData | undefined>
   /** Marks a token as used, storing `usedAt`. */
   markRefreshTokenAsUsed(tokenHash: string, usedAt: Date): Promise<void>
   /** Revokes every refresh token of a user. */
-  revokeTokens(userId: string): Promise<void>
-  /** Revokes every refresh token of a session (`familyId`). */
-  revokeTokenFamily(familyId: string): Promise<void>
+  revokeUserTokens(userId: string): Promise<void>
+  /** Revokes every refresh token of a session. */
+  revokeSessionTokens(sessionId: string): Promise<void>
   /**
    * User of a token, on every authenticated request and every refresh.
    * Return `undefined` for a deleted, disabled or banned account: its
@@ -265,7 +283,7 @@ export interface DataProvider {
   findUserById(userId: string): Promise<AuthUser | undefined>
   findUserIdentifiers(username: string): Promise<UserIdentifiers | undefined>
   /**
-   * Optional. Whether a session (`familyId`, the `sid` claim) was revoked.
+   * Optional. Whether a session (the `sid` claim) was revoked.
    * When defined, it is checked on every authenticated request, so that
    * the access tokens of a revoked session (logout, refresh token reuse,
    * password change) stop working at once, instead of at their expiry.
@@ -288,56 +306,61 @@ export interface DataProvider {
  * prove which application sends a request. It means that the token was
  * issued under the policy of that client (see `isUserRoleAllowed`).
  */
-export interface ClientSettings {
+export interface ClientOptions {
   /** Accepted client identifiers. Others are rejected at login (`400`). */
   allowed: readonly string[]
   /** Requires a `clientId` at login. Defaults to `false`. */
   required?: boolean
   /** Checks at login that a user may get a token for a client. */
-  isUserRoleAllowed?: (role: string, clientId: string) => boolean
+  isUserRoleAllowed?: (login: {
+    userId: string
+    /** `role` of `findUserIdentifiers()`. */
+    role: string | undefined
+    clientId: string
+  }) => boolean
   /**
    * Session lifetimes of some clients, overriding the `session` setting
    * (an explicit `absoluteTimeout: undefined` removes the global limit).
    *
    * @example
-   * sessions: { backoffice: { idleTimeout: 86400, absoluteTimeout: 86400 } }
+   * sessions: { backoffice: { idleTimeout: '1d', absoluteTimeout: '1d' } }
    */
-  sessions?: Readonly<Record<string, SessionSettings>>
+  sessions?: Readonly<Record<string, SessionOptions>>
 }
 
 /**
- * Session lifetimes, in seconds. A session starts at login and is extended
- * by each refresh.
+ * Session lifetimes: numbers of seconds, or durations like `'14d'`. A
+ * session starts at login and is extended by each refresh.
  */
-export interface SessionSettings {
+export interface SessionOptions {
   /**
    * Inactivity timeout: the session ends when it is not refreshed during
    * this delay (lifetime of each refresh token). Defaults to 14 days.
    */
-  idleTimeout?: number
+  idleTimeout?: Duration
   /**
    * Absolute timeout: the session ends this delay after login, even when
    * it is active. Defaults to none: active sessions never end.
    */
-  absoluteTimeout?: number | undefined
+  absoluteTimeout?: Duration | undefined
 }
 
-export interface ResolvedSessionSettings {
+export interface ResolvedSessionOptions {
   idleTimeout: number
   absoluteTimeout: number | undefined
 }
 
-export interface AuthSettings {
-  keys: KeyPairSettings
+export interface AuthOptions {
+  keys: KeyPairOptions
   dataProvider: DataProvider
   /**
-   * Access token lifetime, in seconds. Defaults to 900 (15 minutes): the
-   * longest delay during which the token of a revoked session still
-   * works, without `DataProvider.isSessionRevoked()`.
+   * Access token lifetime: a number of seconds, or a duration like `'15m'`.
+   * Defaults to 15 minutes: the longest delay during which the token of a
+   * revoked session still works, without `DataProvider.isSessionRevoked()`.
    */
-  accessTokenTTL?: number
+  accessTokenTTL?: Duration
   /** Session lifetimes (inactivity and absolute timeouts). */
-  session?: SessionSettings
+  session?: SessionOptions
   /**
    * `iss` claim of the access tokens, checked on every request: for
    * example the URL of the API. Use a different value per environment
@@ -349,16 +372,16 @@ export interface AuthSettings {
    * on every request. Defaults to `issuer`.
    */
   audience?: string
-  cookies?: CookieSettings
-  clients?: ClientSettings
-  onLoginFailed?: (event: LoginFailedEvent) => Promise<void>
-  onLoginSuccess?: (event: LoginSuccessEvent) => Promise<void>
+  cookies?: AuthCookieOptions
+  clients?: ClientOptions
+  onLoginFailed?: (event: LoginFailedEvent) => void | Promise<void>
+  onLoginSuccess?: (event: LoginSuccessEvent) => void | Promise<void>
   /**
    * Login throttle (brute force protection), enabled by default. `false`
    * disables it, when the infrastructure (gateway, WAF) already limits
    * `/auth/login`.
    */
-  loginThrottle?: LoginThrottleSettings | false
+  loginThrottle?: LoginThrottleOptions | false
   /**
    * Called before checking the password, after the login throttle: return
    * an error (`tooManyRequestsError()`, `forbiddenError()`…) to reject the
@@ -381,18 +404,19 @@ export interface AuthSettings {
    */
   usernameClaim?: boolean
   /**
-   * Delay, in seconds after its first use, during which a refresh token can
-   * be presented again without being treated as stolen: concurrent
-   * refreshes (several tabs) and retries after a lost response get a new
-   * token pair in the same session. Defaults to 10; 0 disables it.
+   * Delay after its first use during which a refresh token can be
+   * presented again without being treated as stolen: concurrent refreshes
+   * (several tabs) and retries after a lost response get a new token pair
+   * in the same session. A number of seconds, or a duration like `'10s'`.
+   * Defaults to 10 seconds; 0 disables it.
    */
-  refreshTokenReuseInterval?: number
+  refreshTokenReuseInterval?: Duration
   /**
    * Called when a used refresh token is presented again after the reuse
    * interval: the session has been revoked, as the token was probably
    * stolen. Errors thrown by the hook are ignored.
    */
-  onRefreshTokenReuse?: (event: RefreshTokenReuseEvent) => Promise<void>
+  onRefreshTokenReuse?: (event: RefreshTokenReuseEvent) => void | Promise<void>
   /**
    * Roles of a user, checked by `requireRole()`. Defaults to its `roles`
    * array, or to its `role` string.
@@ -400,7 +424,7 @@ export interface AuthSettings {
   getUserRoles?: (user: AuthUser) => readonly string[]
 }
 
-/** Options of `auth.init()`. */
+/** Options of the setup of an auth service by `authPlugin()`. */
 export interface AuthInitOptions {
   /**
    * Browser path of the auth routes, used as the default path of the
@@ -415,9 +439,9 @@ export interface AuthInitOptions {
   cors?: PluginCors
 }
 
-export interface ResolvedAuthSettings extends Required<
+export interface ResolvedAuthOptions extends Required<
   Omit<
-    AuthSettings,
+    AuthOptions,
     | 'cookies'
     | 'clients'
     | 'session'
@@ -426,17 +450,24 @@ export interface ResolvedAuthSettings extends Required<
     | 'loginThrottle'
     | 'beforeLogin'
     | 'onRefreshTokenReuse'
+    | 'accessTokenTTL'
+    | 'refreshTokenReuseInterval'
   >
 > {
-  cookies: ResolvedCookieSettings
-  clients: ClientSettings | undefined
-  session: ResolvedSessionSettings
-  onLoginFailed: ((event: LoginFailedEvent) => Promise<void>) | undefined
-  onLoginSuccess: ((event: LoginSuccessEvent) => Promise<void>) | undefined
-  loginThrottle: ResolvedLoginThrottleSettings | undefined
-  beforeLogin: AuthSettings['beforeLogin']
-  onRefreshTokenReuse:
-    ((event: RefreshTokenReuseEvent) => Promise<void>) | undefined
+  /** In seconds. */
+  accessTokenTTL: number
+  /** In seconds. */
+  refreshTokenReuseInterval: number
+  /** Session lifetimes of the clients, in seconds. */
+  clientSessions: Readonly<Record<string, Partial<ResolvedSessionOptions>>>
+  cookies: ResolvedCookieOptions
+  clients: ClientOptions | undefined
+  session: ResolvedSessionOptions
+  onLoginFailed: AuthOptions['onLoginFailed']
+  onLoginSuccess: AuthOptions['onLoginSuccess']
+  loginThrottle: ResolvedLoginThrottleOptions | undefined
+  beforeLogin: AuthOptions['beforeLogin']
+  onRefreshTokenReuse: AuthOptions['onRefreshTokenReuse']
 }
 
 export interface TokenPair {
@@ -460,8 +491,9 @@ export interface IssuedTokens extends TokenPair {
   sessionExpiresAt: Date | undefined
 }
 
+/** Access token signed by the service. */
 export interface CreatedAccessToken {
-  jwtId: string
+  accessTokenId: string
   accessToken: string
   expiresAt: Date
 }

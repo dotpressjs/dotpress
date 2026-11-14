@@ -38,14 +38,14 @@ export const createStore = () => {
     storeRefreshToken: async ({
       tokenHash,
       userId,
-      jwtId,
-      familyId,
+      accessTokenId,
+      sessionId,
       expiresAt,
     }) => {
       refreshTokens.set(tokenHash, {
         userId,
-        jwtId,
-        familyId,
+        accessTokenId,
+        sessionId,
         expiresAt,
         isUsed: false,
         usedAt: null,
@@ -58,17 +58,17 @@ export const createStore = () => {
       if (token) Object.assign(token, { isUsed: true, usedAt })
     },
     // Every session of a user (logout of every device, password change).
-    revokeTokens: async (userId) =>
+    revokeUserTokens: async (userId) =>
       revokeWhere((token) => token.userId === userId),
     // One session: the refresh tokens rotated from the same login.
-    revokeTokenFamily: async (familyId) =>
-      revokeWhere((token) => token.familyId === familyId),
+    revokeSessionTokens: async (sessionId) =>
+      revokeWhere((token) => token.sessionId === sessionId),
     // Optional: the access tokens of a revoked session stop working at
     // once, instead of at their expiry (15 minutes). A revoked session has
     // revoked refresh tokens: no other storage needed.
     isSessionRevoked: async (sessionId) =>
       [...refreshTokens.values()].some(
-        (token) => token.familyId === sessionId && token.revokedAt
+        (token) => token.sessionId === sessionId && token.revokedAt
       ),
     // Called on every authenticated request: the public profile, becoming
     // ctx.user. Return undefined for a deleted or disabled account.

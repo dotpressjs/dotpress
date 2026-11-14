@@ -11,7 +11,7 @@ defineRoute({ path: '/admin', middleware: [requireAuth], handler })
 // TypeError: Route "/admin": unknown option "middleware".
 ```
 
-This applies to `createApp()`, the routes (their `schema` and `meta` too), the error helpers, the console logger, the adapters and their Lambda handlers, OpenAPI, the test helpers, and the mailer, events and cache services. TypeScript reports most of these mistakes first; the check catches the others, in JavaScript or with an object built at runtime.
+This applies to `createApp()`, the routes (their `schema` and `meta` too), the error helpers, the console logger, the adapters and their Lambda handlers, OpenAPI, the test helpers, and the auth, mailer, events and cache services. TypeScript reports most of these mistakes first; the check catches the others, in JavaScript or with an object built at runtime.
 
 ## Durations
 

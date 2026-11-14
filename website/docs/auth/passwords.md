@@ -9,7 +9,7 @@ const passwordHash = await auth.hashPassword(password) // at sign-up
 const valid = await auth.verifyPassword(password, passwordHash)
 ```
 
-`generatePasswordHash(password, rounds)` hashes without an auth service, in a script that creates accounts. Like `hashPassword()`, it throws a `RangeError` beyond 72 bytes.
+`generatePasswordHash(password, { rounds })` hashes without an auth service, in a script that creates accounts. Like `hashPassword()`, it throws a `RangeError` beyond 72 bytes.
 
 ### The 72-byte limit
 

@@ -60,7 +60,9 @@ export const startApp = async () => {
     store.users.create({
       username,
       role,
-      passwordHash: await generatePasswordHash(PASSWORD, HASH_ROUNDS),
+      passwordHash: await generatePasswordHash(PASSWORD, {
+        rounds: HASH_ROUNDS,
+      }),
     })
 
   const login = (username: string, options: Record<string, unknown> = {}) =>

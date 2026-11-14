@@ -12,14 +12,14 @@ const auth = createAuth({ keys, issuer: 'https://api.example.com', dataProvider 
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `keys` | required | `secretKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM), plus optional `kid` and `additionalPublicKeys`. RS256. See [Keys and rotation](/auth/keys). |
+| `keys` | required | `privateKey` (PKCS#8 PEM) and `publicKey` (SPKI PEM), plus optional `kid` and `additionalPublicKeys`. RS256. See [Keys and rotation](/auth/keys). |
 | `issuer` | required | The `iss` claim, checked on every request: the URL of the API, one value per environment and application. |
 | `dataProvider` | required | The storage of users and refresh tokens: see [DataProvider](#dataprovider). |
 | `audience` | `issuer` | The `aud` claim: the API that accepts the tokens. Checked on every request. |
-| `accessTokenTTL` | `900` | Lifetime of the access tokens, in seconds. |
-| `session.idleTimeout` | 14 days | The session ends when it is not refreshed during this delay, in seconds. |
-| `session.absoluteTimeout` | none | The session ends this delay after login, in seconds, even when active. |
-| `clients` | — | `{ allowed, required?, isUserRoleAllowed?(role, clientId), sessions? }`: see [Clients](/auth/clients). |
+| `accessTokenTTL` | `'15m'` | Lifetime of the access tokens. |
+| `session.idleTimeout` | `'14d'` | The session ends when it is not refreshed during this delay. |
+| `session.absoluteTimeout` | none | The session ends this delay after login, even when active. |
+| `clients` | — | `{ allowed, required?, isUserRoleAllowed?({ userId, role, clientId }), sessions? }`: see [Clients](/auth/clients). |
 | `cookies` | disabled | The cookie mode: see [Cookie settings](#cookie-settings). |
 | `loginThrottle` | enabled, in memory | `{ store?, limits? }`, or `false`. See [Brute force protection](/auth/passwords#brute-force-protection). |
 | `beforeLogin` | — | `({ username, clientId, ipAddress, req }) => …`, after the throttle and before the password check. Return an `HttpError` to reject the attempt. |
@@ -28,10 +28,10 @@ const auth = createAuth({ keys, issuer: 'https://api.example.com', dataProvider 
 | `passwordHashRounds` | `12` | bcrypt cost of `hashPassword()`, and of the dummy hash compared for unknown users. |
 | `usernameClaim` | `false` | Writes the `username` claim in the access tokens. |
 | `getUserRoles` | `user.roles`, or `user.role` | The roles checked by `requireRole()`. |
-| `refreshTokenReuseInterval` | `10` | Seconds after its first use during which a refresh token presented again gets a new pair in the same session. `0` disables it. |
-| `onRefreshTokenReuse` | — | Called with `{ userId, familyId, jwtId }` when a session is revoked because a used refresh token came back. |
+| `refreshTokenReuseInterval` | `'10s'` | Delay after its first use during which a refresh token presented again gets a new pair in the same session. `0` disables it. |
+| `onRefreshTokenReuse` | — | Called with `{ userId, sessionId, accessTokenId }` when a session is revoked because a used refresh token came back. |
 
-Invalid settings make `createAuth()` throw; a missing `issuer`, a `publicKey` that does not match the `secretKey`, or a PKCS#1 key make the app fail at startup, with an explicit message.
+The durations are [`Duration` values](/concepts/options#durations), rounded to the second: a number of seconds, or a string like `'15m'` or `'14d'`. Invalid or unknown settings make `createAuth()` throw; a missing `issuer`, a `publicKey` that does not match the `privateKey`, or a PKCS#1 key make the app fail at startup, with an explicit message.
 
 ### Cookie settings
 
@@ -121,7 +121,8 @@ A `401` gets a `WWW-Authenticate: Bearer` header (RFC 6750), with `error="invali
 | `refreshTokens({ accessToken, refreshToken })` | Rotates a pair. Returns the new pair, `userId` and `user`. |
 | `verifyAccessToken(accessToken)` | Verifies a valid access token, and returns its `AuthSession`. |
 | `revokeSession(refreshToken, { scope? })` | Revokes the session of a refresh token, or every session of the user with `scope: 'all'`. Returns `{ userId, sessionId }`, or `undefined` when nothing was revoked. |
-| `hashPassword(password, saltRounds?)` | bcrypt hash. Throws a `RangeError` beyond 72 bytes. |
+| `revokeUserSessions(userId)` | Revokes every session of a user, on every device: after a password change, or when an account is disabled. |
+| `hashPassword(password)` | bcrypt hash, with `passwordHashRounds`. Throws a `RangeError` beyond 72 bytes. |
 | `verifyPassword(password, hash)` | Compares with bcrypt; a missing hash (unknown user, account without password) is compared with a dummy one, in the same time, and gives `false`. |
 | `passwordNeedsRehash(hash)`, `rehashPassword(password)` | Upgrade the cost of a hash. |
 | `setAuthCookies(res, tokens)`, `clearAuthCookies(res)` | Set or clear the cookies, in a route. |
@@ -130,7 +131,7 @@ A `401` gets a `WWW-Authenticate: Bearer` header (RFC 6750), with `error="invali
 | `getJwks()` | The public keys, as a JSON Web Key Set. |
 | `getUserRoles(user)` | The roles of a user. |
 
-`generatePasswordHash(password, rounds?)` and `isPasswordTooLong(password)` are also exported, without a service.
+`generatePasswordHash(password, { rounds? })` and `isPasswordTooLong(password)` are also exported, without a service.
 
 ## AuthSession
 
@@ -139,8 +140,8 @@ A `401` gets a `WWW-Authenticate: Bearer` header (RFC 6750), with `error="invali
 | Field | Claim | Description |
 | --- | --- | --- |
 | `userId` | `sub` | The user. |
-| `tokenId` | `jti` | The access token. |
-| `sessionId` | `sid` | The session: the `familyId` of its refresh tokens. |
+| `accessTokenId` | `jti` | The access token. |
+| `sessionId` | `sid` | The session: the `sessionId` of its refresh tokens. |
 | `clientId` | `client_id` | The client, with the `clients` setting. |
 | `username` | `username` | With `usernameClaim: true` only. |
 | `roles` | — | The roles of the user. |
@@ -156,15 +157,15 @@ interface DataProvider {
     token: string
     tokenHash: string // SHA-256 of the token: store this one only
     userId: string
-    jwtId: string // the access token issued with it
-    familyId: string // the session
+    accessTokenId: string // the access token issued with it
+    sessionId: string // the session
     expiresAt: Date
   }): Promise<void>
   findRefreshToken(tokenHash: string): Promise<
     | {
         userId: string
-        jwtId: string
-        familyId?: string | null
+        accessTokenId: string
+        sessionId?: string | null
         expiresAt: Date
         isUsed: boolean
         usedAt?: Date | null
@@ -173,8 +174,8 @@ interface DataProvider {
     | undefined
   >
   markRefreshTokenAsUsed(tokenHash: string, usedAt: Date): Promise<void>
-  revokeTokens(userId: string): Promise<void> // every session of a user
-  revokeTokenFamily(familyId: string): Promise<void> // one session
+  revokeUserTokens(userId: string): Promise<void> // every session of a user
+  revokeSessionTokens(sessionId: string): Promise<void> // one session
   findUserById(userId: string): Promise<AuthUser | undefined> // undefined for deleted or disabled accounts
   findUserIdentifiers(username: string): Promise<
     { userId: string; passwordHash: string | null; role?: string } | undefined

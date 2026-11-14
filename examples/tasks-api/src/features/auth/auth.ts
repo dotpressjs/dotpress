@@ -1,4 +1,4 @@
-import { createAuth, type KeyPairSettings } from '@dotpress/auth'
+import { createAuth, type KeyPairOptions } from '@dotpress/auth'
 import type { Database } from '../../db/database.ts'
 import type { User, UserRepository } from '../users/repository.ts'
 import { createDataProvider } from './data-provider.ts'
@@ -17,7 +17,7 @@ declare module '@dotpress/auth' {
 export interface AuthOptions {
   db: Database
   users: UserRepository
-  keys: KeyPairSettings
+  keys: KeyPairOptions
   /** `iss` claim: the public URL of the API. */
   issuer: string
   /** bcrypt cost. Defaults to 12 (about 200 ms per login). */

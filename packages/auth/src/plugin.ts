@@ -8,14 +8,15 @@ import {
   type Middleware,
   type RouteGroup,
 } from '@dotpress/core'
-import { AuthError, type Auth } from './auth.js'
+import { AuthError, internalsOf, type Auth } from './auth.js'
 import { sha256 } from './crypto.js'
 import { requireAuth } from './middlewares.js'
 import type {
   IssuedTokens,
   LoginFailedEvent,
-  ResolvedCookieSettings,
-  ResolvedLoginThrottleSettings,
+  ResolvedAuthOptions,
+  ResolvedCookieOptions,
+  ResolvedLoginThrottleOptions,
   TokenPair,
 } from './types.js'
 import './context.js'
@@ -31,6 +32,12 @@ export interface AuthPluginOptions {
    */
   jwks?: boolean
 }
+
+const PLUGIN_OPTIONS: readonly string[] = [
+  'prefix',
+  'routes',
+  'jwks',
+] satisfies (keyof AuthPluginOptions)[]
 
 /** Security schemes of the plugin, for documentation generators. */
 export const AUTH_SECURITY_SCHEMES = {
@@ -64,7 +71,7 @@ const bodyField = (body: unknown, key: string): string | undefined => {
  */
 const findAccessToken = (
   req: DotpressRequest,
-  cookies: ResolvedCookieSettings
+  cookies: ResolvedCookieOptions
 ): { token: string; source: 'header' | 'cookie' } | undefined => {
   // Authentication schemes are case-insensitive (RFC 7235).
   const bearer = BEARER.exec(req.header('authorization') ?? '')
@@ -79,21 +86,12 @@ const findAccessToken = (
 }
 
 /**
- * Access token of a request: `Authorization: Bearer` header, then cookie
- * (when enabled). The request body is never read.
- */
-export const extractAccessToken = (
-  req: DotpressRequest,
-  cookies: ResolvedCookieSettings
-): string | undefined => findAccessToken(req, cookies)?.token
-
-/**
  * Counters of the login throttle for an attempt. The username is
  * normalized (letter case, spaces), and the keys are hashed: bounded size,
  * and no personal data in the store.
  */
 const loginThrottleKeys = async (
-  throttle: ResolvedLoginThrottleSettings,
+  throttle: ResolvedLoginThrottleOptions,
   username: string,
   ipAddress: string
 ) => {
@@ -121,7 +119,7 @@ const crossOriginError = () => forbiddenError('CROSS_ORIGIN_REQUEST')
 const extractTokens = (
   req: DotpressRequest,
   body: unknown,
-  cookies: ResolvedCookieSettings
+  cookies: ResolvedCookieOptions
 ): (TokenPair & { mode: 'cookie' | 'body' }) | undefined => {
   const cookieRefreshToken = req.cookies[cookies.refreshTokenName]
 
@@ -151,8 +149,11 @@ const refreshErrorResponse = (error: unknown, fallback: string) => {
   return internalError(fallback)
 }
 
-const registerRoutes = (group: RouteGroup, auth: Auth) => {
-  const { settings } = auth
+const registerRoutes = (
+  group: RouteGroup,
+  auth: Auth,
+  settings: ResolvedAuthOptions
+) => {
   const { dataProvider, cookies } = settings
 
   /**
@@ -300,7 +301,11 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
       if (
         clientId !== undefined &&
         clients?.isUserRoleAllowed &&
-        !clients.isUserRoleAllowed(user.role ?? '', clientId)
+        !clients.isUserRoleAllowed({
+          userId: user.userId,
+          role: user.role,
+          clientId,
+        })
       ) {
         return loginFailed({ ...event, errorType: 'invalid_role' })
       }
@@ -521,9 +526,9 @@ const registerRoutes = (group: RouteGroup, auth: Auth) => {
 
       if (!revoked && session) {
         if (scope === 'all') {
-          await dataProvider.revokeTokens(session.userId)
+          await dataProvider.revokeUserTokens(session.userId)
         } else if (session.sessionId) {
-          await dataProvider.revokeTokenFamily(session.sessionId)
+          await dataProvider.revokeSessionTokens(session.sessionId)
         }
       } else if (!revoked && scope === 'all') {
         // Logging out every device requires proving the identity.
@@ -551,6 +556,21 @@ const normalizePrefix = (prefix: string) =>
  *   `GET /auth/me`, `POST /auth/restore` and `POST /auth/logout` routes.
  */
 export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
+  const internal = internalsOf(auth)
+  if (!internal) {
+    throw new TypeError(
+      'authPlugin() expects an auth service created with createAuth().'
+    )
+  }
+  if (typeof options !== 'object' || options === null) {
+    throw new TypeError('authPlugin(): options must be an object.')
+  }
+  for (const key of Object.keys(options)) {
+    if (!PLUGIN_OPTIONS.includes(key)) {
+      throw new TypeError(`authPlugin(): unknown option "${key}".`)
+    }
+  }
+  const { settings } = internal
   const prefix = options.prefix ?? '/auth'
 
   return definePlugin({
@@ -560,7 +580,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
     async setup(api) {
       // Fails at startup on invalid keys. The refresh token cookie is only
       // sent to the auth routes: its path is their browser path.
-      await auth.init({
+      await internal.init({
         ...(options.routes === false
           ? {}
           : { routesPath: api.publicPath(normalizePrefix(prefix)) }),
@@ -574,8 +594,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       const rejectedTokens = new WeakSet<object>()
 
       const authenticate: Middleware = async (ctx) => {
-        const { cookies } = auth.settings
-        const found = findAccessToken(ctx.req, cookies)
+        const found = findAccessToken(ctx.req, settings.cookies)
         if (!found) return
         const { token } = found
 
@@ -594,9 +613,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
 
         try {
           const session = await auth.verifyAccessToken(token)
-          const user = await auth.settings.dataProvider.findUserById(
-            session.userId
-          )
+          const user = await settings.dataProvider.findUserById(session.userId)
           if (!user) {
             if (found.source === 'header') rejectedTokens.add(ctx)
             return
@@ -648,7 +665,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       }
 
       if (options.routes !== false) {
-        registerRoutes(api.addRouteGroup(prefix), auth)
+        registerRoutes(api.addRouteGroup(prefix), auth, settings)
       }
     },
   })

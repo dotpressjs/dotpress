@@ -359,17 +359,21 @@ const app = await createApp({ adapter: expressAdapter(), plugins: [authPlugin(au
 
 | v1 | v2 |
 | --- | --- |
-| `generateAccessToken()`, `generateTokensForUser()`… | Methods of the service, asynchronous: `await auth.generateTokensForUser({ userId })` |
+| `generateTokensForUser()`… | Methods of the service, asynchronous: `await auth.generateTokensForUser({ userId })` |
+| `generateAccessToken()` | Removed: a token without session could not be revoked. `generateTokensForUser()` issues a token pair in a new session. |
+| `revokeTokens(userId)` of your data provider, to log a user out everywhere | `await auth.revokeUserSessions(userId)` |
 | `setAuthCookies(res, tokens)`, `clearAuthCookies(res)` | `auth.setAuthCookies(ctx.res, tokens)`, `auth.clearAuthCookies(ctx.res)` |
 | `req.user` | `ctx.user`, and the token in `ctx.auth` |
 | — | `requireAuth`, `requireRole(...roles)`, `requireClient(...clientIds)` |
-| `refreshTokenTTLInDays: 14` | `session: { idleTimeout: 14 * 24 * 60 * 60 }`, and `session.absoluteTimeout` |
+| `refreshTokenTTLInDays: 14` | `session: { idleTimeout: '14d' }`, and `session.absoluteTimeout` |
 | `aud` setting, login field `aud` or `client` | `clients: { allowed, required?, isUserRoleAllowed? }`, login field `clientId` |
 | The routes under `/auth` | Unchanged; `authPlugin(auth, { prefix })` to move them, `{ routes: false }` to remove them |
 
 ### Settings to change
 
 - **`issuer` is required**, and the `iss` claim is checked: one value per environment and application, such as the URL of the API.
+- **`keys.secretKey` is renamed `keys.privateKey`.**
+- **Unknown settings are rejected**: a misspelled setting throws at startup instead of being ignored. The setting types are named `AuthOptions`, `AuthCookieOptions`, `SessionOptions`…
 - **Keys in PKCS#8 and SPKI.** PKCS#1 keys (`BEGIN RSA PRIVATE KEY`) make `createApp()` fail. Converting a key does not change it: existing tokens stay valid.
 
   ```sh
@@ -385,10 +389,11 @@ const app = await createApp({ adapter: expressAdapter(), plugins: [authPlugin(au
 
 | Method | Change |
 | --- | --- |
-| `storeRefreshToken(payload)` | The payload has a `familyId`, to store. |
-| `findRefreshToken(tokenHash)` | Returns the stored `familyId` and `usedAt`. |
+| `storeRefreshToken(payload)` | The payload has a `sessionId`, to store. `jwtId` is renamed `accessTokenId`. The token itself is not given: store its `tokenHash`. |
+| `findRefreshToken(tokenHash)` | Returns `accessTokenId` (v1 `jwtId`), and the stored `sessionId` and `usedAt`. |
 | `markRefreshTokenAsUsed(tokenHash, usedAt)` | New `usedAt` parameter, to store. |
-| `revokeTokenFamily(familyId)` | New, required: revokes every refresh token of a session. |
+| `revokeTokens(userId)` | Renamed `revokeUserTokens(userId)`. |
+| `revokeSessionTokens(sessionId)` | New, required: revokes every refresh token of a session. |
 | `findUserById(id)` | Returns an `AuthUser`, and `undefined` for deleted, disabled or banned accounts: their sessions are no longer refreshed. |
 | `isSessionRevoked(sessionId)` | New, optional: rejects the access tokens of a revoked session at once. |
 | `updatePasswordHash(userId, hash)` | New, optional: upgrades the hashes of another cost at login. |
@@ -396,12 +401,12 @@ const app = await createApp({ adapter: expressAdapter(), plugins: [authPlugin(au
 For an SQL table:
 
 ```sql
-ALTER TABLE refresh_tokens ADD COLUMN family_id VARCHAR(36) NULL;
+ALTER TABLE refresh_tokens ADD COLUMN session_id VARCHAR(36) NULL;
 ALTER TABLE refresh_tokens ADD COLUMN used_at TIMESTAMP NULL;
-CREATE INDEX refresh_tokens_family_id ON refresh_tokens (family_id);
+CREATE INDEX refresh_tokens_session_id ON refresh_tokens (session_id);
 ```
 
-Refresh tokens stored by v1 keep working: they start a family at their next rotation. See [Data provider](/auth/data-provider).
+Your columns keep their names: map `jwt_id` to `accessTokenId`. Refresh tokens stored by v1 keep working: they start a session at their next rotation. See [Data provider](/auth/data-provider).
 
 ### New defaults
 

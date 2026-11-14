@@ -1,5 +1,6 @@
 import {
   createMemoryRateLimitStore,
+  parseDuration,
   type DotpressRequest,
   type DotpressResponse,
   type PluginCors,
@@ -23,22 +24,25 @@ import { isCookieAuthenticationAllowed } from './csrf.js'
 import type {
   AuthInitOptions,
   AuthSession,
-  AuthSettings,
+  AuthOptions,
   AuthUser,
-  CookieSettings,
+  AuthCookieOptions,
+  ClientOptions,
+  KeyPairOptions,
   CreatedAccessToken,
   CreatedRefreshToken,
   IssuedTokens,
-  LoginThrottleSettings,
+  LoginThrottleOptions,
   LogoutScope,
   RateLimit,
   RefreshTokenData,
-  ResolvedAuthSettings,
-  ResolvedCookieSettings,
-  ResolvedLoginThrottleSettings,
-  ResolvedSessionSettings,
+  ResolvedRateLimit,
+  ResolvedAuthOptions,
+  ResolvedCookieOptions,
+  ResolvedLoginThrottleOptions,
+  ResolvedSessionOptions,
   RevokedSession,
-  SessionSettings,
+  SessionOptions,
   TokenPair,
   TokenSubject,
 } from './types.js'
@@ -71,14 +75,6 @@ export class AuthError extends Error {
 }
 
 export interface Auth {
-  readonly settings: ResolvedAuthSettings
-  /**
-   * Imports the keys. Fails with an explicit message on invalid keys.
-   * `authPlugin()` calls it at startup, with the browser path of its routes.
-   */
-  init(options?: AuthInitOptions): Promise<void>
-  generateAccessToken(subject: TokenSubject): Promise<CreatedAccessToken>
-  generateRefreshToken(): Promise<CreatedRefreshToken>
   /** Generates and stores a token pair, starting a session. */
   generateTokensForUser(subject: TokenSubject): Promise<IssuedTokens>
   /**
@@ -89,7 +85,7 @@ export interface Auth {
    * `refreshTokenReuseInterval` after its first use, it may be presented
    * again (concurrent refreshes, retries after a lost response): a new pair
    * is issued in the same session. After, presenting it again means it was
-   * probably stolen: the whole session (token family) is revoked, and
+   * probably stolen: the whole session is revoked, and
    * `REFRESH_TOKEN_REUSED` is thrown.
    *
    * Throws `EXPIRED_REFRESH_TOKEN` when the session reached its inactivity
@@ -108,7 +104,7 @@ export interface Auth {
   /**
    * Revokes the session of a refresh token (logout). The token may be
    * used, revoked or expired: it still designates its session. Tokens
-   * stored without family (before V2) revoke every session of the user.
+   * stored before sessions (V1) revoke every session of the user.
    *
    * With `scope: 'all'`, revokes every session of the user, on every
    * device. The token must then be active (neither used, revoked nor
@@ -121,6 +117,13 @@ export interface Auth {
     refreshToken: string,
     options?: { scope?: LogoutScope }
   ): Promise<RevokedSession | undefined>
+  /**
+   * Revokes every session of a user, on every device: after a password
+   * change, or when an account is disabled. Their refresh tokens stop
+   * working at once; their access tokens too with
+   * `DataProvider.isSessionRevoked()`, else at their expiry.
+   */
+  revokeUserSessions(userId: string): Promise<void>
   /**
    * End of a session, when an absolute timeout applies to it (computed
    * from the `auth_time` claim).
@@ -141,8 +144,7 @@ export interface Auth {
    */
   setAuthCookies(
     res: DotpressResponse,
-    tokens: TokenPair & { refreshTokenExpiresAt?: Date },
-    expiresInSeconds?: number
+    tokens: TokenPair & { refreshTokenExpiresAt?: Date }
   ): void
   clearAuthCookies(res: DotpressResponse): void
   /**
@@ -153,11 +155,11 @@ export interface Auth {
    */
   isCookieAuthenticationAllowed(req: DotpressRequest): Promise<boolean>
   /**
-   * Hashes a password with bcrypt. Defaults to `passwordHashRounds`.
-   * Throws a `RangeError` for passwords longer than 72 bytes (see
+   * Hashes a password with bcrypt, with `passwordHashRounds`. Throws a
+   * `RangeError` for passwords longer than 72 bytes (see
    * `isPasswordTooLong()`).
    */
-  hashPassword(password: string, saltRounds?: number): Promise<string>
+  hashPassword(password: string): Promise<string>
   /** Whether a bcrypt hash has another cost than `passwordHashRounds`. */
   passwordNeedsRehash(passwordHash: string): boolean
   /**
@@ -178,7 +180,97 @@ export interface Auth {
   ): Promise<boolean>
 }
 
-const DEFAULT_COOKIE_SETTINGS: ResolvedCookieSettings = {
+/** What `authPlugin()` needs of an auth service, besides its methods. */
+export interface AuthInternals {
+  readonly settings: ResolvedAuthOptions
+  /**
+   * Imports the keys. Fails with an explicit message on invalid keys.
+   * `authPlugin()` calls it at startup, with the browser path of its routes.
+   */
+  init(options?: AuthInitOptions): Promise<void>
+}
+
+const internals = new WeakMap<Auth, AuthInternals>()
+
+/**
+ * The internals of a service created by `createAuth()`, or `undefined` for
+ * any other value.
+ */
+export const internalsOf = (auth: unknown): AuthInternals | undefined =>
+  typeof auth === 'object' && auth !== null
+    ? internals.get(auth as Auth)
+    : undefined
+
+/** A duration option, in whole seconds, at least `min`. */
+const wholeSeconds = (label: string, value: unknown, min: number) => {
+  const result = Math.round(parseDuration(value, label) / 1000)
+  if (result < min) {
+    throw new RangeError(
+      `Invalid ${label}: expected ${min === 0 ? 'a non-negative' : `at least ${min} second`} duration.`
+    )
+  }
+  return result
+}
+
+/** Throws a `TypeError` for an unknown key of `options`. */
+const assertKnown = (
+  options: unknown,
+  known: readonly string[],
+  prefix = ''
+): void => {
+  if (options === undefined) return
+  if (typeof options !== 'object' || options === null) {
+    throw new TypeError(
+      `createAuth(): ${prefix ? prefix.slice(0, -1) : 'options'} must be an object.`
+    )
+  }
+  for (const key of Object.keys(options)) {
+    if (!known.includes(key)) {
+      throw new TypeError(`createAuth(): unknown option "${prefix}${key}".`)
+    }
+  }
+}
+
+const OPTIONS = [
+  'keys',
+  'dataProvider',
+  'accessTokenTTL',
+  'session',
+  'issuer',
+  'audience',
+  'cookies',
+  'clients',
+  'onLoginFailed',
+  'onLoginSuccess',
+  'loginThrottle',
+  'beforeLogin',
+  'passwordHashRounds',
+  'usernameClaim',
+  'refreshTokenReuseInterval',
+  'onRefreshTokenReuse',
+  'getUserRoles',
+] satisfies (keyof AuthOptions)[]
+
+const KEY_OPTIONS = [
+  'privateKey',
+  'publicKey',
+  'kid',
+  'additionalPublicKeys',
+] satisfies (keyof KeyPairOptions)[]
+
+const SESSION_OPTIONS = [
+  'idleTimeout',
+  'absoluteTimeout',
+] satisfies (keyof SessionOptions)[]
+
+const CLIENT_OPTIONS = [
+  'allowed',
+  'required',
+  'isUserRoleAllowed',
+  'sessions',
+] satisfies (keyof ClientOptions)[]
+
+const DEFAULT_COOKIE_SETTINGS: ResolvedCookieOptions = {
   enabled: false,
   httpOnly: true,
   secure: true,
@@ -201,15 +293,21 @@ const defaultUserRoles = (user: AuthUser): readonly string[] => {
   return typeof role === 'string' ? [role] : []
 }
 
-const checkSession = (session: SessionSettings | undefined, name: string) => {
-  for (const key of ['idleTimeout', 'absoluteTimeout'] as const) {
-    const value = session?.[key]
-    if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
-      throw new RangeError(
-        `Invalid ${name}.${key}: expected a positive number of seconds.`
-      )
-    }
+/** Session lifetimes in seconds; missing keys stay missing. */
+const resolveSession = (
+  session: SessionOptions | undefined,
+  name: string
+): Partial<ResolvedSessionOptions> => {
+  assertKnown(session, SESSION_OPTIONS, `${name}.`)
+  const resolved: Partial<ResolvedSessionOptions> = {}
+  for (const key of SESSION_OPTIONS) {
+    if (session === undefined || !(key in session)) continue
+    const value = session[key]
+    // An explicit `absoluteTimeout: undefined` removes the global limit.
+    resolved[key] =
+      value === undefined ? undefined : wholeSeconds(`${name}.${key}`, value, 1)
   }
+  return resolved
 }
 
 const DEFAULT_LOGIN_LIMITS = {
@@ -218,27 +316,41 @@ const DEFAULT_LOGIN_LIMITS = {
 } as const
 
 const resolveLoginThrottle = (
-  input: LoginThrottleSettings | false | undefined
-): ResolvedLoginThrottleSettings | undefined => {
+  input: LoginThrottleOptions | false | undefined
+): ResolvedLoginThrottleOptions | undefined => {
   if (input === false) return undefined
+
+  assertKnown(input, ['store', 'limits'], 'loginThrottle.')
+  assertKnown(
+    input?.limits,
+    ['usernameAndIp', 'username'],
+    'loginThrottle.limits.'
+  )
 
   const limit = (
     name: keyof typeof DEFAULT_LOGIN_LIMITS
-  ): RateLimit | undefined => {
+  ): ResolvedRateLimit | undefined => {
     const value = input?.limits?.[name]
     if (value === false) return undefined
-    const resolved = value ?? DEFAULT_LOGIN_LIMITS[name]
-    if (
-      !Number.isInteger(resolved.max) ||
-      resolved.max < 1 ||
-      !Number.isFinite(resolved.window) ||
-      resolved.window <= 0
-    ) {
+    const resolved: RateLimit = value ?? DEFAULT_LOGIN_LIMITS[name]
+    assertKnown(
+      resolved,
+      ['max', 'window'] satisfies (keyof RateLimit)[],
+      `loginThrottle.limits.${name}.`
+    )
+    if (!Number.isInteger(resolved.max) || resolved.max < 1) {
       throw new RangeError(
-        `Invalid loginThrottle.limits.${name}: expected a positive integer max and a positive window, in seconds.`
+        `Invalid loginThrottle.limits.${name}.max: expected a positive integer.`
       )
     }
-    return { max: resolved.max, window: resolved.window }
+    return {
+      max: resolved.max,
+      window: wholeSeconds(
+        `loginThrottle.limits.${name}.window`,
+        resolved.window,
+        1
+      ),
+    }
   }
 
   const store = input?.store ?? createMemoryRateLimitStore()
@@ -260,10 +372,44 @@ const resolveLoginThrottle = (
   }
 }
 
-const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
-  if (!settings?.keys?.secretKey || !settings.keys.publicKey) {
+const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
+  if (typeof settings !== 'object' || settings === null) {
+    throw new TypeError('createAuth() requires an options object.')
+  }
+  if ('refreshTokenTTLInDays' in settings) {
     throw new TypeError(
-      'createAuth() requires keys.secretKey and keys.publicKey.'
+      'refreshTokenTTLInDays is replaced by session.idleTimeout, in seconds.'
+    )
+  }
+  if (
+    typeof settings.keys === 'object' &&
+    settings.keys !== null &&
+    'secretKey' in settings.keys
+  ) {
+    throw new TypeError('keys.secretKey is renamed keys.privateKey.')
+  }
+  assertKnown(settings, OPTIONS)
+  assertKnown(settings.keys, KEY_OPTIONS, 'keys.')
+  for (const [index, entry] of (
+    settings.keys?.additionalPublicKeys ?? []
+  ).entries()) {
+    if (typeof entry !== 'string') {
+      assertKnown(
+        entry,
+        ['publicKey', 'kid'],
+        `keys.additionalPublicKeys[${index}].`
+      )
+    }
+  }
+  assertKnown(settings.clients, CLIENT_OPTIONS, 'clients.')
+  assertKnown(
+    settings.cookies,
+    Object.keys(DEFAULT_COOKIE_SETTINGS),
+    'cookies.'
+  )
+  if (!settings?.keys?.privateKey || !settings.keys.publicKey) {
+    throw new TypeError(
+      'createAuth() requires keys.privateKey and keys.publicKey.'
     )
   }
   if (!settings.dataProvider) {
@@ -297,11 +443,6 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
       'Invalid passwordHashRounds: expected an integer between 4 and 31.'
     )
   }
-  if ('refreshTokenTTLInDays' in settings) {
-    throw new TypeError(
-      'refreshTokenTTLInDays is replaced by session.idleTimeout, in seconds.'
-    )
-  }
   for (const origin of settings.cookies?.trustedOrigins ?? []) {
     let valid = false
     try {
@@ -315,33 +456,37 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
       )
     }
   }
-  checkSession(settings.session, 'session')
-  for (const [clientId, session] of Object.entries(clients?.sessions ?? {})) {
+  const session = resolveSession(settings.session, 'session')
+  const clientSessions: Record<string, Partial<ResolvedSessionOptions>> = {}
+  for (const [clientId, override] of Object.entries(clients?.sessions ?? {})) {
     if (!clients?.allowed.includes(clientId)) {
       throw new TypeError(
         `Invalid clients.sessions: "${clientId}" is not in clients.allowed.`
       )
     }
-    checkSession(session, `clients.sessions.${clientId}`)
-  }
-  const reuseInterval = settings.refreshTokenReuseInterval
-  if (
-    reuseInterval !== undefined &&
-    (!Number.isFinite(reuseInterval) || reuseInterval < 0)
-  ) {
-    throw new RangeError(
-      'Invalid refreshTokenReuseInterval: expected a non-negative number of seconds.'
+    clientSessions[clientId] = resolveSession(
+      override,
+      `clients.sessions.${clientId}`
     )
   }
+  const optional = (
+    label: 'accessTokenTTL' | 'refreshTokenReuseInterval',
+    fallback: number,
+    min: number
+  ) =>
+    settings[label] === undefined
+      ? fallback
+      : wholeSeconds(label, settings[label], min)
 
   return {
     keys: settings.keys,
     dataProvider: settings.dataProvider,
-    accessTokenTTL: settings.accessTokenTTL ?? 900,
+    accessTokenTTL: optional('accessTokenTTL', 900, 1),
     session: {
-      idleTimeout: settings.session?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT,
-      absoluteTimeout: settings.session?.absoluteTimeout,
+      idleTimeout: session.idleTimeout ?? DEFAULT_IDLE_TIMEOUT,
+      absoluteTimeout: session.absoluteTimeout,
     },
+    clientSessions,
     issuer: settings.issuer,
     audience: settings.audience ?? settings.issuer,
     cookies: resolveCookies(settings.cookies),
@@ -352,7 +497,7 @@ const resolveSettings = (settings: AuthSettings): ResolvedAuthSettings => {
     beforeLogin: settings.beforeLogin,
     passwordHashRounds: settings.passwordHashRounds ?? 12,
     usernameClaim: settings.usernameClaim ?? false,
-    refreshTokenReuseInterval: settings.refreshTokenReuseInterval ?? 10,
+    refreshTokenReuseInterval: optional('refreshTokenReuseInterval', 10, 0),
     onRefreshTokenReuse: settings.onRefreshTokenReuse,
     getUserRoles: settings.getUserRoles ?? defaultUserRoles,
   }
@@ -393,9 +538,9 @@ const cookieName = (
 }
 
 const resolveCookies = (
-  settings: CookieSettings = {}
-): ResolvedCookieSettings => {
-  const merged: ResolvedCookieSettings = { ...DEFAULT_COOKIE_SETTINGS }
+  settings: AuthCookieOptions = {}
+): ResolvedCookieOptions => {
+  const merged: ResolvedCookieOptions = { ...DEFAULT_COOKIE_SETTINGS }
   for (const [key, value] of Object.entries(settings)) {
     // An explicit `undefined` keeps the default.
     if (value !== undefined) Object.assign(merged, { [key]: value })
@@ -467,19 +612,19 @@ const loadPublicKey = async (
 }
 
 const importKeys = async ({
-  secretKey,
+  privateKey,
   publicKey,
   kid,
   additionalPublicKeys = [],
-}: ResolvedAuthSettings['keys']) => {
-  if (secretKey.includes('BEGIN RSA PRIVATE KEY')) {
+}: ResolvedAuthOptions['keys']) => {
+  if (privateKey.includes('BEGIN RSA PRIVATE KEY')) {
     throw new TypeError(
-      'Invalid auth secretKey: PKCS#1 keys ("BEGIN RSA PRIVATE KEY") are not supported, use PKCS#8 ("BEGIN PRIVATE KEY"). Convert it with: openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem'
+      'Invalid auth privateKey: PKCS#1 keys ("BEGIN RSA PRIVATE KEY") are not supported, use PKCS#8 ("BEGIN PRIVATE KEY"). Convert it with: openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem'
     )
   }
 
-  const privateKey = await loadKey('secretKey', () =>
-    importPKCS8(secretKey, ALGORITHM)
+  const signingKey = await loadKey('privateKey', () =>
+    importPKCS8(privateKey, ALGORITHM)
   )
   const active = await loadPublicKey('publicKey', publicKey, kid)
 
@@ -488,11 +633,11 @@ const importKeys = async ({
   try {
     const probe = await new CompactSign(new Uint8Array([1]))
       .setProtectedHeader({ alg: ALGORITHM })
-      .sign(privateKey)
+      .sign(signingKey)
     await compactVerify(probe, active.key)
   } catch (error) {
     throw new TypeError(
-      'Invalid auth keys: publicKey does not match secretKey.',
+      'Invalid auth keys: publicKey does not match privateKey.',
       { cause: error }
     )
   }
@@ -519,7 +664,7 @@ const importKeys = async ({
     }
   }
 
-  return { privateKey, kid: active.kid, verificationKeys }
+  return { signingKey, kid: active.kid, verificationKeys }
 }
 
 /**
@@ -563,14 +708,19 @@ const toSession = (
   claims: Record<string, unknown>,
   roles: readonly string[]
 ): AuthSession => {
-  if (typeof claims.sub !== 'string' || claims.sub === '') {
+  if (
+    typeof claims.sub !== 'string' ||
+    claims.sub === '' ||
+    typeof claims.sid !== 'string' ||
+    claims.sid === ''
+  ) {
     throw new AuthError('INVALID_ACCESS_TOKEN')
   }
   return {
     userId: claims.sub,
     username: typeof claims.username === 'string' ? claims.username : undefined,
-    tokenId: typeof claims.jti === 'string' ? claims.jti : '',
-    sessionId: typeof claims.sid === 'string' ? claims.sid : undefined,
+    accessTokenId: typeof claims.jti === 'string' ? claims.jti : '',
+    sessionId: claims.sid,
     clientId:
       typeof claims.client_id === 'string' ? claims.client_id : undefined,
     roles,
@@ -586,7 +736,7 @@ const toSession = (
  * const auth = createAuth({ keys, dataProvider })
  * await createApp({ adapter, plugins: [authPlugin(auth)] })
  */
-export const createAuth = (input: AuthSettings): Auth => {
+export const createAuth = (input: AuthOptions): Auth => {
   const settings = resolveSettings(input)
   let keys: ReturnType<typeof importKeys> | undefined
 
@@ -612,11 +762,9 @@ export const createAuth = (input: AuthSettings): Auth => {
   /** Session lifetimes of a client. */
   const sessionPolicy = (
     clientId: string | undefined
-  ): ResolvedSessionSettings => {
+  ): ResolvedSessionOptions => {
     const override =
-      clientId === undefined
-        ? undefined
-        : settings.clients?.sessions?.[clientId]
+      clientId === undefined ? undefined : settings.clientSessions[clientId]
     if (!override) return settings.session
     return {
       idleTimeout: override.idleTimeout ?? settings.session.idleTimeout,
@@ -640,10 +788,10 @@ export const createAuth = (input: AuthSettings): Auth => {
     username?: string
     auth_time: number
     client_id?: string
-    sid?: string
+    sid: string
   }): Promise<CreatedAccessToken> => {
-    const { privateKey, kid } = await getKeys()
-    const jwtId = crypto.randomUUID()
+    const { signingKey, kid } = await getKeys()
+    const accessTokenId = crypto.randomUUID()
     const issuedAt = nowInSeconds()
     // An access token never outlives its session.
     const expiresAt = Math.min(
@@ -656,19 +804,23 @@ export const createAuth = (input: AuthSettings): Auth => {
       ...(settings.usernameClaim &&
         claims.username && { username: claims.username }),
       auth_time: claims.auth_time,
-      ...(claims.sid !== undefined && { sid: claims.sid }),
+      sid: claims.sid,
       ...(claims.client_id !== undefined && { client_id: claims.client_id }),
     })
       .setProtectedHeader({ alg: ALGORITHM, typ: ACCESS_TOKEN_TYPE, kid })
       .setSubject(claims.sub)
       .setIssuer(settings.issuer)
       .setAudience(settings.audience)
-      .setJti(jwtId)
+      .setJti(accessTokenId)
       .setIssuedAt(issuedAt)
       .setExpirationTime(expiresAt)
-      .sign(privateKey)
+      .sign(signingKey)
 
-    return { jwtId, accessToken: token, expiresAt: new Date(expiresAt * 1000) }
+    return {
+      accessTokenId,
+      accessToken: token,
+      expiresAt: new Date(expiresAt * 1000),
+    }
   }
 
   const generateRefreshToken = async (): Promise<CreatedRefreshToken> => {
@@ -688,10 +840,10 @@ export const createAuth = (input: AuthSettings): Auth => {
       auth_time: number
       client_id?: string
     },
-    familyId: string
+    sessionId: string
   ): Promise<IssuedTokens> => {
-    // The session identifier (`sid`) is the token family.
-    const access = await signAccessToken({ ...claims, sid: familyId })
+    // Every token of a session shares its identifier (`sid`).
+    const access = await signAccessToken({ ...claims, sid: sessionId })
     const refreshToken = await generateRefreshToken()
     const end = sessionEnd(claims.auth_time, claims.client_id)
     const refreshTokenExpiresAt = new Date(
@@ -702,10 +854,10 @@ export const createAuth = (input: AuthSettings): Auth => {
     )
 
     await settings.dataProvider.storeRefreshToken({
-      ...refreshToken,
+      tokenHash: refreshToken.tokenHash,
       userId: claims.sub,
-      jwtId: access.jwtId,
-      familyId,
+      accessTokenId: access.accessTokenId,
+      sessionId,
       expiresAt: refreshTokenExpiresAt,
     })
 
@@ -734,19 +886,19 @@ export const createAuth = (input: AuthSettings): Auth => {
       return
     }
 
-    const familyId = stored.familyId ?? undefined
-    if (familyId) {
-      await settings.dataProvider.revokeTokenFamily(familyId)
+    const sessionId = stored.sessionId ?? undefined
+    if (sessionId) {
+      await settings.dataProvider.revokeSessionTokens(sessionId)
     } else {
-      // Tokens stored without family: revoke every session of the user.
-      await settings.dataProvider.revokeTokens(stored.userId)
+      // Tokens stored before sessions (V1): revoke every session of the user.
+      await settings.dataProvider.revokeUserTokens(stored.userId)
     }
 
     try {
       await settings.onRefreshTokenReuse?.({
         userId: stored.userId,
-        familyId,
-        jwtId: stored.jwtId,
+        sessionId,
+        accessTokenId: stored.accessTokenId,
       })
     } catch {
       // The session is revoked; a failing notification must not hide it.
@@ -780,9 +932,6 @@ export const createAuth = (input: AuthSettings): Auth => {
       client_id: clientId,
     }
   }
-
-  const generateAccessToken = async (subject: TokenSubject) =>
-    signAccessToken(sessionClaims(subject))
 
   let routesPath: string | undefined
   let cors: PluginCors | undefined
@@ -824,23 +973,9 @@ export const createAuth = (input: AuthSettings): Auth => {
     return { httpOnly, secure, sameSite, path, domain }
   }
 
-  return {
-    settings,
-
+  const auth: Auth = {
     isCookieAuthenticationAllowed: (req) =>
       isCookieAuthenticationAllowed(req, isTrustedOrigin(req)),
-
-    init: async (options = {}) => {
-      if (options.routesPath !== undefined) bindRoutesPath(options.routesPath)
-      if (options.cors !== undefined) cors = options.cors
-      // The dummy hash is computed now: otherwise, the first login of an
-      // unknown user would take longer.
-      await Promise.all([getKeys(), getDummyHash()])
-    },
-
-    generateAccessToken,
-
-    generateRefreshToken,
 
     async generateTokensForUser(subject) {
       return issueTokens(sessionClaims(subject), crypto.randomUUID())
@@ -890,7 +1025,7 @@ export const createAuth = (input: AuthSettings): Auth => {
         !userId ||
         !stored ||
         stored.userId !== userId ||
-        stored.jwtId !== claims.jti ||
+        stored.accessTokenId !== claims.jti ||
         stored.revokedAt ||
         // Client removed from the configuration: the session ends.
         !isClientAccepted(clientId)
@@ -924,10 +1059,10 @@ export const createAuth = (input: AuthSettings): Auth => {
       // Deleted or disabled account: the session ends.
       const user = await settings.dataProvider.findUserById(userId)
       if (!user) {
-        if (stored.familyId) {
-          await settings.dataProvider.revokeTokenFamily(stored.familyId)
+        if (stored.sessionId) {
+          await settings.dataProvider.revokeSessionTokens(stored.sessionId)
         } else {
-          await settings.dataProvider.revokeTokens(userId)
+          await settings.dataProvider.revokeUserTokens(userId)
         }
         throw new AuthError('INVALID_REFRESH_TOKEN')
       }
@@ -940,9 +1075,9 @@ export const createAuth = (input: AuthSettings): Auth => {
           auth_time: authTime,
           client_id: clientId,
         },
-        // Tokens stored without family start one, derived from the token
-        // so that concurrent rotations land in the same family.
-        stored.familyId || stored.jwtId
+        // Tokens stored before sessions (V1) start one, derived from the
+        // token so that concurrent rotations land in the same session.
+        stored.sessionId || stored.accessTokenId
       )
       // A token reused within the interval keeps its first use date: the
       // interval cannot be extended by presenting it again.
@@ -998,7 +1133,7 @@ export const createAuth = (input: AuthSettings): Auth => {
         await sha256(refreshToken)
       )
       if (!stored) return undefined
-      const sessionId = stored.familyId || undefined
+      const sessionId = stored.sessionId || undefined
 
       if (scope === 'all') {
         // Logging out every device requires a token that still works.
@@ -1009,15 +1144,22 @@ export const createAuth = (input: AuthSettings): Auth => {
         ) {
           return undefined
         }
-        await dataProvider.revokeTokens(stored.userId)
+        await dataProvider.revokeUserTokens(stored.userId)
       } else if (sessionId) {
-        await dataProvider.revokeTokenFamily(sessionId)
+        await dataProvider.revokeSessionTokens(sessionId)
       } else {
-        // Token stored without family: its session cannot be singled out.
-        await dataProvider.revokeTokens(stored.userId)
+        // Token stored before sessions (V1): its session cannot be singled out.
+        await dataProvider.revokeUserTokens(stored.userId)
       }
 
       return { userId: stored.userId, sessionId }
+    },
+
+    async revokeUserSessions(userId) {
+      if (typeof userId !== 'string' || userId === '') {
+        throw new TypeError('revokeUserSessions() requires a userId.')
+      }
+      await settings.dataProvider.revokeUserTokens(userId)
     },
 
     async getJwks() {
@@ -1041,7 +1183,7 @@ export const createAuth = (input: AuthSettings): Auth => {
 
     getUserRoles: (user) => settings.getUserRoles(user),
 
-    setAuthCookies(res, tokens, expiresInSeconds) {
+    setAuthCookies(res, tokens) {
       const cookies = settings.cookies
       if (!cookies.enabled) return
 
@@ -1051,10 +1193,9 @@ export const createAuth = (input: AuthSettings): Auth => {
       const options = {
         ...cookieOptions(),
         maxAge:
-          expiresInSeconds ??
-          (expiresAt === undefined
+          expiresAt === undefined
             ? settings.session.idleTimeout
-            : Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))),
+            : Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)),
       }
 
       res.setCookie(cookies.refreshTokenName, tokens.refreshToken, {
@@ -1081,8 +1222,8 @@ export const createAuth = (input: AuthSettings): Auth => {
       }
     },
 
-    hashPassword: (password, saltRounds = settings.passwordHashRounds) =>
-      generatePasswordHash(password, saltRounds),
+    hashPassword: (password) =>
+      generatePasswordHash(password, { rounds: settings.passwordHashRounds }),
 
     passwordNeedsRehash: (passwordHash) =>
       BCRYPT_HASH.test(passwordHash) &&
@@ -1101,10 +1242,22 @@ export const createAuth = (input: AuthSettings): Auth => {
       return false
     },
   }
+
+  internals.set(auth, {
+    settings,
+    init: async (options = {}) => {
+      if (options.routesPath !== undefined) bindRoutesPath(options.routesPath)
+      if (options.cors !== undefined) cors = options.cors
+      // The dummy hash is computed now: otherwise, the first login of an
+      // unknown user would take longer.
+      await Promise.all([getKeys(), getDummyHash()])
+    },
+  })
+  return auth
 }
 
 /** Longest password bcrypt reads, in UTF-8 bytes. */
-export const MAX_PASSWORD_BYTES = 72
+const MAX_PASSWORD_BYTES = 72
 
 /**
  * Whether a password exceeds the 72 bytes (UTF-8) read by bcrypt. Check
@@ -1117,19 +1270,38 @@ export const MAX_PASSWORD_BYTES = 72
 export const isPasswordTooLong = (password: string): boolean =>
   bcrypt.truncates(password)
 
+export interface PasswordHashOptions {
+  /** bcrypt cost, from 4 to 31. Defaults to 12. */
+  rounds?: number
+}
+
 /**
- * Hashes a password with bcrypt (cost 12 by default). Throws a
- * `RangeError` for passwords longer than 72 bytes (see
+ * Hashes a password with bcrypt, out of an auth service (seeds, scripts).
+ * Throws a `RangeError` for passwords longer than 72 bytes (see
  * `isPasswordTooLong()`).
  */
 export const generatePasswordHash = async (
   password: string,
-  saltRounds = 12
+  options: PasswordHashOptions = {}
 ): Promise<string> => {
+  if (typeof options !== 'object' || options === null) {
+    throw new TypeError('generatePasswordHash(): options must be an object.')
+  }
+  for (const key of Object.keys(options)) {
+    if (key !== 'rounds') {
+      throw new TypeError(`generatePasswordHash(): unknown option "${key}".`)
+    }
+  }
+  const { rounds = 12 } = options
+  if (!Number.isInteger(rounds) || rounds < 4 || rounds > 31) {
+    throw new RangeError(
+      'generatePasswordHash(): rounds must be an integer between 4 and 31.'
+    )
+  }
   if (isPasswordTooLong(password)) {
     throw new RangeError(
       `Password too long: bcrypt reads ${MAX_PASSWORD_BYTES} bytes at most (UTF-8). Check it with isPasswordTooLong().`
     )
   }
-  return bcrypt.hash(password, saltRounds)
+  return bcrypt.hash(password, rounds)
 }

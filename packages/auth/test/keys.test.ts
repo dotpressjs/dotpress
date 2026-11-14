@@ -12,19 +12,31 @@ import {
   jwtVerify,
 } from 'jose'
 import jwt from 'jsonwebtoken'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   authPlugin,
   createAuth,
-  type AuthSettings,
-  type KeyPairSettings,
+  type AuthOptions,
+  type KeyPairOptions,
 } from '../src/index.js'
-import { createStore, keys, TEST_HASH_ROUNDS } from './support.js'
+import {
+  createStore,
+  initAuth,
+  issueAccessToken,
+  keys,
+  newRefreshToken,
+  TEST_HASH_ROUNDS,
+} from './support.js'
+
+// Some tests move the clock forward to expire the access tokens.
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const generatePair = async () => {
   const pair = await generateKeyPair('RS256', { extractable: true })
   return {
-    secretKey: await exportPKCS8(pair.privateKey),
+    privateKey: await exportPKCS8(pair.privateKey),
     publicKey: await exportSPKI(pair.publicKey),
   }
 }
@@ -40,8 +52,8 @@ const thumbprintOf = async (publicKey: string) =>
 /** Services sharing one data provider, with their own keys. */
 const store = createStore()
 const authWith = (
-  keyPair: KeyPairSettings,
-  settings: Partial<AuthSettings> = {}
+  keyPair: KeyPairOptions,
+  settings: Partial<AuthOptions> = {}
 ) =>
   createAuth({
     keys: keyPair,
@@ -55,7 +67,7 @@ const subject = { userId: 'u1', username: 'ada' }
 
 describe('key identifiers', () => {
   it('sets the RFC 7638 thumbprint of the key as kid', async () => {
-    const { accessToken } = await authWith(oldKeys).generateAccessToken(subject)
+    const { accessToken } = await issueAccessToken(authWith(oldKeys), subject)
 
     expect(decodeProtectedHeader(accessToken).kid).toBe(
       await thumbprintOf(oldKeys.publicKey)
@@ -64,7 +76,7 @@ describe('key identifiers', () => {
 
   it('accepts a custom kid', async () => {
     const auth = authWith({ ...oldKeys, kid: '2026-11' })
-    const { accessToken } = await auth.generateAccessToken(subject)
+    const { accessToken } = await issueAccessToken(auth, subject)
 
     expect(decodeProtectedHeader(accessToken).kid).toBe('2026-11')
     await expect(auth.verifyAccessToken(accessToken)).resolves.toMatchObject({
@@ -75,8 +87,8 @@ describe('key identifiers', () => {
   it('rejects tokens with an unknown kid, or signed by another key', async () => {
     const auth = authWith(oldKeys)
     const kid = await thumbprintOf(oldKeys.publicKey)
-    const sign = (secretKey: string, keyid: string) =>
-      jwt.sign({ username: 'ada' }, secretKey, {
+    const sign = (privateKey: string, keyid: string) =>
+      jwt.sign({ username: 'ada', sid: 's1' }, privateKey, {
         algorithm: 'RS256',
         subject: 'u1',
         issuer: 'https://api.example.com',
@@ -87,12 +99,12 @@ describe('key identifiers', () => {
       })
 
     await expect(
-      auth.verifyAccessToken(sign(oldKeys.secretKey, kid))
+      auth.verifyAccessToken(sign(oldKeys.privateKey, kid))
     ).resolves.toMatchObject({ userId: 'u1' })
     for (const token of [
-      sign(oldKeys.secretKey, 'unknown'),
+      sign(oldKeys.privateKey, 'unknown'),
       // Forged with another key, under the kid of the configured key.
-      sign(newKeys.secretKey, kid),
+      sign(newKeys.privateKey, kid),
     ]) {
       await expect(auth.verifyAccessToken(token)).rejects.toMatchObject({
         code: 'INVALID_ACCESS_TOKEN',
@@ -103,9 +115,11 @@ describe('key identifiers', () => {
 
 describe('key rotation', () => {
   it('verifies and refreshes the tokens of the previous key', async () => {
-    const before = authWith(oldKeys, { accessTokenTTL: -10 })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const before = authWith(oldKeys, { accessTokenTTL: 1 })
     const pair = await before.generateTokensForUser(subject)
-    const valid = await authWith(oldKeys).generateAccessToken(subject)
+    vi.setSystemTime(Date.now() + 5000)
+    const valid = await issueAccessToken(authWith(oldKeys), subject)
 
     const after = authWith({
       ...newKeys,
@@ -133,7 +147,7 @@ describe('key rotation', () => {
       ...oldKeys,
       additionalPublicKeys: [{ publicKey: newKeys.publicKey }],
     })
-    const { accessToken } = await authWith(newKeys).generateAccessToken(subject)
+    const { accessToken } = await issueAccessToken(authWith(newKeys), subject)
 
     await expect(
       announced.verifyAccessToken(accessToken)
@@ -146,16 +160,16 @@ describe('key rotation', () => {
       additionalPublicKeys: [oldKeys.publicKey],
     })
     const { refreshToken, accessToken } = await (async () => {
-      const refresh = await auth.generateRefreshToken()
+      const refresh = await newRefreshToken()
       await store.provider.storeRefreshToken({
         ...refresh,
         userId: 'u1',
-        jwtId: 'v1-jti',
-        familyId: 'v1',
+        accessTokenId: 'v1-jti',
+        sessionId: 'v1',
         expiresAt: new Date(Date.now() + 60_000),
       })
       // V1 token, signed by the old key, without kid.
-      const v1 = jwt.sign({ sub: 'u1', username: 'ada' }, oldKeys.secretKey, {
+      const v1 = jwt.sign({ sub: 'u1', username: 'ada' }, oldKeys.privateKey, {
         algorithm: 'RS256',
         jwtid: 'v1-jti',
       })
@@ -171,12 +185,12 @@ describe('key rotation', () => {
 describe('key validation', () => {
   it('fails at startup when the public key does not match the private key', async () => {
     const auth = authWith({
-      secretKey: newKeys.secretKey,
+      privateKey: newKeys.privateKey,
       publicKey: oldKeys.publicKey,
     })
 
-    await expect(auth.init()).rejects.toThrow(
-      'publicKey does not match secretKey'
+    await expect(initAuth(auth)).rejects.toThrow(
+      'publicKey does not match privateKey'
     )
   })
 
@@ -188,24 +202,28 @@ describe('key validation', () => {
     }).publicKey
 
     await expect(
-      authWith({ ...oldKeys, additionalPublicKeys: [pkcs1] }).init()
+      initAuth(authWith({ ...oldKeys, additionalPublicKeys: [pkcs1] }))
     ).rejects.toThrow('additionalPublicKeys[0]: PKCS#1 keys')
     await expect(
-      authWith({ ...oldKeys, additionalPublicKeys: ['garbage'] }).init()
+      initAuth(authWith({ ...oldKeys, additionalPublicKeys: ['garbage'] }))
     ).rejects.toThrow('Invalid auth additionalPublicKeys[0]')
   })
 
   it('rejects a kid shared by different keys', async () => {
     await expect(
-      authWith({
-        ...oldKeys,
-        kid: 'main',
-        additionalPublicKeys: [{ publicKey: newKeys.publicKey, kid: 'main' }],
-      }).init()
+      initAuth(
+        authWith({
+          ...oldKeys,
+          kid: 'main',
+          additionalPublicKeys: [{ publicKey: newKeys.publicKey, kid: 'main' }],
+        })
+      )
     ).rejects.toThrow('kid "main" is used by several keys')
     // The same key listed twice is harmless.
     await expect(
-      authWith({ ...oldKeys, additionalPublicKeys: [oldKeys.publicKey] }).init()
+      initAuth(
+        authWith({ ...oldKeys, additionalPublicKeys: [oldKeys.publicKey] })
+      )
     ).resolves.toBeUndefined()
   })
 })
@@ -244,7 +262,7 @@ describe('JWKS', () => {
 
     // Another service verifies the tokens with the published keys.
     const keySet = createLocalJWKSet(await res.json())
-    const { accessToken } = await auth.generateAccessToken(subject)
+    const { accessToken } = await issueAccessToken(auth, subject)
     await expect(jwtVerify(accessToken, keySet)).resolves.toMatchObject({
       payload: { sub: 'u1' },
     })

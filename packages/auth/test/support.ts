@@ -1,15 +1,48 @@
 import { createRouter, type AppOptions, type Router } from '@dotpress/core'
 import { createTestApp } from '@dotpress/testing'
 import bcrypt from 'bcryptjs'
-import { exportPKCS8, exportSPKI, generateKeyPair } from 'jose'
+import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from 'jose'
+import { internalsOf, type AuthInternals } from '../src/auth.js'
+import { sha256, toHex } from '../src/crypto.js'
+import type { AuthInitOptions } from '../src/types.js'
 import {
   authPlugin,
   createAuth,
   type AuthPluginOptions,
-  type AuthSettings,
+  type Auth,
+  type AuthOptions,
   type DataProvider,
+  type TokenSubject,
   type RefreshTokenData,
 } from '../src/index.js'
+
+/** The resolved settings of an auth service (internal). */
+export const settingsOf = (auth: Auth): AuthInternals['settings'] =>
+  internalsOf(auth)!.settings
+
+/** Imports the keys of an auth service, like `authPlugin()` at startup. */
+export const initAuth = (auth: Auth, options?: AuthInitOptions) =>
+  internalsOf(auth)!.init(options)
+
+/**
+ * An access token of a new session, with its `jti`, issued by
+ * `generateTokensForUser()`.
+ */
+export const issueAccessToken = async (auth: Auth, subject: TokenSubject) => {
+  const { accessToken, accessTokenExpiresAt } =
+    await auth.generateTokensForUser(subject)
+  return {
+    accessToken,
+    accessTokenId: decodeJwt(accessToken).jti as string,
+    expiresAt: accessTokenExpiresAt,
+  }
+}
+
+/** A refresh token and its hash, like those of the service. */
+export const newRefreshToken = async () => {
+  const token = toHex(crypto.getRandomValues(new Uint8Array(128)))
+  return { token, tokenHash: await sha256(token) }
+}
 
 declare module '../src/index.js' {
   interface AuthUser {
@@ -22,7 +55,7 @@ declare module '../src/index.js' {
 export const keys = await (async () => {
   const pair = await generateKeyPair('RS256', { extractable: true })
   return {
-    secretKey: await exportPKCS8(pair.privateKey),
+    privateKey: await exportPKCS8(pair.privateKey),
     publicKey: await exportSPKI(pair.publicKey),
   }
 })()
@@ -70,14 +103,14 @@ export const createStore = (options: { sessionRevocation?: boolean } = {}) => {
     storeRefreshToken: async ({
       tokenHash,
       userId,
-      jwtId,
-      familyId,
+      accessTokenId,
+      sessionId,
       expiresAt,
     }) => {
       refreshTokens.set(tokenHash, {
         userId,
-        jwtId,
-        familyId,
+        accessTokenId,
+        sessionId,
         expiresAt,
         isUsed: false,
         usedAt: null,
@@ -92,14 +125,14 @@ export const createStore = (options: { sessionRevocation?: boolean } = {}) => {
         token.usedAt = usedAt
       }
     },
-    revokeTokens: async (userId) => {
+    revokeUserTokens: async (userId) => {
       for (const token of refreshTokens.values()) {
         if (token.userId === userId) token.revokedAt = new Date()
       }
     },
-    revokeTokenFamily: async (familyId) => {
+    revokeSessionTokens: async (sessionId) => {
       for (const token of refreshTokens.values()) {
-        if (token.familyId === familyId) token.revokedAt = new Date()
+        if (token.sessionId === sessionId) token.revokedAt = new Date()
       }
     },
     // Like a query on the refresh token table: a revoked session has
@@ -107,7 +140,7 @@ export const createStore = (options: { sessionRevocation?: boolean } = {}) => {
     ...(options.sessionRevocation && {
       isSessionRevoked: async (sessionId: string) =>
         [...refreshTokens.values()].some(
-          (token) => token.familyId === sessionId && token.revokedAt
+          (token) => token.sessionId === sessionId && token.revokedAt
         ),
     }),
     updatePasswordHash: async (userId, hash) => {
@@ -136,7 +169,7 @@ export const createStore = (options: { sessionRevocation?: boolean } = {}) => {
 }
 
 export interface AuthAppOptions {
-  settings?: Partial<AuthSettings>
+  settings?: Partial<AuthOptions>
   /** Adds `isSessionRevoked()` to the data provider. */
   sessionRevocation?: boolean
   plugin?: AuthPluginOptions

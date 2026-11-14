@@ -15,10 +15,9 @@ export const seedDemo = async (db: Database, passwordHashRounds = 12) => {
   const users = createUserRepository(db)
   if (await users.findByEmail('alice@example.com')) return { created: false }
 
-  const passwordHash = await generatePasswordHash(
-    DEMO_PASSWORD,
-    passwordHashRounds
-  )
+  const passwordHash = await generatePasswordHash(DEMO_PASSWORD, {
+    rounds: passwordHashRounds,
+  })
   const alice = await users.create({
     email: 'alice@example.com',
     name: 'Alice',

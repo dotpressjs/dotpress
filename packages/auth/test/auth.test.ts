@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto'
-import { decodeJwt, decodeProtectedHeader } from 'jose'
+import { SignJWT, decodeJwt, decodeProtectedHeader, importPKCS8 } from 'jose'
 import jwt from 'jsonwebtoken'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -7,16 +7,28 @@ import {
   createAuth,
   generatePasswordHash,
   isPasswordTooLong,
-  MAX_PASSWORD_BYTES,
-  type AuthSettings,
+  type AuthOptions,
   type TokenPair,
 } from '../src/index.js'
-import { createStore, keys, TEST_HASH_ROUNDS } from './support.js'
+import {
+  createStore,
+  initAuth,
+  issueAccessToken,
+  keys,
+  newRefreshToken,
+  settingsOf,
+  TEST_HASH_ROUNDS,
+} from './support.js'
+
+// Some tests move the clock forward to expire the access tokens.
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const DAY = 24 * 60 * 60
 const HOUR = 60 * 60
 
-const authWith = (settings: Partial<AuthSettings> = {}) => {
+const authWith = (settings: Partial<AuthOptions> = {}) => {
   const store = createStore()
   const auth = createAuth({
     keys,
@@ -31,10 +43,69 @@ const authWith = (settings: Partial<AuthSettings> = {}) => {
 describe('createAuth()', () => {
   it('requires keys and a data provider', () => {
     expect(() =>
-      createAuth({ dataProvider: createStore().provider } as AuthSettings)
-    ).toThrow('requires keys.secretKey and keys.publicKey')
-    expect(() => createAuth({ keys } as AuthSettings)).toThrow(
+      createAuth({ dataProvider: createStore().provider } as AuthOptions)
+    ).toThrow('requires keys.privateKey and keys.publicKey')
+    expect(() => createAuth({ keys } as AuthOptions)).toThrow(
       'requires a dataProvider'
+    )
+  })
+
+  it('rejects unknown options, nested ones included', () => {
+    for (const [settings, option] of [
+      [{ accessTokenTtl: 900 }, 'accessTokenTtl'],
+      [{ keys: { ...keys, id: 'main' } }, 'keys.id'],
+      [
+        { keys: { ...keys, additionalPublicKeys: [{ key: 'x' }] } },
+        'keys.additionalPublicKeys[0].key',
+      ],
+      [{ session: { idleTimout: 60 } }, 'session.idleTimout'],
+      [{ cookies: { enable: true } }, 'cookies.enable'],
+      [{ clients: { allowed: ['app'], require: true } }, 'clients.require'],
+      [
+        { clients: { allowed: ['app'], sessions: { app: { idle: 60 } } } },
+        'clients.sessions.app.idle',
+      ],
+      [{ loginThrottle: { limit: {} } }, 'loginThrottle.limit'],
+      [
+        { loginThrottle: { limits: { ip: { max: 1, window: 60 } } } },
+        'loginThrottle.limits.ip',
+      ],
+      [
+        { loginThrottle: { limits: { username: { max: 1, windows: 60 } } } },
+        'loginThrottle.limits.username.windows',
+      ],
+    ] as const) {
+      expect(() => authWith(settings as never)).toThrow(
+        new TypeError(`createAuth(): unknown option "${option}".`)
+      )
+    }
+  })
+
+  it('names the renamed options', () => {
+    const { privateKey, publicKey } = keys
+    expect(() =>
+      authWith({ keys: { secretKey: privateKey, publicKey } } as never)
+    ).toThrow(new TypeError('keys.secretKey is renamed keys.privateKey.'))
+  })
+
+  it('accepts durations with a unit, rounded to the second', () => {
+    const { auth } = authWith({
+      accessTokenTTL: '15m',
+      session: { idleTimeout: '7d', absoluteTimeout: '30d' },
+      refreshTokenReuseInterval: '1500ms',
+      loginThrottle: { limits: { username: { max: 10, window: '1h' } } },
+    })
+
+    expect(settingsOf(auth)).toMatchObject({
+      accessTokenTTL: 900,
+      session: { idleTimeout: 7 * DAY, absoluteTimeout: 30 * DAY },
+      refreshTokenReuseInterval: 2,
+      loginThrottle: { limits: { username: { max: 10, window: HOUR } } },
+    })
+    expect(() => authWith({ accessTokenTTL: '0.2s' })).toThrow(
+      new RangeError(
+        'Invalid accessTokenTTL: expected at least 1 second duration.'
+      )
     )
   })
 
@@ -58,7 +129,7 @@ describe('createAuth()', () => {
   it('applies the V1 defaults, with secure cookies', () => {
     const { auth } = authWith()
 
-    expect(auth.settings).toMatchObject({
+    expect(settingsOf(auth)).toMatchObject({
       accessTokenTTL: 900,
       session: { idleTimeout: 14 * DAY, absoluteTimeout: undefined },
       issuer: 'https://api.example.com',
@@ -79,9 +150,10 @@ describe('createAuth()', () => {
   })
 
   describe('cookies', () => {
-    const names = (cookies: AuthSettings['cookies']) => {
-      const { accessTokenName, refreshTokenName } = authWith({ cookies }).auth
-        .settings.cookies
+    const names = (cookies: AuthOptions['cookies']) => {
+      const { accessTokenName, refreshTokenName } = settingsOf(
+        authWith({ cookies }).auth
+      ).cookies
       return [accessTokenName, refreshTokenName]
     }
 
@@ -137,24 +209,28 @@ describe('createAuth()', () => {
       })
 
       await expect(
-        authWith({
-          keys: { secretKey: pkcs1.privateKey, publicKey: keys.publicKey },
-        }).auth.init()
+        initAuth(
+          authWith({
+            keys: { privateKey: pkcs1.privateKey, publicKey: keys.publicKey },
+          }).auth
+        )
       ).rejects.toThrow('openssl pkcs8 -topk8 -nocrypt')
       await expect(
-        authWith({
-          keys: { secretKey: keys.secretKey, publicKey: pkcs1.publicKey },
-        }).auth.init()
+        initAuth(
+          authWith({
+            keys: { privateKey: keys.privateKey, publicKey: pkcs1.publicKey },
+          }).auth
+        )
       ).rejects.toThrow('openssl rsa -RSAPublicKey_in')
     })
 
     it('rejects invalid keys, and retries on the next call', async () => {
       const { auth } = authWith({
-        keys: { secretKey: 'not a key', publicKey: keys.publicKey },
+        keys: { privateKey: 'not a key', publicKey: keys.publicKey },
       })
 
-      await expect(auth.init()).rejects.toThrow('Invalid auth secretKey')
-      await expect(auth.init()).rejects.toThrow('Invalid auth secretKey')
+      await expect(initAuth(auth)).rejects.toThrow('Invalid auth privateKey')
+      await expect(initAuth(auth)).rejects.toThrow('Invalid auth privateKey')
     })
   })
 
@@ -167,7 +243,7 @@ describe('createAuth()', () => {
       })
       const before = Math.floor(Date.now() / 1000)
 
-      const { jwtId, accessToken } = await auth.generateAccessToken({
+      const { accessTokenId, accessToken } = await issueAccessToken(auth, {
         userId: 'u1',
         username: 'ada',
         clientId: 'backoffice',
@@ -185,7 +261,7 @@ describe('createAuth()', () => {
         iss: 'https://api.example.com',
         aud: 'https://api.example.com',
         client_id: 'backoffice',
-        jti: jwtId,
+        jti: accessTokenId,
       })
       expect(claims.auth_time).toBeGreaterThanOrEqual(before)
       expect(claims.exp! - claims.iat!).toBe(900)
@@ -218,7 +294,7 @@ describe('createAuth()', () => {
 
     it('verifies tokens and rejects tampered or expired ones', async () => {
       const { auth } = authWith()
-      const { accessToken } = await auth.generateAccessToken({
+      const { accessToken } = await issueAccessToken(auth, {
         userId: 'u1',
         username: 'ada',
       })
@@ -237,7 +313,7 @@ describe('createAuth()', () => {
         AuthError
       )
 
-      const expired = jwt.sign({ username: 'ada' }, keys.secretKey, {
+      const expired = jwt.sign({ username: 'ada' }, keys.privateKey, {
         algorithm: 'RS256',
         subject: 'u1',
         expiresIn: -10,
@@ -258,9 +334,10 @@ describe('createAuth()', () => {
       ],
       ['another audience', { audience: 'https://billing.example.com' }],
     ])('rejects tokens of %s', async (_label, settings) => {
-      const { accessToken } = await authWith(settings).auth.generateAccessToken(
-        { userId: 'u1', username: 'ada' }
-      )
+      const { accessToken } = await issueAccessToken(authWith(settings).auth, {
+        userId: 'u1',
+        username: 'ada',
+      })
 
       await expect(
         authWith().auth.verifyAccessToken(accessToken)
@@ -269,7 +346,7 @@ describe('createAuth()', () => {
 
     it('verifies a configured audience', async () => {
       const { auth } = authWith({ audience: 'https://api.example.com/admin' })
-      const { accessToken } = await auth.generateAccessToken({
+      const { accessToken } = await issueAccessToken(auth, {
         userId: 'u1',
         username: 'ada',
       })
@@ -283,7 +360,7 @@ describe('createAuth()', () => {
     it('rejects JWTs that are not access tokens (typ)', async () => {
       const { auth } = authWith()
       // Same key, issuer and audience, but another type of token.
-      const idToken = jwt.sign({ username: 'ada' }, keys.secretKey, {
+      const idToken = jwt.sign({ username: 'ada' }, keys.privateKey, {
         algorithm: 'RS256',
         subject: 'u1',
         issuer: 'https://api.example.com',
@@ -300,7 +377,7 @@ describe('createAuth()', () => {
       const issuer = authWith({ clients: { allowed: ['app', 'backoffice'] } })
       const tokenFor = async (clientId?: string) =>
         (
-          await issuer.auth.generateAccessToken({
+          await issueAccessToken(issuer.auth, {
             userId: 'u1',
             username: 'ada',
             clientId,
@@ -330,9 +407,9 @@ describe('createAuth()', () => {
       const subject = { userId: 'u1', username: 'ada' }
 
       await expect(
-        auth.generateAccessToken({ ...subject, clientId: 'other' })
+        issueAccessToken(auth, { ...subject, clientId: 'other' })
       ).rejects.toThrow('Unknown client "other"')
-      await expect(auth.generateAccessToken(subject)).rejects.toThrow(
+      await expect(issueAccessToken(auth, subject)).rejects.toThrow(
         'A clientId is required'
       )
     })
@@ -349,15 +426,15 @@ describe('createAuth()', () => {
           auth_time: 1700000000,
           aud: 'backoffice',
         },
-        keys.secretKey,
+        keys.privateKey,
         { algorithm: 'RS256', issuer: '', expiresIn: 3600, jwtid: 'v1-jti' }
       )
-      const refresh = await auth.generateRefreshToken()
+      const refresh = await newRefreshToken()
       await store.provider.storeRefreshToken({
         ...refresh,
         userId: 'u1',
-        jwtId: 'v1-jti',
-        familyId: 'v1-family',
+        accessTokenId: 'v1-jti',
+        sessionId: 'v1-family',
         expiresAt: new Date(Date.now() + 60_000),
       })
 
@@ -384,7 +461,7 @@ describe('createAuth()', () => {
 
     it('issues tokens that V1 (jsonwebtoken) accepts', async () => {
       const { auth } = authWith()
-      const { accessToken } = await auth.generateAccessToken({
+      const { accessToken } = await issueAccessToken(auth, {
         userId: 'u1',
         username: 'ada',
       })
@@ -396,13 +473,31 @@ describe('createAuth()', () => {
   })
 
   describe('refresh tokens', () => {
-    it('generates 128 random bytes and their SHA-256 hash, like V1', async () => {
-      const { auth } = authWith()
-      const { token, tokenHash } = await auth.generateRefreshToken()
+    it('generates 128 random bytes, and stores their SHA-256 hash only', async () => {
+      const store = createStore()
+      const storeRefreshToken = vi.spyOn(store.provider, 'storeRefreshToken')
+      const auth = createAuth({
+        keys,
+        dataProvider: store.provider,
+        issuer: 'https://api.example.com',
+      })
+      const { refreshToken } = await auth.generateTokensForUser({
+        userId: 'u1',
+      })
 
-      expect(token).toMatch(/^[0-9a-f]{256}$/)
+      expect(refreshToken).toMatch(/^[0-9a-f]{256}$/)
       const { createHash } = await import('node:crypto')
-      expect(tokenHash).toBe(createHash('sha256').update(token).digest('hex'))
+      const [stored] = storeRefreshToken.mock.calls[0]!
+      expect(Object.keys(stored).sort()).toEqual([
+        'accessTokenId',
+        'expiresAt',
+        'sessionId',
+        'tokenHash',
+        'userId',
+      ])
+      expect(stored.tokenHash).toBe(
+        createHash('sha256').update(refreshToken).digest('hex')
+      )
     })
 
     it('rotates a token pair, keeping the original claims', async () => {
@@ -443,10 +538,12 @@ describe('createAuth()', () => {
         clientId: 'kiosk',
       })
       const updated = createAuth({
-        ...auth.settings,
+        keys,
+        dataProvider: store.provider,
+        issuer: 'https://api.example.com',
+        passwordHashRounds: TEST_HASH_ROUNDS,
         clients: { allowed: ['app'] },
       })
-      void store
 
       await expect(updated.refreshTokens(pair)).rejects.toMatchObject({
         code: 'INVALID_REFRESH_TOKEN',
@@ -454,11 +551,13 @@ describe('createAuth()', () => {
     })
 
     it('accepts expired access tokens', async () => {
-      const { auth } = authWith({ accessTokenTTL: -10 })
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const { auth } = authWith({ accessTokenTTL: 1 })
       const pair = await auth.generateTokensForUser({
         userId: 'u1',
         username: 'ada',
       })
+      vi.setSystemTime(Date.now() + 5000)
 
       await expect(auth.verifyAccessToken(pair.accessToken)).rejects.toThrow()
       await expect(auth.refreshTokens(pair)).resolves.toMatchObject({
@@ -471,7 +570,10 @@ describe('createAuth()', () => {
         'revoked',
         (data: { revokedAt?: Date | null }) => (data.revokedAt = new Date()),
       ],
-      ['of another token', (data: { jwtId: string }) => (data.jwtId = 'other')],
+      [
+        'of another token',
+        (data: { accessTokenId: string }) => (data.accessTokenId = 'other'),
+      ],
       ['of another user', (data: { userId: string }) => (data.userId = 'u2')],
     ])('rejects refresh tokens %s', async (_label, alter) => {
       const { auth, store } = authWith()
@@ -488,7 +590,7 @@ describe('createAuth()', () => {
 
     it('rejects invalid reuse intervals', () => {
       expect(() => authWith({ refreshTokenReuseInterval: -1 })).toThrow(
-        'Invalid refreshTokenReuseInterval'
+        'refreshTokenReuseInterval must be a number of seconds'
       )
     })
 
@@ -503,8 +605,8 @@ describe('createAuth()', () => {
         await auth.refreshTokens(pair)
 
         const [first, second] = [storedOf(store, 0), storedOf(store, 1)]
-        expect(first.familyId).toEqual(expect.any(String))
-        expect(second.familyId).toBe(first.familyId)
+        expect(first.sessionId).toEqual(expect.any(String))
+        expect(second.sessionId).toBe(first.sessionId)
         expect(first.usedAt).toBeInstanceOf(Date)
       })
 
@@ -529,8 +631,8 @@ describe('createAuth()', () => {
         })
         expect(onRefreshTokenReuse).toHaveBeenCalledWith({
           userId: 'u1',
-          familyId: storedOf(store, 0).familyId,
-          jwtId: storedOf(store, 0).jwtId,
+          sessionId: storedOf(store, 0).sessionId,
+          accessTokenId: storedOf(store, 0).accessTokenId,
         })
       })
 
@@ -561,7 +663,7 @@ describe('createAuth()', () => {
         const retried = await auth.refreshTokens(pair)
 
         expect(retried.refreshToken).not.toBe(rotated.refreshToken)
-        expect(storedOf(store, 2).familyId).toBe(storedOf(store, 0).familyId)
+        expect(storedOf(store, 2).sessionId).toBe(storedOf(store, 0).sessionId)
         // The interval stays counted from the first use.
         expect(storedOf(store, 0).usedAt).toBe(firstUse)
         await expect(auth.refreshTokens(rotated)).resolves.toMatchObject({
@@ -610,7 +712,7 @@ describe('createAuth()', () => {
         const other = await auth.generateTokensForUser(subject)
         // Token stored before families existed, already used.
         Object.assign(storedOf(store, 0), {
-          familyId: null,
+          sessionId: null,
           isUsed: true,
           usedAt: null,
         })
@@ -626,14 +728,14 @@ describe('createAuth()', () => {
       it('starts a family when rotating a token stored without one', async () => {
         const { auth, store } = authWith()
         const legacy = await auth.generateTokensForUser(subject)
-        storedOf(store, 0).familyId = null
+        storedOf(store, 0).sessionId = null
 
         await auth.refreshTokens(legacy)
         await auth.refreshTokens(legacy)
 
         // Both pairs issued from the legacy token share the new family.
-        expect(storedOf(store, 1).familyId).toEqual(expect.any(String))
-        expect(storedOf(store, 2).familyId).toBe(storedOf(store, 1).familyId)
+        expect(storedOf(store, 1).sessionId).toEqual(expect.any(String))
+        expect(storedOf(store, 2).sessionId).toBe(storedOf(store, 1).sessionId)
       })
 
       it('revokes the session even when the reuse hook fails', async () => {
@@ -769,8 +871,10 @@ describe('createAuth()', () => {
       const tokens = await auth.generateTokensForUser(subject)
       // Configuration change: the stored refresh token is not bounded.
       const bounded = createAuth({
-        ...auth.settings,
+        keys,
         dataProvider: store.provider,
+        issuer: 'https://api.example.com',
+        passwordHashRounds: TEST_HASH_ROUNDS,
         session: { absoluteTimeout: DAY },
       })
 
@@ -816,18 +920,18 @@ describe('createAuth()', () => {
     })
 
     it('ends sessions without auth_time when an absolute timeout applies', async () => {
-      const legacySession = async (settings: Partial<AuthSettings>) => {
+      const legacySession = async (settings: Partial<AuthOptions>) => {
         const { auth, store } = authWith(settings)
-        const accessToken = jwt.sign({ sub: 'u1' }, keys.secretKey, {
+        const accessToken = jwt.sign({ sub: 'u1' }, keys.privateKey, {
           algorithm: 'RS256',
           jwtid: 'old-jti',
         })
-        const refresh = await auth.generateRefreshToken()
+        const refresh = await newRefreshToken()
         await store.provider.storeRefreshToken({
           ...refresh,
           userId: 'u1',
-          jwtId: 'old-jti',
-          familyId: 'old',
+          accessTokenId: 'old-jti',
+          sessionId: 'old',
           expiresAt: new Date(now + DAY * 1000),
         })
         return auth.refreshTokens({
@@ -856,7 +960,10 @@ describe('createAuth()', () => {
 
     it.each([
       [{ session: { idleTimeout: 0 } }, 'Invalid session.idleTimeout'],
-      [{ session: { absoluteTimeout: -1 } }, 'Invalid session.absoluteTimeout'],
+      [
+        { session: { absoluteTimeout: -1 } },
+        'session.absoluteTimeout must be a number of seconds',
+      ],
       [
         {
           clients: {
@@ -864,7 +971,7 @@ describe('createAuth()', () => {
             sessions: { app: { idleTimeout: Number.NaN } },
           },
         },
-        'Invalid clients.sessions.app.idleTimeout',
+        'clients.sessions.app.idleTimeout must be a number of seconds',
       ],
       [
         { clients: { allowed: ['app'], sessions: { kiosk: {} } } },
@@ -872,12 +979,36 @@ describe('createAuth()', () => {
       ],
       [{ refreshTokenTTLInDays: 14 }, 'replaced by session.idleTimeout'],
     ])('rejects invalid session settings (%o)', (settings, message) => {
-      expect(() => authWith(settings as Partial<AuthSettings>)).toThrow(message)
+      expect(() => authWith(settings as Partial<AuthOptions>)).toThrow(message)
     })
   })
 
   describe('revocation', () => {
     const subject = { userId: 'u1', username: 'ada' }
+
+    it('revokes every session of a user with revokeUserSessions()', async () => {
+      const { auth } = authWith()
+      const first = await auth.generateTokensForUser(subject)
+      const second = await auth.generateTokensForUser(subject)
+      const other = await auth.generateTokensForUser({
+        userId: 'u2',
+        username: 'linus',
+      })
+
+      await auth.revokeUserSessions('u1')
+
+      for (const pair of [first, second]) {
+        await expect(auth.refreshTokens(pair)).rejects.toMatchObject({
+          code: 'INVALID_REFRESH_TOKEN',
+        })
+      }
+      await expect(auth.refreshTokens(other)).resolves.toMatchObject({
+        userId: 'u2',
+      })
+      await expect(auth.revokeUserSessions('')).rejects.toThrow(
+        'revokeUserSessions() requires a userId.'
+      )
+    })
 
     it('ends the session of a deleted or disabled user at refresh', async () => {
       const { auth, store } = authWith()
@@ -899,7 +1030,7 @@ describe('createAuth()', () => {
       const tokens = [...store.refreshTokens.values()]
       // Only this session is revoked; the others end at their refresh.
       expect(
-        tokens.filter((token) => token.revokedAt).map((t) => t.familyId)
+        tokens.filter((token) => token.revokedAt).map((t) => t.sessionId)
       ).toEqual([sid])
       store.users.set('u1', {
         id: 'u1',
@@ -918,7 +1049,7 @@ describe('createAuth()', () => {
       const { auth, store } = authWith()
       const first = await auth.generateTokensForUser(subject)
       await auth.generateTokensForUser(subject)
-      for (const token of store.refreshTokens.values()) token.familyId = null
+      for (const token of store.refreshTokens.values()) token.sessionId = null
       store.users.delete('u1')
 
       await expect(auth.refreshTokens(first)).rejects.toMatchObject({
@@ -955,12 +1086,6 @@ describe('createAuth()', () => {
       expect(isSessionRevoked).toHaveBeenLastCalledWith(
         decodeJwt(second.accessToken).sid
       )
-
-      // Tokens without session are not checked.
-      isSessionRevoked.mockClear()
-      const { accessToken } = await auth.generateAccessToken(subject)
-      await auth.verifyAccessToken(accessToken)
-      expect(isSessionRevoked).not.toHaveBeenCalled()
     })
 
     it('calls isSessionRevoked on the data provider', async () => {
@@ -1035,7 +1160,7 @@ describe('createAuth()', () => {
       expect(sid).toEqual(expect.any(String))
       expect(decodeJwt(second.accessToken).sid).not.toBe(sid)
       expect(
-        store.refreshTokens.get(await hashOf(first.refreshToken))?.familyId
+        store.refreshTokens.get(await hashOf(first.refreshToken))?.sessionId
       ).toBe(sid)
 
       const rotated = await auth.refreshTokens(first)
@@ -1045,14 +1170,21 @@ describe('createAuth()', () => {
       ).toBe(sid)
     })
 
-    it('issues standalone access tokens without session', async () => {
+    it('rejects access tokens without session', async () => {
       const { auth } = authWith()
-      const { accessToken } = await auth.generateAccessToken(subject)
+      const withoutSession = await new SignJWT({})
+        .setProtectedHeader({ alg: 'RS256', typ: 'at+jwt' })
+        .setSubject('u1')
+        .setIssuer('https://api.example.com')
+        .setAudience('https://api.example.com')
+        .setJti('jti')
+        .setIssuedAt()
+        .setExpirationTime('1m')
+        .sign(await importPKCS8(keys.privateKey, 'RS256'))
 
-      expect(decodeJwt(accessToken)).not.toHaveProperty('sid')
-      expect(
-        (await auth.verifyAccessToken(accessToken)).sessionId
-      ).toBeUndefined()
+      await expect(
+        auth.verifyAccessToken(withoutSession)
+      ).rejects.toMatchObject({ code: 'INVALID_ACCESS_TOKEN' })
     })
 
     it('revokes the session of a refresh token only', async () => {
@@ -1127,7 +1259,8 @@ describe('createAuth()', () => {
 
     it('revokes every session for tokens stored without family', async () => {
       const { auth, store, first, second } = await twoSessions()
-      store.refreshTokens.get(await hashOf(first.refreshToken))!.familyId = null
+      store.refreshTokens.get(await hashOf(first.refreshToken))!.sessionId =
+        null
 
       expect(await auth.revokeSession(first.refreshToken)).toEqual({
         userId: 'u1',
@@ -1140,14 +1273,29 @@ describe('createAuth()', () => {
   })
 
   describe('passwords', () => {
+    it('checks the options of generatePasswordHash()', async () => {
+      await expect(
+        generatePasswordHash('secret', { cost: 4 } as never)
+      ).rejects.toThrow(
+        new TypeError('generatePasswordHash(): unknown option "cost".')
+      )
+      await expect(
+        generatePasswordHash('secret', { rounds: 3 })
+      ).rejects.toThrow(
+        new RangeError(
+          'generatePasswordHash(): rounds must be an integer between 4 and 31.'
+        )
+      )
+    })
+
     it('hashes and verifies passwords with bcrypt', async () => {
       const { auth } = authWith()
-      const hash = await generatePasswordHash('secret', 4)
+      const hash = await generatePasswordHash('secret', { rounds: 4 })
 
       expect(hash).toMatch(/^\$2[aby]\$04\$/)
       await expect(auth.verifyPassword('secret', hash)).resolves.toBe(true)
       await expect(auth.verifyPassword('wrong', hash)).resolves.toBe(false)
-      await expect(auth.hashPassword('secret', 4)).resolves.toMatch(/^\$2/)
+      await expect(auth.hashPassword('secret')).resolves.toMatch(/^\$2/)
     })
 
     it('uses a cost of 12 by default', async () => {
@@ -1158,26 +1306,25 @@ describe('createAuth()', () => {
         issuer: 'https://api.example.com',
       })
 
-      expect(auth.settings.passwordHashRounds).toBe(12)
+      expect(settingsOf(auth).passwordHashRounds).toBe(12)
       expect(await generatePasswordHash('secret')).toMatch(/^\$2[aby]\$12\$/)
     })
 
     it('rejects passwords longer than 72 bytes instead of truncating them', async () => {
       const { auth } = authWith()
-      const ascii = 'a'.repeat(MAX_PASSWORD_BYTES)
+      const ascii = 'a'.repeat(72)
       // 37 characters, 74 bytes in UTF-8.
       const accented = 'é'.repeat(37)
 
-      expect(MAX_PASSWORD_BYTES).toBe(72)
       expect(isPasswordTooLong(ascii)).toBe(false)
       expect(isPasswordTooLong(`${ascii}a`)).toBe(true)
       expect(isPasswordTooLong(accented)).toBe(true)
       await expect(auth.hashPassword(ascii)).resolves.toMatch(/^\$2/)
       for (const password of [`${ascii}a`, accented]) {
         await expect(auth.hashPassword(password)).rejects.toThrow(RangeError)
-        await expect(generatePasswordHash(password, 4)).rejects.toThrow(
-          'Password too long'
-        )
+        await expect(
+          generatePasswordHash(password, { rounds: 4 })
+        ).rejects.toThrow('Password too long')
       }
     })
 
@@ -1189,9 +1336,9 @@ describe('createAuth()', () => {
       expect(hash).toMatch(/^\$2[aby]\$05\$/)
       await expect(auth.verifyPassword(long, hash)).resolves.toBe(true)
       expect(auth.passwordNeedsRehash(hash)).toBe(false)
-      expect(auth.passwordNeedsRehash(await generatePasswordHash('x', 4))).toBe(
-        true
-      )
+      expect(
+        auth.passwordNeedsRehash(await generatePasswordHash('x', { rounds: 4 }))
+      ).toBe(true)
       expect(auth.passwordNeedsRehash('not-a-bcrypt-hash')).toBe(false)
     })
 
@@ -1226,8 +1373,8 @@ describe('createAuth()', () => {
       // the measure (around 15 ms).
       const rounds = 8
       const { auth } = authWith({ passwordHashRounds: rounds })
-      const hash = await generatePasswordHash('secret', rounds)
-      await auth.init()
+      const hash = await generatePasswordHash('secret', { rounds })
+      await initAuth(auth)
 
       const checks = {
         wrongPassword: () => auth.verifyPassword('wrong', hash),

@@ -51,7 +51,7 @@ declare module '@dotpress/auth' {
 
 const auth = createAuth({
   keys: {
-    secretKey: env.JWT_PRIVATE_KEY, // PKCS#8 PEM, "BEGIN PRIVATE KEY"
+    privateKey: env.JWT_PRIVATE_KEY, // PKCS#8 PEM, "BEGIN PRIVATE KEY"
     publicKey: env.JWT_PUBLIC_KEY, // SPKI PEM, "BEGIN PUBLIC KEY"
   },
   issuer: 'https://api.example.com', // required, one per environment

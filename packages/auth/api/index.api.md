@@ -8,10 +8,10 @@
 import type {
   DotpressRequest,
   DotpressResponse,
+  Duration,
   HttpError,
   Middleware,
   PluginAPI,
-  PluginCors,
   RateLimitStore,
 } from '@dotpress/core'
 import type { JWK } from 'jose'
@@ -30,10 +30,6 @@ export interface AdditionalPublicKey {
 }
 
 export interface Auth {
-  readonly settings: ResolvedAuthSettings
-  init(options?: AuthInitOptions): Promise<void>
-  generateAccessToken(subject: TokenSubject): Promise<CreatedAccessToken>
-  generateRefreshToken(): Promise<CreatedRefreshToken>
   generateTokensForUser(subject: TokenSubject): Promise<IssuedTokens>
   refreshTokens(tokens: TokenPair): Promise<
     IssuedTokens & {
@@ -48,6 +44,7 @@ export interface Auth {
       scope?: LogoutScope
     }
   ): Promise<RevokedSession | undefined>
+  revokeUserSessions(userId: string): Promise<void>
   getSessionExpiresAt(session: AuthSession): Date | undefined
   getJwks(): Promise<{
     keys: JWK[]
@@ -57,18 +54,32 @@ export interface Auth {
     res: DotpressResponse,
     tokens: TokenPair & {
       refreshTokenExpiresAt?: Date
-    },
-    expiresInSeconds?: number
+    }
   ): void
   clearAuthCookies(res: DotpressResponse): void
   isCookieAuthenticationAllowed(req: DotpressRequest): Promise<boolean>
-  hashPassword(password: string, saltRounds?: number): Promise<string>
+  hashPassword(password: string): Promise<string>
   passwordNeedsRehash(passwordHash: string): boolean
   rehashPassword(password: string): Promise<string>
   verifyPassword(
     password: string,
     passwordHash: string | null | undefined
   ): Promise<boolean>
+}
+
+export interface AuthCookieOptions {
+  enabled?: boolean
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: 'strict' | 'lax' | 'none'
+  refreshTokenSameSite?: 'strict' | 'lax' | 'none'
+  trustedOrigins?: readonly string[]
+  domain?: string
+  path?: string
+  refreshTokenPath?: string
+  accessTokenName?: string
+  refreshTokenName?: string
+  accessTokenInCookie?: boolean
 }
 
 export declare class AuthError extends Error {
@@ -83,9 +94,26 @@ export type AuthErrorCode =
   | 'REFRESH_TOKEN_REUSED'
   | 'SESSION_REVOKED'
 
-export interface AuthInitOptions {
-  routesPath?: string
-  cors?: PluginCors
+export interface AuthOptions {
+  keys: KeyPairOptions
+  dataProvider: DataProvider
+  accessTokenTTL?: Duration
+  session?: SessionOptions
+  issuer: string
+  audience?: string
+  cookies?: AuthCookieOptions
+  clients?: ClientOptions
+  onLoginFailed?: (event: LoginFailedEvent) => void | Promise<void>
+  onLoginSuccess?: (event: LoginSuccessEvent) => void | Promise<void>
+  loginThrottle?: LoginThrottleOptions | false
+  beforeLogin?: (
+    event: BeforeLoginEvent
+  ) => Promise<HttpError | void> | HttpError | void
+  passwordHashRounds?: number
+  usernameClaim?: boolean
+  refreshTokenReuseInterval?: Duration
+  onRefreshTokenReuse?: (event: RefreshTokenReuseEvent) => void | Promise<void>
+  getUserRoles?: (user: AuthUser) => readonly string[]
 }
 
 export interface AuthPluginOptions {
@@ -97,33 +125,11 @@ export interface AuthPluginOptions {
 export interface AuthSession {
   readonly userId: string
   readonly username: string | undefined
-  readonly tokenId: string
-  readonly sessionId: string | undefined
+  readonly accessTokenId: string
+  readonly sessionId: string
   readonly clientId: string | undefined
   readonly roles: readonly string[]
   readonly claims: Readonly<Record<string, unknown>>
-}
-
-export interface AuthSettings {
-  keys: KeyPairSettings
-  dataProvider: DataProvider
-  accessTokenTTL?: number
-  session?: SessionSettings
-  issuer: string
-  audience?: string
-  cookies?: CookieSettings
-  clients?: ClientSettings
-  onLoginFailed?: (event: LoginFailedEvent) => Promise<void>
-  onLoginSuccess?: (event: LoginSuccessEvent) => Promise<void>
-  loginThrottle?: LoginThrottleSettings | false
-  beforeLogin?: (
-    event: BeforeLoginEvent
-  ) => Promise<HttpError | void> | HttpError | void
-  passwordHashRounds?: number
-  usernameClaim?: boolean
-  refreshTokenReuseInterval?: number
-  onRefreshTokenReuse?: (event: RefreshTokenReuseEvent) => Promise<void>
-  getUserRoles?: (user: AuthUser) => readonly string[]
 }
 
 export interface AuthUser {}
@@ -140,45 +146,23 @@ export interface BeforeLoginEvent {
   req: DotpressRequest
 }
 
-export interface ClientSettings {
+export interface ClientOptions {
   allowed: readonly string[]
   required?: boolean
-  isUserRoleAllowed?: (role: string, clientId: string) => boolean
-  sessions?: Readonly<Record<string, SessionSettings>>
-}
-
-export interface CookieSettings {
-  enabled?: boolean
-  httpOnly?: boolean
-  secure?: boolean
-  sameSite?: 'strict' | 'lax' | 'none'
-  refreshTokenSameSite?: 'strict' | 'lax' | 'none'
-  trustedOrigins?: readonly string[]
-  domain?: string
-  path?: string
-  refreshTokenPath?: string
-  accessTokenName?: string
-  refreshTokenName?: string
-  accessTokenInCookie?: boolean
-}
-
-export interface CreatedAccessToken {
-  jwtId: string
-  accessToken: string
-  expiresAt: Date
-}
-
-export interface CreatedRefreshToken {
-  token: string
-  tokenHash: string
+  isUserRoleAllowed?: (login: {
+    userId: string
+    role: string | undefined
+    clientId: string
+  }) => boolean
+  sessions?: Readonly<Record<string, SessionOptions>>
 }
 
 export interface DataProvider {
-  storeRefreshToken(payload: StoreRefreshTokenDto): Promise<void>
+  storeRefreshToken(payload: NewRefreshToken): Promise<void>
   findRefreshToken(tokenHash: string): Promise<RefreshTokenData | undefined>
   markRefreshTokenAsUsed(tokenHash: string, usedAt: Date): Promise<void>
-  revokeTokens(userId: string): Promise<void>
-  revokeTokenFamily(familyId: string): Promise<void>
+  revokeUserTokens(userId: string): Promise<void>
+  revokeSessionTokens(sessionId: string): Promise<void>
   findUserById(userId: string): Promise<AuthUser | undefined>
   findUserIdentifiers(username: string): Promise<UserIdentifiers | undefined>
   isSessionRevoked?(sessionId: string): Promise<boolean>
@@ -191,20 +175,19 @@ export interface IssuedTokens extends TokenPair {
   sessionExpiresAt: Date | undefined
 }
 
-export interface KeyPairSettings {
-  secretKey: string
+export interface KeyPairOptions {
+  privateKey: string
   publicKey: string
   kid?: string
   additionalPublicKeys?: readonly (string | AdditionalPublicKey)[]
 }
 
+export type LoginErrorType =
+  'invalid_username' | 'invalid_password' | 'invalid_role' | 'too_many_attempts'
+
 export interface LoginFailedEvent {
   username: string
-  errorType:
-    | 'invalid_username'
-    | 'invalid_password'
-    | 'invalid_role'
-    | 'too_many_attempts'
+  errorType: LoginErrorType
   clientId: string
   ipAddress: string
 }
@@ -216,7 +199,7 @@ export interface LoginSuccessEvent {
   ipAddress: string
 }
 
-export interface LoginThrottleSettings {
+export interface LoginThrottleOptions {
   store?: RateLimitStore
   limits?: {
     usernameAndIp?: RateLimit | false
@@ -226,17 +209,27 @@ export interface LoginThrottleSettings {
 
 export type LogoutScope = 'current' | 'all'
 
-export declare const MAX_PASSWORD_BYTES = 72
+export interface NewRefreshToken {
+  tokenHash: string
+  userId: string
+  accessTokenId: string
+  sessionId: string
+  expiresAt: Date
+}
+
+export interface PasswordHashOptions {
+  rounds?: number
+}
 
 export interface RateLimit {
   max: number
-  window: number
+  window: Duration
 }
 
 export interface RefreshTokenData {
   userId: string
-  jwtId: string
-  familyId?: string | null
+  accessTokenId: string
+  sessionId?: string | null
   expiresAt: Date
   isUsed: boolean
   usedAt?: Date | null
@@ -245,51 +238,8 @@ export interface RefreshTokenData {
 
 export interface RefreshTokenReuseEvent {
   userId: string
-  familyId: string | undefined
-  jwtId: string
-}
-
-export interface ResolvedAuthSettings extends Required<
-  Omit<
-    AuthSettings,
-    | 'cookies'
-    | 'clients'
-    | 'session'
-    | 'onLoginFailed'
-    | 'onLoginSuccess'
-    | 'loginThrottle'
-    | 'beforeLogin'
-    | 'onRefreshTokenReuse'
-  >
-> {
-  cookies: ResolvedCookieSettings
-  clients: ClientSettings | undefined
-  session: ResolvedSessionSettings
-  onLoginFailed: ((event: LoginFailedEvent) => Promise<void>) | undefined
-  onLoginSuccess: ((event: LoginSuccessEvent) => Promise<void>) | undefined
-  loginThrottle: ResolvedLoginThrottleSettings | undefined
-  beforeLogin: AuthSettings['beforeLogin']
-  onRefreshTokenReuse:
-    ((event: RefreshTokenReuseEvent) => Promise<void>) | undefined
-}
-
-export type ResolvedCookieSettings = Required<
-  Omit<CookieSettings, 'domain'>
-> & {
-  domain: string | undefined
-}
-
-export interface ResolvedLoginThrottleSettings {
-  store: RateLimitStore
-  limits: {
-    usernameAndIp: RateLimit | undefined
-    username: RateLimit | undefined
-  }
-}
-
-export interface ResolvedSessionSettings {
-  idleTimeout: number
-  absoluteTimeout: number | undefined
+  sessionId: string | undefined
+  accessTokenId: string
 }
 
 export interface RevokedSession {
@@ -297,18 +247,9 @@ export interface RevokedSession {
   sessionId: string | undefined
 }
 
-export interface SessionSettings {
-  idleTimeout?: number
-  absoluteTimeout?: number | undefined
-}
-
-export interface StoreRefreshTokenDto {
-  token: string
-  tokenHash: string
-  userId: string
-  jwtId: string
-  familyId: string
-  expiresAt: Date
+export interface SessionOptions {
+  idleTimeout?: Duration
+  absoluteTimeout?: Duration | undefined
 }
 
 export interface TokenPair {
@@ -344,16 +285,11 @@ export declare const authPlugin: (
   readonly setup: (api: _dotpress_core.PluginAPI) => Promise<void>
 }
 
-export declare const createAuth: (input: AuthSettings) => Auth
-
-export declare const extractAccessToken: (
-  req: DotpressRequest,
-  cookies: ResolvedCookieSettings
-) => string | undefined
+export declare const createAuth: (input: AuthOptions) => Auth
 
 export declare const generatePasswordHash: (
   password: string,
-  saltRounds?: number
+  options?: PasswordHashOptions
 ) => Promise<string>
 
 export declare const isPasswordTooLong: (password: string) => boolean

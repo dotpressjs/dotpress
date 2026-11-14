@@ -4,8 +4,8 @@ import type { UserRepository } from '../users/repository.ts'
 
 interface RefreshTokenRow {
   user_id: string
-  jwt_id: string
-  family_id: string
+  access_token_id: string
+  session_id: string
   expires_at: string
   used_at: string | null
   revoked_at: string | null
@@ -19,17 +19,17 @@ export const createDataProvider = (
   storeRefreshToken: async ({
     tokenHash,
     userId,
-    jwtId,
-    familyId,
+    accessTokenId,
+    sessionId,
     expiresAt,
   }) => {
     run(
       db,
-      'INSERT INTO refresh_tokens (token_hash, user_id, jwt_id, family_id, expires_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO refresh_tokens (token_hash, user_id, access_token_id, session_id, expires_at) VALUES (?, ?, ?, ?, ?)',
       tokenHash,
       userId,
-      jwtId,
-      familyId,
+      accessTokenId,
+      sessionId,
       expiresAt.toISOString()
     )
   },
@@ -45,8 +45,8 @@ export const createDataProvider = (
     return (
       row && {
         userId: row.user_id,
-        jwtId: row.jwt_id,
-        familyId: row.family_id,
+        accessTokenId: row.access_token_id,
+        sessionId: row.session_id,
         expiresAt: new Date(row.expires_at),
         isUsed: row.used_at !== null,
         usedAt: row.used_at === null ? null : new Date(row.used_at),
@@ -64,7 +64,7 @@ export const createDataProvider = (
     )
   },
 
-  revokeTokens: async (userId) => {
+  revokeUserTokens: async (userId) => {
     run(
       db,
       'UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL',
@@ -73,12 +73,12 @@ export const createDataProvider = (
     )
   },
 
-  revokeTokenFamily: async (familyId) => {
+  revokeSessionTokens: async (sessionId) => {
     run(
       db,
-      'UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL',
+      'UPDATE refresh_tokens SET revoked_at = ? WHERE session_id = ? AND revoked_at IS NULL',
       new Date().toISOString(),
-      familyId
+      sessionId
     )
   },
 
@@ -86,7 +86,7 @@ export const createDataProvider = (
   isSessionRevoked: async (sessionId) =>
     get(
       db,
-      'SELECT 1 FROM refresh_tokens WHERE family_id = ? AND revoked_at IS NOT NULL LIMIT 1',
+      'SELECT 1 FROM refresh_tokens WHERE session_id = ? AND revoked_at IS NOT NULL LIMIT 1',
       sessionId
     ) !== undefined,
 

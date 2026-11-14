@@ -66,7 +66,7 @@ declare module '@dotpress/auth' {
 | `sessionId` | The session (`sid` claim): see [Sessions and tokens](./sessions) |
 | `clientId` | The client application, with the `clients` setting |
 | `roles` | The roles of the user |
-| `tokenId` | The `jti` claim |
+| `accessTokenId` | The `jti` claim |
 | `username` | Only with the `usernameClaim` setting |
 | `claims` | Every claim of the token |
 

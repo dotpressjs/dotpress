@@ -1,5 +1,15 @@
 # @dotpress/events
 
+## 2.0.0-alpha.3
+
+### Patch Changes
+
+- [#13](https://github.com/dotpressjs/dotpress/pull/13) [`a79013c`](https://github.com/dotpressjs/dotpress/commit/a79013cb57792ac4df83d76b28c72279b04e12fe) Thanks [@renoguyon](https://github.com/renoguyon)! - Faster Pub/Sub publishing of large messages: base64 encoding uses `Uint8Array#toBase64` when the runtime has it, and encodes by chunks otherwise. A message of several megabytes took about a second of CPU, blocking the event loop.
+
+- [#7](https://github.com/dotpressjs/dotpress/pull/7) [`9432ce3`](https://github.com/dotpressjs/dotpress/commit/9432ce318a55287ce2431837075162743dd2389b) Thanks [@renoguyon](https://github.com/renoguyon)! - READMEs: each package describes itself with an example, and links to its pages on the documentation site, dotpress.dev, which holds the guides and the reference.
+- Updated dependencies [[`9432ce3`](https://github.com/dotpressjs/dotpress/commit/9432ce318a55287ce2431837075162743dd2389b)]:
+  - @dotpress/core@2.0.0-alpha.3
+
 ## 2.0.0-alpha.2
 
 ### Patch Changes

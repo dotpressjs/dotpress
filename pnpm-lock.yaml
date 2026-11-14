@@ -227,16 +227,16 @@ importers:
   examples/auth:
     dependencies:
       '@dotpress/adapter-express':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-express
       '@dotpress/auth':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/auth
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       '@dotpress/openapi':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/openapi
       express:
         specifier: ^5.3.0
@@ -246,7 +246,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5
@@ -261,13 +261,13 @@ importers:
   examples/cache:
     dependencies:
       '@dotpress/adapter-express':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-express
       '@dotpress/cache':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/cache
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       express:
         specifier: ^5.3.0
@@ -280,7 +280,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5
@@ -295,13 +295,13 @@ importers:
   examples/events:
     dependencies:
       '@dotpress/adapter-fastify':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-fastify
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       '@dotpress/events':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/events
       bullmq:
         specifier: ^6.7.2
@@ -314,7 +314,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5
@@ -329,13 +329,13 @@ importers:
   examples/express:
     dependencies:
       '@dotpress/adapter-express':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-express
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       '@dotpress/openapi':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/openapi
       express:
         specifier: ^5.3.0
@@ -345,7 +345,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5
@@ -360,10 +360,10 @@ importers:
   examples/fastify:
     dependencies:
       '@dotpress/adapter-fastify':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-fastify
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       '@fastify/aws-lambda':
         specifier: ^6.4.2
@@ -376,7 +376,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5
@@ -394,10 +394,10 @@ importers:
   examples/hono:
     dependencies:
       '@dotpress/adapter-hono':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-hono
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       '@hono/aws-lambda':
         specifier: ^1.0.1
@@ -413,7 +413,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5
@@ -431,13 +431,13 @@ importers:
   examples/mailer:
     dependencies:
       '@dotpress/adapter-hono':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-hono
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       '@dotpress/mailer':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/mailer
       '@hono/node-server':
         specifier: ^2.1.6
@@ -456,7 +456,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5
@@ -471,25 +471,25 @@ importers:
   examples/tasks-api:
     dependencies:
       '@dotpress/adapter-fastify':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/adapter-fastify
       '@dotpress/auth':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/auth
       '@dotpress/cache':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/cache
       '@dotpress/core':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/core
       '@dotpress/events':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/events
       '@dotpress/mailer':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/mailer
       '@dotpress/openapi':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/openapi
       bullmq:
         specifier: ^6.7.2
@@ -511,7 +511,7 @@ importers:
         version: 4.6.7
     devDependencies:
       '@dotpress/testing':
-        specifier: ^2.0.0-alpha.2
+        specifier: ^2.0.0-alpha.3
         version: link:../../packages/testing
       '@types/node':
         specifier: ^22.20.5

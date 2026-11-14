@@ -1,0 +1,16 @@
+// The documentation site, served by Cloudflare Workers as static assets (no
+// Worker script). Deployed by the Release workflow after each release.
+{
+  "name": "dotpress-website",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    // Built by `rspress build`.
+    "directory": "./doc_build",
+    // /adapters/express serves adapters/express.html.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+  },
+  // Preview on dotpress-website.<subdomain>.workers.dev until dotpress.dev
+  // is set up.
+  "workers_dev": true,
+}

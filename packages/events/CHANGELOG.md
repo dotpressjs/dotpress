@@ -1,5 +1,16 @@
 # @dotpress/events
 
+## 2.0.0-alpha.4
+
+### Minor Changes
+
+- [#14](https://github.com/dotpressjs/dotpress/pull/14) [`bf496ad`](https://github.com/dotpressjs/dotpress/commit/bf496ad1f51a875c07502f9075c04ad536c5d338) Thanks [@renoguyon](https://github.com/renoguyon)! - `emit()` accepts an `emissionId` option: the message ids derive from it, so emitting again with the same `emissionId` gives the same ids, and listeners can ignore the duplicates. `EventEmitError#retry()` sends again only the messages that failed, with the same ids, delay and metadata; a new failure throws a new `EventEmitError` whose `sent` adds up the attempts. `createFakeEventBus()` records the given `emissionId`.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.4
+
 ## 2.0.0-alpha.3
 
 ### Patch Changes

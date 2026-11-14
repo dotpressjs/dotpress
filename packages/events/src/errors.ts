@@ -1,3 +1,5 @@
+import type { EmitResult } from './bus.js'
+
 /** Base class of the errors thrown by `@dotpress/events`. */
 export class EventsError extends Error {
   override name = 'EventsError'
@@ -32,7 +34,10 @@ export class EventPayloadError extends EventsError {
 
 /** A message sent by `emit()`: one per listener. */
 export interface MessageRef {
-  /** Identifier of the message, stable across retries. */
+  /**
+   * Identifier of the message: stable across the retries of the transport
+   * and of `EventEmitError#retry()`.
+   */
   readonly id: string
   readonly listener: string
   /** Name of the transport (`default`, `edge`…). */
@@ -45,18 +50,23 @@ export interface FailedMessage extends MessageRef {
 }
 
 /**
- * Some messages of an emission could not be sent. `sent` lists the
- * others: emitting again gives the same message ids, so listeners can
- * ignore duplicates.
+ * Some messages of an emission could not be sent; `sent` lists the others.
+ * `retry()` sends the failed messages again, with the same ids. Emitting
+ * again sends every message, and gives the same ids only with the same
+ * `emissionId` option.
  */
 export class EventEmitError extends EventsError {
   override name = 'EventEmitError'
+
+  /** Sends the failed messages again: kept private, as they hold the payload. */
+  readonly #retry: (() => Promise<EmitResult>) | undefined
 
   constructor(
     /** Name of the event. */
     readonly event: string,
     readonly sent: readonly MessageRef[],
-    readonly failed: readonly FailedMessage[]
+    readonly failed: readonly FailedMessage[],
+    retry?: () => Promise<EmitResult>
   ) {
     const [first] = failed
     const reason =
@@ -65,6 +75,25 @@ export class EventEmitError extends EventsError {
       `Event "${event}" not fully emitted: ${failed.length} of ${sent.length + failed.length} messages failed (${failed.map(({ listener }) => listener).join(', ')}): ${reason}`,
       { cause: first?.error }
     )
+    this.#retry = retry
+  }
+
+  /**
+   * Sends the failed messages again, to the same transports, with the same
+   * ids, delay and metadata; the sent ones are not sent again. Resolves
+   * with the result of the emission once every message is sent, or throws
+   * a new `EventEmitError`, whose `sent` also lists the messages sent
+   * before.
+   */
+  retry(): Promise<EmitResult> {
+    if (this.#retry === undefined) {
+      return Promise.reject(
+        new EventsError(
+          `Event "${this.event}": this EventEmitError was not thrown by emit(), it cannot be retried.`
+        )
+      )
+    }
+    return this.#retry()
   }
 }
 

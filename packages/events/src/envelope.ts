@@ -5,7 +5,11 @@
 export interface Envelope {
   /** Version of the format. */
   readonly v: 1
-  /** Identifier of the message, stable across retries and emissions. */
+  /**
+   * Identifier of the message: the same across the retries of the
+   * transport and of `EventEmitError#retry()`, and for every emission with
+   * the same `emissionId`.
+   */
   readonly id: string
   /** Identifier of the emission, shared by its messages. */
   readonly emissionId: string
@@ -23,8 +27,8 @@ const hex = (bytes: Uint8Array) =>
 
 /**
  * Identifier of the message of a listener for an emission: a UUID (version
- * 8, RFC 9562) derived from both, so that emitting again gives the same
- * identifiers.
+ * 8, RFC 9562) derived from both, so that emitting again with the same
+ * `emissionId` gives the same identifiers.
  */
 export const messageId = async (emissionId: string, listener: string) => {
   const digest = await crypto.subtle.digest(

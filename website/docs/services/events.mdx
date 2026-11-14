@@ -72,7 +72,7 @@ Messages are stored by queues, shown in their consoles and kept in dead-letter q
 
 **A listener throws to be retried.** The transport delivers the message again, then moves it to its dead-letter queue after its retry limit.
 
-**Make listeners idempotent.** Queues deliver messages at least once: a message can run twice, after a timeout or a duplicate delivery. Use `id` to ignore duplicates (a unique constraint, an idempotency key sent to the API you call), or make running twice harmless:
+**Make listeners idempotent.** Queues deliver messages at least once: a message can run twice, after a timeout or a duplicate delivery. Use `id` to ignore duplicates (a unique constraint, an idempotency key sent to the API you call), or make running twice harmless. Some queues also ignore a message sent twice, by its `id` ([see each queue](/deployment/event-workers)), but not all of them, and not always: it is a bonus, not a guarantee.
 
 ```ts file="<root>/../examples/events/src/listeners/notify-warehouse.ts"
 ```
@@ -102,7 +102,56 @@ The payload is typed by the schema of the event. `delay`, in seconds, postpones 
 An event describes something that happened. Emitted inside a database transaction that rolls back, it describes something that did not. Commit first, then emit.
 :::
 
-When some messages cannot be sent (the queue is down), `emit()` throws an `EventEmitError`, which lists the `sent` and `failed` messages. Emitting again starts a new emission, with new message ids: the listeners whose message was already sent run twice. Make listeners idempotent on the data they change (a unique constraint on the order, an idempotency key derived from it), not only on the message `id`.
+### Send failures
+
+When some messages cannot be sent (the queue is down), `emit()` throws an `EventEmitError`, which lists the `sent` and `failed` messages. `retry()` sends the failed messages again, with the same ids, delay and metadata; the sent ones are not sent again:
+
+```ts twoslash
+import { createEventBus, createMemoryTransport, defineEvent, EventEmitError } from '@dotpress/events'
+import { z } from 'zod'
+
+const invoicePaid = defineEvent({
+  name: 'invoice.paid',
+  schema: z.object({ invoiceId: z.string(), paidAt: z.iso.datetime() }),
+})
+const events = createEventBus({ transport: createMemoryTransport(), listeners: [] })
+const payload = { invoiceId: 'F-1', paidAt: new Date().toISOString() }
+// ---cut---
+try {
+  await events.emit(invoicePaid, payload)
+} catch (error) {
+  if (error instanceof EventEmitError) await error.retry()
+  else throw error
+}
+```
+
+A new failure throws a new `EventEmitError`, whose `sent` also lists the messages sent before, with its own `retry()`. The error does not expose the payload: it can be logged as is.
+
+### Emitting again: `emissionId`
+
+`retry()` only works in the process that emitted. Each call to `emit()` is a new emission, with new message ids: emitting again later (a job that replays an outbox, a webhook received twice) runs again the listeners whose message was already sent. To avoid that, pass an `emissionId`, the idempotency key of the emission. The message ids derive from it: the same `emissionId` gives the same ids, and listeners ignore the duplicates by `id`.
+
+```ts twoslash
+import { createEventBus, createMemoryTransport, defineEvent } from '@dotpress/events'
+import { z } from 'zod'
+
+const invoicePaid = defineEvent({
+  name: 'invoice.paid',
+  schema: z.object({ invoiceId: z.string(), paidAt: z.iso.datetime() }),
+})
+const events = createEventBus({ transport: createMemoryTransport(), listeners: [] })
+const invoice = { id: 'F-1', paidAt: new Date().toISOString() }
+// ---cut---
+await events.emit(
+  invoicePaid,
+  { invoiceId: invoice.id, paidAt: invoice.paidAt },
+  { emissionId: `invoice-paid:${invoice.id}` }
+)
+```
+
+**The `emissionId` names one occurrence of the fact, not its entity.** An invoice is paid once: `invoice-paid:${invoice.id}` fits. An order is updated many times: `order-updated:${order.id}` would make every update a duplicate of the first one; use `${order.id}:${order.version}`, or the id of an outbox row. It has 1 to 200 characters, without control characters. Only the ids are stable: `emittedAt` is the date of each call.
+
+Without `emissionId`, make listeners idempotent on the data they change (a unique constraint on the order, an idempotency key derived from it), not only on the message `id`.
 
 ## In a route
 

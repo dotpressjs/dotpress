@@ -17,12 +17,14 @@ The code that emits does not change from one to another: only the transport of t
 
 | Queue | Message size | `delay` | The same message sent again |
 | --- | --- | --- | --- |
-| BullMQ | — | no limit | ignored while the job exists |
+| BullMQ | — | no limit | ignored while the job exists (completed jobs are removed by default) |
 | pg-boss | — | no limit | ignored |
 | SQS | 1 MiB | 15 minutes; none on FIFO queues | ignored for 5 minutes on FIFO queues |
-| Cloudflare Queues | 128 KB | 24 hours | — |
-| Pub/Sub | about 7.5 MB | not supported | — |
+| Cloudflare Queues | 128 KB | 24 hours | delivered again |
+| Pub/Sub | about 7.5 MB | not supported | delivered again |
 | Service Bus | 256 KB (Standard), 1 MB or more (Premium) | no limit | ignored with duplicate detection |
+
+"The same message" is a message with the same `id`: sent by `EventEmitError#retry()`, or by `emit()` with the same `emissionId`. The memory and sync transports run it again. In every case, listeners must still ignore the duplicates by `id`: see [Retries and idempotency](/services/events#retries-and-idempotency).
 
 A message larger than the limit fails at `emit()`, with an `EventEmitError`; the other messages of the emission are sent.
 
@@ -78,7 +80,7 @@ export default {
 }
 ```
 
-Each message becomes a [BullMQ](https://docs.bullmq.io) job named after its listener, with the message id as job id: the same message sent again adds no duplicate while the job exists.
+Each message becomes a [BullMQ](https://docs.bullmq.io) job named after its listener, with the message id as job id: the same message sent again adds no duplicate while the job exists. Completed jobs are removed by default (`removeOnComplete: true`): once its job has completed, the same message sent again is a new job, and runs again.
 
 - **Redis 6.2 or later, with `maxmemory-policy=noeviction`**: Redis must never evict the keys of the queue. A managed Redis often defaults to another policy: check it.
 - **Retries** (`jobOptions`, merged with the defaults): 3 `attempts`, an `exponential` backoff from 1 second, completed jobs removed (`removeOnComplete: true`), failed jobs kept (`removeOnFail: false`). Set `maxAttempts` to the same number.

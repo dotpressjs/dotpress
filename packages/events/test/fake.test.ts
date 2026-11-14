@@ -54,6 +54,23 @@ describe('createFakeEventBus()', () => {
     expect(events.emitted).toEqual([])
   })
 
+  it('records the given emissionId', async () => {
+    const events = createFakeEventBus()
+    const result = await events.emit(
+      userCreated,
+      { userId: '42' },
+      { emissionId: 'user-created:42' }
+    )
+    expect(result.emissionId).toBe('user-created:42')
+    expect(events.emitted[0]?.emissionId).toBe('user-created:42')
+    await expect(
+      events.emit(userCreated, { userId: '42' }, { emissionId: '' })
+    ).rejects.toThrow(
+      'emit("user.created"): emissionId must be a string of 1 to 200 characters, without control characters.'
+    )
+    expect(events.emitted).toHaveLength(1)
+  })
+
   it('records the payload after JSON', async () => {
     const events = createFakeEventBus()
     await events.emit(userCreated, {

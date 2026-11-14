@@ -66,15 +66,16 @@ declare module '@dotpress/events' {
 ### emit()
 
 ```ts
-const { emissionId, messages } = await events.emit(event, payload, { delay, metadata })
+const { emissionId, messages } = await events.emit(event, payload, { emissionId, delay, metadata })
 ```
 
 | Option | Description |
 | --- | --- |
+| `emissionId` | The identifier of the emission, random by default: the message ids derive from it. Emitting again with the same `emissionId` gives the same ids. It names one occurrence of the fact (`${order.id}:${order.version}`), not its entity. 1 to 200 characters, without control characters. |
 | `delay` | Seconds before the listeners run, within the limit of the transport. |
 | `metadata` | Strings passed to the listeners. Keys: 1 to 128 characters among letters, digits, `.`, `_` and `-`; values on one line. |
 
-`messages` lists one `{ id, listener, transport }` per listener. An event without listeners is not sent. Each call is a new emission, with new message ids: emitting again after an `EventEmitError` runs again the listeners whose message was sent.
+`messages` lists one `{ id, listener, transport }` per listener. An event without listeners is not sent. Without `emissionId`, each call is a new emission, with new message ids: emitting again after an `EventEmitError` runs again the listeners whose message was sent. `error.retry()` sends only the failed messages.
 
 `events.withContext({ logger, metadata })` returns a bus that logs with this logger and adds this metadata: `ctx.events` is one.
 
@@ -143,7 +144,7 @@ Payloads are never logged.
 | --- | --- |
 | `TypeError` | Invalid options of `defineEvent()`, `defineListener()`, `createEventBus()`, `emit()`… |
 | `EventPayloadError` | At `emit()`: the payload does not match the schema, or is not serializable as JSON. Fields: `event`, `issues`. |
-| `EventEmitError` | Some messages could not be sent. Fields: `sent`, `failed`, `cause`. |
+| `EventEmitError` | Some messages could not be sent. Fields: `sent`, `failed`, `cause`. `retry()` sends the failed messages again, with the same ids: it resolves like `emit()`, or throws a new `EventEmitError` whose `sent` adds up the attempts. |
 | `PartialSendError` | For transport authors: some messages of a `send()` call failed. |
 
 The error classes extend `EventsError`.

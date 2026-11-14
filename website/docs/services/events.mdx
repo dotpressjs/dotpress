@@ -92,11 +92,11 @@ const events = createEventBus({ transport: createMemoryTransport(), listeners: [
 await events.emit(
   invoicePaid,
   { invoiceId: 'F-1', paidAt: new Date().toISOString() },
-  { delay: 3600, metadata: { source: 'payments' } } // optional
+  { delay: '1h', metadata: { source: 'payments' } } // optional
 )
 ```
 
-The payload is typed by the schema of the event. `delay`, in seconds, postpones the listeners, within the limit of the transport. `emit()` returns the `emissionId`, and one `{ id, listener, transport }` per listener; an event without listeners is not sent.
+The payload is typed by the schema of the event. `delay`, a number of seconds or a [duration](/concepts/options#durations) like `'1h'`, postpones the listeners, within the limit of the transport. `emit()` returns the `emissionId`, and one `{ id, listener, transport }` per listener; an event without listeners is not sent.
 
 :::warning Emit after the transaction commits
 An event describes something that happened. Emitted inside a database transaction that rolls back, it describes something that did not. Commit first, then emit.

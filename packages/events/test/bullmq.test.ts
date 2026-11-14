@@ -10,9 +10,11 @@ import {
 import {
   createBullmqSource,
   createBullmqTransport,
+} from '../src/transports/bullmq.js'
+import {
   DEFAULT_JOB_OPTIONS,
   processorOf,
-} from '../src/transports/bullmq.js'
+} from '../src/transports/bullmq-internal.js'
 import { createLogger, envelopeOf, userCreated } from './support.js'
 
 const listenerOf = (
@@ -98,63 +100,58 @@ describe('BullMQ transport', () => {
     ],
     [
       'an unknown option',
-      { name: 'events', connection: {}, attempts: 3 },
+      { queue: 'events', connection: {}, attempts: 3 },
       'createBullmqTransport(): unknown option "attempts".',
     ],
     [
       'no name',
       { connection: {} },
-      'createBullmqTransport(): name must be a non-empty string.',
+      'createBullmqTransport(): queue must be a non-empty string.',
     ],
     [
       'an empty name',
-      { name: '', connection: {} },
-      'createBullmqTransport(): name must be a non-empty string.',
+      { queue: '', connection: {} },
+      'createBullmqTransport(): queue must be a non-empty string.',
     ],
     [
       'no connection',
-      { name: 'events' },
+      { queue: 'events' },
       'createBullmqTransport(): connection must be Redis connection options or an ioredis instance.',
     ],
     [
       'a connection URL',
-      { name: 'events', connection: 'redis://x' },
+      { queue: 'events', connection: 'redis://x' },
       'createBullmqTransport(): connection must be Redis connection options or an ioredis instance.',
     ],
     [
       'a null connection',
-      { name: 'events', connection: null },
+      { queue: 'events', connection: null },
       'createBullmqTransport(): connection must be Redis connection options or an ioredis instance.',
     ],
     [
       'an empty prefix',
-      { name: 'events', connection: {}, prefix: '' },
+      { queue: 'events', connection: {}, prefix: '' },
       'createBullmqTransport(): prefix must be a non-empty string.',
-    ],
-    [
-      'a queue with a name',
-      { queue: { addBulk() {} }, name: 'events' },
-      'createBullmqTransport(): set queue, or name and connection, not both.',
     ],
     [
       'a queue with a connection',
       { queue: { addBulk() {} }, connection: {} },
-      'createBullmqTransport(): set queue, or name and connection, not both.',
+      'createBullmqTransport(): a BullMQ queue takes no connection or prefix.',
     ],
     [
       'a queue with a prefix',
       { queue: { addBulk() {} }, prefix: 'p' },
-      'createBullmqTransport(): set queue, or name and connection, not both.',
+      'createBullmqTransport(): a BullMQ queue takes no connection or prefix.',
     ],
     [
       'a queue without addBulk()',
       { queue: {} },
-      'createBullmqTransport(): queue must be a BullMQ queue.',
+      'createBullmqTransport(): queue must be the name of a queue, or a BullMQ queue.',
     ],
     [
       'a null queue',
-      { queue: null },
-      'createBullmqTransport(): queue must be a BullMQ queue.',
+      { queue: null, connection: {} },
+      'createBullmqTransport(): queue must be a non-empty string.',
     ],
     [
       'invalid job options',
@@ -226,38 +223,38 @@ describe('BullMQ source', () => {
     ],
     [
       'an unknown option',
-      { name: 'events', connection: {}, attempts: 3 },
+      { queue: 'events', connection: {}, attempts: 3 },
       'createBullmqSource(): unknown option "attempts".',
     ],
     [
       'no name',
       { connection: {} },
-      'createBullmqSource(): name must be a non-empty string.',
+      'createBullmqSource(): queue must be a non-empty string.',
     ],
     [
       'no connection',
-      { name: 'events' },
+      { queue: 'events' },
       'createBullmqSource(): connection must be Redis connection options or an ioredis instance.',
     ],
     [
       'a concurrency of 0',
-      { name: 'events', connection: {}, concurrency: 0 },
+      { queue: 'events', connection: {}, concurrency: 0 },
       'createBullmqSource(): concurrency must be a positive integer.',
     ],
     [
       'a concurrency that is not an integer',
-      { name: 'events', connection: {}, concurrency: 1.5 },
+      { queue: 'events', connection: {}, concurrency: 1.5 },
       'createBullmqSource(): concurrency must be a positive integer.',
     ],
     [
       'a negative close timeout',
-      { name: 'events', connection: {}, closeTimeout: -1 },
-      'createBullmqSource(): closeTimeout must be a non-negative integer (milliseconds).',
+      { queue: 'events', connection: {}, closeTimeout: -1 },
+      "createBullmqSource(): closeTimeout must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
     [
-      'a close timeout that is not an integer',
-      { name: 'events', connection: {}, closeTimeout: 1.5 },
-      'createBullmqSource(): closeTimeout must be a non-negative integer (milliseconds).',
+      'a close timeout without unit',
+      { queue: 'events', connection: {}, closeTimeout: '30' },
+      "createBullmqSource(): closeTimeout must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
   ])('rejects %s', (_, options, message) => {
     expect(() => createBullmqSource(options as never)).toThrow(
@@ -268,7 +265,7 @@ describe('BullMQ source', () => {
   it('accepts its options', () => {
     expect(
       createBullmqSource({
-        name: 'events',
+        queue: 'events',
         connection: {},
         prefix: 'app',
         concurrency: 4,
@@ -297,7 +294,7 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
     count += 1
     const name = `events-${count}`
     const transport = createBullmqTransport({
-      name,
+      queue: name,
       connection,
       prefix,
       jobOptions,
@@ -306,7 +303,7 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
     const logger = createLogger()
     const running = startWorker(
       createWorker({ listeners, logger, maxAttempts: 3 }),
-      createBullmqSource({ name, connection, prefix, concurrency: 2 }),
+      createBullmqSource({ queue: name, connection, prefix, concurrency: 2 }),
       { logger }
     )
     const queue = new Queue(name, { connection, prefix })
@@ -464,7 +461,7 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
   it('stops at once with an aborted signal', async () => {
     const running = startWorker(
       createWorker({ listeners: [] }),
-      createBullmqSource({ name: 'aborted', connection, prefix }),
+      createBullmqSource({ queue: 'aborted', connection, prefix }),
       { signal: AbortSignal.abort() }
     )
     await expect(running.done).resolves.toBeUndefined()
@@ -475,9 +472,9 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
     const running = startWorker(
       createWorker({ listeners: [] }),
       createBullmqSource({
-        name: 'unreachable',
+        queue: 'unreachable',
         connection: { host: '127.0.0.1', port: 1, maxRetriesPerRequest: null },
-        closeTimeout: 100,
+        closeTimeout: '100ms',
       }),
       { logger }
     )

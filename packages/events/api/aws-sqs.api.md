@@ -7,6 +7,7 @@
 ```ts
 import type { SQSClientConfig } from '@aws-sdk/client-sqs'
 import type {
+  Duration,
   Envelope,
   EventsLogger,
   Source,
@@ -39,8 +40,8 @@ export interface SqsEvent {
 }
 
 export interface SqsFailureOptions extends SqsClientOptions {
-  deadLetterQueueUrl?: string | undefined
-  retryDelay?: ((attempt: number) => number) | undefined
+  deadLetter?: string | undefined
+  retryDelay?: ((attempt: number) => Duration) | undefined
   logger?: EventsLogger | undefined
 }
 
@@ -60,9 +61,9 @@ export interface SqsRecord {
 
 export interface SqsSourceOptions extends SqsFailureOptions {
   queueUrl: string
-  waitTimeSeconds?: number | undefined
-  batchSize?: number | undefined
-  visibilityTimeout?: number | undefined
+  waitTime?: Duration | undefined
+  concurrency?: number | undefined
+  visibilityTimeout?: Duration | undefined
   checkRedrivePolicy?: boolean | undefined
 }
 
@@ -81,6 +82,4 @@ export declare const createSqsSource: (options: SqsSourceOptions) => Source
 export declare const createSqsTransport: (
   options: SqsTransportOptions
 ) => Transport
-
-export declare const queueUrlOf: (arn: string) => string | undefined
 ```

@@ -410,9 +410,18 @@ describe('emit()', () => {
     })
 
     it.each([
-      [{ delay: -1 }, 'delay must be a non-negative integer (seconds).'],
-      [{ delay: 1.5 }, 'delay must be a non-negative integer (seconds).'],
-      [{ delay: '60' }, 'delay must be a non-negative integer (seconds).'],
+      [
+        { delay: -1 },
+        "delay must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
+      ],
+      [
+        { delay: '1 m' },
+        "delay must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
+      ],
+      [
+        { delay: '60' },
+        "delay must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
+      ],
       [{ metadata: 'x' }, 'metadata must be an object.'],
       [{ metadata: [] }, 'metadata must be an object.'],
       [{ metadata: null }, 'metadata must be an object.'],
@@ -996,8 +1005,10 @@ describe('memory transport', () => {
   })
 
   it('accepts no options', () => {
-    expect(createMemoryTransport(undefined).maxAttempts).toBe(3)
-    expect(createMemoryTransport(null as never).maxAttempts).toBe(3)
+    expect(createMemoryTransport(undefined).kind).toBe('memory')
+    expect(() => createMemoryTransport({ retries: 3 } as never)).toThrow(
+      new TypeError('createMemoryTransport(): unknown option "retries".')
+    )
   })
 
   it('fails without a bus', async () => {

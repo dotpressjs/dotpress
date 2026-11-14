@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseEnvelope } from '../src/index.js'
+import { parseEnvelope } from '../src/envelope.js'
 import { messageId } from '../src/envelope.js'
 import { envelopeOf } from './support.js'
 
@@ -55,9 +55,9 @@ describe('parseEnvelope()', () => {
     ['null', null, 'the message is not an object'],
     ['JSON of a number', '42', 'the message is not an object'],
     [
-      'another version',
-      envelopeOf({ v: 2 as never }),
-      'unsupported envelope version 2',
+      'a version that is not an integer',
+      envelopeOf({ v: '2' as never }),
+      'unsupported envelope version "2"',
     ],
     [
       'no version',
@@ -105,5 +105,11 @@ describe('parseEnvelope()', () => {
     ],
   ])('rejects %s', (_, message, problem) => {
     expect(parseEnvelope(message)).toEqual({ problem })
+  })
+
+  it('recognizes the envelopes of a later version', () => {
+    expect(parseEnvelope(envelopeOf({ v: 2 as never }))).toEqual({
+      unsupportedVersion: 2,
+    })
   })
 })

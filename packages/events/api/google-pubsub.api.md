@@ -5,33 +5,23 @@
 ## Exports
 
 ```ts
-import type { EventsLogger, Source, Transport, Worker } from '@dotpress/events'
+import type {
+  Duration,
+  EventsLogger,
+  Source,
+  Transport,
+  Worker,
+} from '@dotpress/events'
 import type { PubSub } from '@google-cloud/pubsub'
 
 export type AccessTokenOption = (() => Promise<string>) | false
 
-export interface PubSubPublishOptions {
-  topic: string
-  getAccessToken?: AccessTokenOption | undefined
-  baseUrl?: string | undefined
-  fetch?: typeof fetch | undefined
-}
-
-export interface PubSubPullSourceOptions {
-  subscription: string
-  client?: PubSub | undefined
-  clientConfig?: ConstructorParameters<typeof PubSub>[0] | undefined
-  maxMessages?: number | undefined
-  deadLetterTopic?: string | undefined
-  closeTimeout?: number | undefined
-}
-
-export interface PubSubPushHandler {
+export interface PubSubHandler {
   fetch(request: Request): Promise<Response>
   handle(body: unknown, authorization: string | undefined): Promise<number>
 }
 
-export interface PubSubPushHandlerOptions {
+export interface PubSubHandlerOptions {
   verifyToken?: boolean | undefined
   audience?: string | undefined
   serviceAccountEmail?: string | undefined
@@ -41,14 +31,34 @@ export interface PubSubPushHandlerOptions {
   logger?: EventsLogger | undefined
 }
 
-export declare const createPubSubPullSource: (
-  options: PubSubPullSourceOptions
-) => Source
+export interface PubSubPublishOptions {
+  topic: string
+  getAccessToken?: AccessTokenOption | undefined
+  baseUrl?: string | undefined
+  fetch?: typeof fetch | undefined
+}
 
-export declare const createPubSubPushHandler: (
+export interface PubSubSourceOptions {
+  subscription: string
+  client?: PubSub | undefined
+  clientConfig?: ConstructorParameters<typeof PubSub>[0] | undefined
+  concurrency?: number | undefined
+  deadLetter?:
+    | {
+        topic: string
+      }
+    | undefined
+  closeTimeout?: Duration | undefined
+}
+
+export declare const createPubSubHandler: (
   worker: Worker,
-  options?: PubSubPushHandlerOptions
-) => PubSubPushHandler
+  options?: PubSubHandlerOptions
+) => PubSubHandler
+
+export declare const createPubSubSource: (
+  options: PubSubSourceOptions
+) => Source
 
 export declare const createPubSubTransport: (
   options: PubSubPublishOptions

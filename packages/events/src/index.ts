@@ -12,6 +12,7 @@ export { defineEvent, defineListener } from './define.js'
 export type {
   EventDefinition,
   EventInput,
+  EventOptions,
   EventPayload,
   EventTransports,
   ListenerContext,
@@ -21,7 +22,7 @@ export type {
   ListenerOptions,
   TransportName,
 } from './define.js'
-export { parseEnvelope } from './envelope.js'
+export type { Duration } from './duration.js'
 export type { Envelope } from './envelope.js'
 export {
   EventEmitError,
@@ -32,7 +33,11 @@ export {
 export type { EventPayloadIssue, FailedMessage, MessageRef } from './errors.js'
 export type { EventsLogger } from './logger.js'
 export { startWorker } from './start-worker.js'
-export type { RunningWorker, StartWorkerOptions } from './start-worker.js'
+export type {
+  RunningWorker,
+  StartWorkerOptions,
+  WorkerEntry,
+} from './start-worker.js'
 export type {
   ConsumeOptions,
   SendOptions,
@@ -51,6 +56,7 @@ export type {
   FailureHook,
   FailureInfo,
   HandleResult,
+  RetryReason,
   Worker,
   WorkerOptions,
 } from './worker.js'

@@ -8,17 +8,27 @@ import { checkLogger, silentLogger, type EventsLogger } from './logger.js'
 
 /** Why a message can never be handled: retrying would not help. */
 export type DeadReason =
-  /** Not an envelope, or an envelope of another version. */
+  /** Not an envelope of Dotpress. */
   | 'invalid-envelope'
   /** No listener of this name in this worker (not deployed here?). */
   | 'unknown-listener'
   /** The payload does not match the schema of the event. */
   | 'invalid-payload'
 
+/** Why a message is retried. */
+export type RetryReason =
+  /** The listener failed. */
+  | 'listener-error'
+  /**
+   * An envelope of a later version (`v`), emitted by a newer deployment:
+   * retried until a newer worker handles it, during a rolling deployment.
+   */
+  | 'unsupported-version'
+
 /** Result of `worker.handle()`, translated by each transport. */
 export type HandleResult =
   | { readonly status: 'success' }
-  /** The listener failed: retry the message. */
+  /** The listener failed, or the envelope is too recent: retry it. */
   | { readonly status: 'retry'; readonly error: unknown }
   /** The message can never be handled: do not retry it. */
   | {
@@ -31,7 +41,7 @@ export type HandleResult =
 export interface FailureInfo {
   /** Envelope of the message; undefined when it is not an envelope. */
   readonly envelope: Envelope | undefined
-  readonly reason: 'listener-error' | DeadReason
+  readonly reason: RetryReason | DeadReason
   readonly attempt: number
   /**
    * Whether the message will not be retried: a dead message, or the last
@@ -162,7 +172,8 @@ export const createWorker = (options: WorkerOptions): Worker => {
         )
       }
     }
-    return info.reason === 'listener-error'
+    return info.reason === 'listener-error' ||
+      info.reason === 'unsupported-version'
       ? { status: 'retry', error }
       : { status: 'dead', reason: info.reason, error }
   }
@@ -170,6 +181,19 @@ export const createWorker = (options: WorkerOptions): Worker => {
   const handle: Worker['handle'] = async (message, handleOptions = {}) => {
     const attempt = handleOptions.attempt ?? 1
     const parsed = parseEnvelope(message)
+    if ('unsupportedVersion' in parsed) {
+      return fail(
+        new Error(
+          `Envelope version ${parsed.unsupportedVersion} is not supported by this worker: a newer deployment emitted it.`
+        ),
+        {
+          envelope: undefined,
+          reason: 'unsupported-version',
+          attempt,
+          final: maxAttempts !== undefined && attempt >= maxAttempts,
+        }
+      )
+    }
     if ('problem' in parsed) {
       return fail(new Error(`Invalid message: ${parsed.problem}.`), {
         envelope: undefined,

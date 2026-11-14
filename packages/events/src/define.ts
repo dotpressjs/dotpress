@@ -156,7 +156,8 @@ export const loaderOf = (listener: unknown) => loaders.get(listener as object)
  * })
  * ```
  */
-export const defineEvent = <S extends z.ZodType>(options: {
+/** Options of `defineEvent()`. */
+export interface EventOptions<S extends z.ZodType = z.ZodType> {
   /** Unique name: letters, digits, `.`, `_`, `:` and `-`. */
   name: string
   /**
@@ -166,7 +167,11 @@ export const defineEvent = <S extends z.ZodType>(options: {
   schema: S
   /** Transport of the listeners. Defaults to `default`. */
   transport?: TransportName | undefined
-}): EventDefinition<S> => {
+}
+
+export const defineEvent = <S extends z.ZodType>(
+  options: EventOptions<S>
+): EventDefinition<S> => {
   const name = (options as { name?: unknown } | null)?.name
   const prefix =
     typeof name === 'string' ? `Invalid event "${name}"` : 'Invalid event'

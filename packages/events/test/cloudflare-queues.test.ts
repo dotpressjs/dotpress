@@ -17,12 +17,12 @@ import {
   type ListenerHandler,
 } from '../src/index.js'
 import {
-  createCloudflarePullSource,
+  createCloudflareQueueSource,
   createCloudflareQueueHandler,
   createCloudflareQueueTransport,
-  decodePulledBody,
   type CloudflareQueueMessage,
 } from '../src/transports/cloudflare-queues.js'
+import { decodePulledBody } from '../src/transports/cloudflare-queues-internal.js'
 import { startCloudflareServer } from './cloudflare-queues-server.js'
 import { createLogger, envelopeOf, userCreated } from './support.js'
 
@@ -342,7 +342,7 @@ describe('Cloudflare Queues handler', () => {
       }),
       {
         retryDelay: (attempt) =>
-          attempt === 1 ? -1 : attempt === 2 ? 12.4 : 1e9,
+          attempt === 1 ? 0 : attempt === 2 ? 12.4 : '1000d',
       }
     )
     const messages = [1, 2, 3].map((attempts) =>
@@ -351,7 +351,8 @@ describe('Cloudflare Queues handler', () => {
     await handler({ queue: 'events', messages })
     expect(messages.map(({ retry }) => retry.mock.calls[0]?.[0])).toEqual([
       { delaySeconds: 0 },
-      { delaySeconds: 12 },
+      // Rounded up to the second.
+      { delaySeconds: 13 },
       { delaySeconds: 86_400 },
     ])
   })
@@ -364,7 +365,7 @@ describe('Cloudflare Queues handler', () => {
           throw new Error('down')
         },
       }),
-      { deadLetterQueue: dlq }
+      { deadLetter: dlq }
     )
     const failing = messageOf(envelopeOf({ listener: 'failing' }))
     await handler({ queue: 'events', messages: [failing] })
@@ -376,7 +377,7 @@ describe('Cloudflare Queues handler', () => {
   it('sends dead messages to the dead-letter queue', async () => {
     const dlq = bindingMock()
     const handler = createCloudflareQueueHandler(workerOf({}), {
-      deadLetterQueue: () => dlq,
+      deadLetter: () => dlq,
     })
     const dead = messageOf(envelopeOf())
     await handler({ queue: 'events', messages: [dead] })
@@ -390,13 +391,20 @@ describe('Cloudflare Queues handler', () => {
   it('retries dead messages when the dead-letter queue fails', async () => {
     const dlq = bindingMock()
     dlq.sendBatch.mockRejectedValueOnce(new Error('down'))
+    const logger = createLogger()
     const handler = createCloudflareQueueHandler(workerOf({}), {
-      deadLetterQueue: dlq,
+      deadLetter: dlq,
+      logger,
     })
     const dead = messageOf(envelopeOf())
     await handler({ queue: 'events', messages: [dead] })
     expect(dead.retry).toHaveBeenCalledOnce()
     expect(dead.ack).not.toHaveBeenCalled()
+    expect(logger.entries).toContainEqual({
+      level: 'error',
+      message: 'Cannot send the message to the dead-letter queue',
+      data: { messageId: dead.id, error: 'down' },
+    })
   })
 
   it('handles empty batches', async () => {
@@ -429,8 +437,8 @@ describe('Cloudflare Queues handler', () => {
     [
       'an invalid dead-letter queue',
       'worker',
-      { deadLetterQueue: 'dlq' },
-      'createCloudflareQueueHandler(): deadLetterQueue must be a queue binding, or a function returning it.',
+      { deadLetter: 'dlq' },
+      'createCloudflareQueueHandler(): deadLetter must be a queue binding, or a function returning it.',
     ],
   ])('rejects %s', (_, target, options, message) => {
     expect(() =>
@@ -484,7 +492,7 @@ describe('Cloudflare Queues pull source', () => {
     const logger = createLogger()
     const running = startWorker(
       createWorker({ listeners, logger }),
-      createCloudflarePullSource({ ...api, pollInterval: 10, ...options }),
+      createCloudflareQueueSource({ ...api, pollInterval: '10ms', ...options }),
       { logger }
     )
     return { events, running, logger, queueId }
@@ -523,7 +531,7 @@ describe('Cloudflare Queues pull source', () => {
     const queueId = `queue-${count}`
     const running = startWorker(
       createWorker({ listeners: [] }),
-      createCloudflarePullSource({
+      createCloudflareQueueSource({
         accountId: 'acc',
         queueId,
         apiToken: 'token',
@@ -587,7 +595,7 @@ describe('Cloudflare Queues pull source', () => {
     }).emit(userCreated, { userId: '7' })
     const running = startWorker(
       createWorker({ listeners }),
-      createCloudflarePullSource({ ...api, pollInterval: 10 })
+      createCloudflareQueueSource({ ...api, pollInterval: '10ms' })
     )
     await vi.waitFor(() => expect(received).toEqual(['7']))
     await running.stop()
@@ -605,9 +613,9 @@ describe('Cloudflare Queues pull source', () => {
       ],
       {
         retryDelay: () => 0,
-        deadLetterQueueId: 'dlq-1',
-        batchSize: 5,
-        visibilityTimeoutMs: 1000,
+        deadLetter: 'dlq-1',
+        concurrency: 5,
+        visibilityTimeout: '1000ms',
       }
     )
     await events.emit(userCreated, { userId: '1' })
@@ -645,7 +653,7 @@ describe('Cloudflare Queues pull source', () => {
 
   it('retries dead messages without dead-letter queue, and when it fails', async () => {
     const { running, queueId, logger } = setup([listenerOf('a', () => {})], {
-      deadLetterQueueId: 'dlq-failing',
+      deadLetter: 'dlq-failing',
     })
     server.failNext(
       'dlq-failing',
@@ -665,7 +673,7 @@ describe('Cloudflare Queues pull source', () => {
         level: 'error',
         message: 'Cannot copy the message to the dead-letter queue',
         data: {
-          deadLetterQueueId: 'dlq-failing',
+          deadLetter: 'dlq-failing',
           error: 'Cloudflare Queues API: 500 1: Down',
         },
       })
@@ -679,7 +687,7 @@ describe('Cloudflare Queues pull source', () => {
     // A short lease: the message comes back after the failed acknowledgment.
     const { events, running, queueId, logger } = setup(
       [listenerOf('a', ({ payload }) => void received.push(payload.userId))],
-      { visibilityTimeoutMs: 200 }
+      { visibilityTimeout: '200ms' }
     )
     server.failNext(queueId, 'pull', 503, 'Service unavailable')
     server.failNext(queueId, 'ack', 500, '{"success":false,"errors":[]}')
@@ -705,7 +713,7 @@ describe('Cloudflare Queues pull source', () => {
   })
 
   it('stops while waiting', async () => {
-    const { running } = setup([], { pollInterval: 60_000 })
+    const { running } = setup([], { pollInterval: '60000ms' })
     await new Promise((resolve) => setTimeout(resolve, 50))
     const start = Date.now()
     await running.stop()
@@ -717,22 +725,22 @@ describe('Cloudflare Queues pull source', () => {
     [
       'no account',
       {},
-      'createCloudflarePullSource(): accountId must be a non-empty string.',
+      'createCloudflareQueueSource(): accountId must be a non-empty string.',
     ],
     [
       'an unknown option',
       { accountId: 'a', queueId: 'q', apiToken: 't', queue: {} },
-      'createCloudflarePullSource(): unknown option "queue".',
+      'createCloudflareQueueSource(): unknown option "queue".',
     ],
     [
       'a batch over 100',
-      { accountId: 'a', queueId: 'q', apiToken: 't', batchSize: 101 },
-      'createCloudflarePullSource(): batchSize must be an integer from 1 to 100.',
+      { accountId: 'a', queueId: 'q', apiToken: 't', concurrency: 101 },
+      'createCloudflareQueueSource(): concurrency must be an integer from 1 to 100.',
     ],
     [
       'an empty batch',
-      { accountId: 'a', queueId: 'q', apiToken: 't', batchSize: 0 },
-      'createCloudflarePullSource(): batchSize must be an integer from 1 to 100.',
+      { accountId: 'a', queueId: 'q', apiToken: 't', concurrency: 0 },
+      'createCloudflareQueueSource(): concurrency must be an integer from 1 to 100.',
     ],
     [
       'a lease over 12 hours',
@@ -740,50 +748,50 @@ describe('Cloudflare Queues pull source', () => {
         accountId: 'a',
         queueId: 'q',
         apiToken: 't',
-        visibilityTimeoutMs: 43_200_001,
+        visibilityTimeout: '43200001ms',
       },
-      'createCloudflarePullSource(): visibilityTimeoutMs must be an integer from 1 to 43200000.',
+      'createCloudflareQueueSource(): visibilityTimeout must be from 1 millisecond to 12 hours.',
     ],
     [
       'a lease of 0',
-      { accountId: 'a', queueId: 'q', apiToken: 't', visibilityTimeoutMs: 0 },
-      'createCloudflarePullSource(): visibilityTimeoutMs must be an integer from 1 to 43200000.',
+      { accountId: 'a', queueId: 'q', apiToken: 't', visibilityTimeout: '0ms' },
+      'createCloudflareQueueSource(): visibilityTimeout must be from 1 millisecond to 12 hours.',
     ],
     [
       'a negative poll interval',
       { accountId: 'a', queueId: 'q', apiToken: 't', pollInterval: -1 },
-      'createCloudflarePullSource(): pollInterval must be an integer from 0 to 3600000.',
+      "createCloudflareQueueSource(): pollInterval must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
     [
-      'a poll interval that is not an integer',
-      { accountId: 'a', queueId: 'q', apiToken: 't', pollInterval: 1.5 },
-      'createCloudflarePullSource(): pollInterval must be an integer from 0 to 3600000.',
+      'a poll interval over 1 hour',
+      { accountId: 'a', queueId: 'q', apiToken: 't', pollInterval: '61m' },
+      'createCloudflareQueueSource(): pollInterval must be 1 hour at most.',
     ],
     [
       'an invalid retry delay',
       { accountId: 'a', queueId: 'q', apiToken: 't', retryDelay: 1 },
-      'createCloudflarePullSource(): retryDelay must be a function.',
+      'createCloudflareQueueSource(): retryDelay must be a function.',
     ],
     [
       'an empty dead-letter queue',
-      { accountId: 'a', queueId: 'q', apiToken: 't', deadLetterQueueId: '' },
-      'createCloudflarePullSource(): deadLetterQueueId must be a non-empty string.',
+      { accountId: 'a', queueId: 'q', apiToken: 't', deadLetter: '' },
+      'createCloudflareQueueSource(): deadLetter must be a non-empty string.',
     ],
   ])('rejects %s', (_, options, message) => {
-    expect(() => createCloudflarePullSource(options as never)).toThrow(
+    expect(() => createCloudflareQueueSource(options as never)).toThrow(
       new TypeError(message)
     )
   })
 
   it('accepts the limits', () => {
     expect(
-      createCloudflarePullSource({
+      createCloudflareQueueSource({
         accountId: 'a',
         queueId: 'q',
         apiToken: 't',
-        batchSize: 100,
-        visibilityTimeoutMs: 43_200_000,
-        pollInterval: 0,
+        concurrency: 100,
+        visibilityTimeout: '12h',
+        pollInterval: '1h',
       }).kind
     ).toBe('cloudflare-queues')
   })

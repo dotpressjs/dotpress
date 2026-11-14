@@ -1,3 +1,8 @@
+import {
+  optionalMilliseconds,
+  toMilliseconds,
+  type Duration,
+} from '../duration.js'
 import type {
   ServiceBusClient,
   ServiceBusMessage,
@@ -6,6 +11,7 @@ import type {
 } from '@azure/service-bus'
 import type { Envelope } from '../envelope.js'
 import { PartialSendError } from '../errors.js'
+import { checkLogger, silentLogger, type EventsLogger } from '../logger.js'
 import type { Source, Transport } from '../transport.js'
 import type { HandleResult, Worker } from '../worker.js'
 
@@ -33,26 +39,27 @@ export type ServiceBusSourceOptions = ServiceBusConnection & {
   /** Name of the queue. */
   queue: string
   /** Messages handled at the same time. Defaults to 1. */
-  maxConcurrentCalls?: number | undefined
+  concurrency?: number | undefined
   /**
-   * How long the lock of a message in progress is renewed, in
-   * milliseconds. Defaults to 5 minutes (the default of the SDK).
+   * How long the lock of a message in progress is renewed. Defaults to 5
+   * minutes (the default of the SDK).
    */
-  maxAutoLockRenewalDurationInMs?: number | undefined
+  maxLockRenewal?: Duration | undefined
   /**
-   * On stop, how long to wait for the messages in progress, in
-   * milliseconds. Defaults to 30 seconds.
+   * On stop, how long to wait for the messages in progress. Defaults to 30
+   * seconds.
    */
-  closeTimeout?: number | undefined
+  closeTimeout?: Duration | undefined
 }
 
-/** Options of `createServiceBusFunctionHandler()`. */
-export interface ServiceBusFunctionHandlerOptions {
+/** Options of `createServiceBusHandler()`. */
+export interface ServiceBusHandlerOptions {
   /**
    * Queue where messages that can never be handled are sent at once,
    * instead of failing until `maxDeliveryCount`.
    */
   deadLetter?: ServiceBusTransportOptions | undefined
+  logger?: EventsLogger | undefined
 }
 
 /** Service Bus transport: close it to close the client it created. */
@@ -300,38 +307,27 @@ export const createServiceBusSource = (
     'client',
     'connectionString',
     'queue',
-    'maxConcurrentCalls',
-    'maxAutoLockRenewalDurationInMs',
+    'concurrency',
+    'maxLockRenewal',
     'closeTimeout',
   ])
   const connection = connectionOf(label, values)
-  const {
-    maxConcurrentCalls = 1,
-    maxAutoLockRenewalDurationInMs,
-    closeTimeout = 30_000,
-  } = values
+  const maxConcurrentCalls = values.concurrency ?? 1
   if (
     !Number.isInteger(maxConcurrentCalls) ||
     (maxConcurrentCalls as number) < 1
   ) {
-    throw new TypeError(
-      `${label}: maxConcurrentCalls must be a positive integer.`
-    )
+    throw new TypeError(`${label}: concurrency must be a positive integer.`)
   }
-  if (
-    maxAutoLockRenewalDurationInMs !== undefined &&
-    (!Number.isInteger(maxAutoLockRenewalDurationInMs) ||
-      (maxAutoLockRenewalDurationInMs as number) < 0)
-  ) {
-    throw new TypeError(
-      `${label}: maxAutoLockRenewalDurationInMs must be a non-negative integer (milliseconds).`
-    )
-  }
-  if (!Number.isInteger(closeTimeout) || (closeTimeout as number) < 0) {
-    throw new TypeError(
-      `${label}: closeTimeout must be a non-negative integer (milliseconds).`
-    )
-  }
+  const maxAutoLockRenewalDurationInMs =
+    values.maxLockRenewal === undefined
+      ? undefined
+      : toMilliseconds(values.maxLockRenewal, `${label}: maxLockRenewal`)
+  const closeTimeout = optionalMilliseconds(
+    values.closeTimeout,
+    `${label}: closeTimeout`,
+    30_000
+  )
 
   return {
     kind: 'azure-service-bus',
@@ -342,8 +338,7 @@ export const createServiceBusSource = (
         ...(maxAutoLockRenewalDurationInMs === undefined
           ? {}
           : {
-              maxAutoLockRenewalDurationInMs:
-                maxAutoLockRenewalDurationInMs as number,
+              maxAutoLockRenewalDurationInMs,
             }),
       })
       const inProgress = new Set<Promise<void>>()
@@ -406,7 +401,7 @@ export const createServiceBusSource = (
           return true
         })(),
         new Promise<false>((resolve) => {
-          timer = setTimeout(() => resolve(false), closeTimeout as number)
+          timer = setTimeout(() => resolve(false), closeTimeout)
         }),
       ])
       clearTimeout(timer)
@@ -431,24 +426,29 @@ export const createServiceBusSource = (
  * app.serviceBusQueue('events', {
  *   connection: 'SERVICE_BUS_CONNECTION',
  *   queueName: 'events',
- *   handler: createServiceBusFunctionHandler(createWorker({ listeners, maxAttempts: 10 })),
+ *   handler: createServiceBusHandler(createWorker({ listeners, maxAttempts: 10 })),
  * })
  * ```
  */
-export const createServiceBusFunctionHandler = (
+export const createServiceBusHandler = (
   worker: Worker,
-  options: ServiceBusFunctionHandlerOptions = {}
+  options: ServiceBusHandlerOptions = {}
 ): ((
   message: unknown,
   context?: ServiceBusInvocationContext
 ) => Promise<void>) => {
-  const label = 'createServiceBusFunctionHandler()'
+  const label = 'createServiceBusHandler()'
   if (typeof worker?.handle !== 'function') {
     throw new TypeError(
       `${label}: expected a worker created by createWorker().`
     )
   }
-  const { deadLetter } = checkOptions(label, options, ['deadLetter'])
+  const { deadLetter, logger: loggerOption } = checkOptions(label, options, [
+    'deadLetter',
+    'logger',
+  ])
+  const logger =
+    loggerOption === undefined ? silentLogger : checkLogger(label, loggerOption)
   const deadSender =
     deadLetter === undefined
       ? undefined
@@ -489,6 +489,10 @@ export const createServiceBusFunctionHandler = (
         },
       ])
       if (failed.length === 0) return
+      logger.error(
+        { error: describe(failed[0]?.error) },
+        'Cannot send the message to the dead-letter queue'
+      )
       throw new Error('Cannot send the message to the dead-letter queue.', {
         cause: failed[0]?.error,
       })

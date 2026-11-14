@@ -5,8 +5,8 @@
 ## Exports
 
 ```ts
-import type { Envelope, Source, Transport, Worker } from '@dotpress/events'
-import type { ConnectionOptions, Job, JobsOptions } from 'bullmq'
+import type { Duration, Source, Transport } from '@dotpress/events'
+import type { ConnectionOptions, JobsOptions } from 'bullmq'
 
 export interface BullmqQueue {
   addBulk(
@@ -20,11 +20,11 @@ export interface BullmqQueue {
 }
 
 export interface BullmqSourceOptions {
-  name: string
+  queue: string
   connection: ConnectionOptions
   prefix?: string | undefined
   concurrency?: number | undefined
-  closeTimeout?: number | undefined
+  closeTimeout?: Duration | undefined
 }
 
 export interface BullmqTransport extends Transport {
@@ -35,20 +35,16 @@ export type BullmqTransportOptions = {
   jobOptions?: Omit<JobsOptions, 'jobId' | 'delay'> | undefined
 } & (
   | {
-      name: string
+      queue: string
       connection: ConnectionOptions
       prefix?: string | undefined
-      queue?: never
     }
   | {
       queue: BullmqQueue
-      name?: never
       connection?: never
       prefix?: never
     }
 )
-
-export declare const DEFAULT_JOB_OPTIONS: JobsOptions
 
 export declare const createBullmqSource: (
   options: BullmqSourceOptions
@@ -57,8 +53,4 @@ export declare const createBullmqSource: (
 export declare const createBullmqTransport: (
   options: BullmqTransportOptions
 ) => BullmqTransport
-
-export declare const processorOf: (
-  worker: Worker
-) => (job: Pick<Job<Envelope>, 'data' | 'attemptsMade'>) => Promise<void>
 ```

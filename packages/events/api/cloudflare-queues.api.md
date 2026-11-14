@@ -5,7 +5,13 @@
 ## Exports
 
 ```ts
-import type { Source, Transport, Worker } from '@dotpress/events'
+import type {
+  Duration,
+  EventsLogger,
+  Source,
+  Transport,
+  Worker,
+} from '@dotpress/events'
 
 export interface CloudflareApiOptions {
   accountId: string
@@ -20,14 +26,6 @@ export interface CloudflareMessageBatch {
   readonly messages: readonly CloudflareQueueMessage[]
 }
 
-export interface CloudflarePullSourceOptions extends CloudflareApiOptions {
-  batchSize?: number | undefined
-  visibilityTimeoutMs?: number | undefined
-  pollInterval?: number | undefined
-  retryDelay?: ((attempt: number) => number) | undefined
-  deadLetterQueueId?: string | undefined
-}
-
 export interface CloudflareQueueBinding {
   sendBatch(
     messages: Iterable<{
@@ -39,9 +37,10 @@ export interface CloudflareQueueBinding {
 }
 
 export interface CloudflareQueueHandlerOptions {
-  deadLetterQueue?:
+  deadLetter?:
     CloudflareQueueBinding | (() => CloudflareQueueBinding) | undefined
-  retryDelay?: ((attempt: number) => number) | undefined
+  retryDelay?: ((attempt: number) => Duration) | undefined
+  logger?: EventsLogger | undefined
 }
 
 export interface CloudflareQueueMessage {
@@ -52,24 +51,30 @@ export interface CloudflareQueueMessage {
   retry(options?: { delaySeconds?: number }): void
 }
 
+export interface CloudflareQueueSourceOptions extends CloudflareApiOptions {
+  concurrency?: number | undefined
+  visibilityTimeout?: Duration | undefined
+  pollInterval?: Duration | undefined
+  retryDelay?: ((attempt: number) => Duration) | undefined
+  deadLetter?: string | undefined
+}
+
 export type CloudflareQueueTransportOptions =
   | {
       queue: CloudflareQueueBinding | (() => CloudflareQueueBinding)
     }
   | CloudflareApiOptions
 
-export declare const createCloudflarePullSource: (
-  options: CloudflarePullSourceOptions
-) => Source
-
 export declare const createCloudflareQueueHandler: (
   worker: Worker,
   options?: CloudflareQueueHandlerOptions
 ) => (batch: CloudflareMessageBatch) => Promise<void>
 
+export declare const createCloudflareQueueSource: (
+  options: CloudflareQueueSourceOptions
+) => Source
+
 export declare const createCloudflareQueueTransport: (
   options: CloudflareQueueTransportOptions
 ) => Transport
-
-export declare const decodePulledBody: (body: unknown) => unknown
 ```

@@ -2,6 +2,21 @@ import { checkLogger, silentLogger, type EventsLogger } from './logger.js'
 import type { Source } from './transport.js'
 import type { Worker } from './worker.js'
 
+/**
+ * What the module given to `dotpress-events work` exports: the worker, the
+ * source it reads, and optionally a logger.
+ *
+ * ```ts
+ * export const worker = createWorker({ listeners })
+ * export const source = createSqsSource({ queueUrl })
+ * ```
+ */
+export interface WorkerEntry {
+  worker: Worker
+  source: Source
+  logger?: EventsLogger | undefined
+}
+
 /** A started worker. */
 export interface RunningWorker {
   /** Stops reading messages, waits for those in progress, then resolves. */

@@ -3,16 +3,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import type { EventsLogger } from './logger.js'
-import { startWorker } from './start-worker.js'
-import type { Source } from './transport.js'
-import type { Worker } from './worker.js'
-
-/** What the module of `dotpress-events work` exports. */
-export interface WorkerEntry {
-  worker: Worker
-  source: Source
-  logger?: EventsLogger | undefined
-}
+import { startWorker, type WorkerEntry } from './start-worker.js'
 
 /** Inputs and outputs of the command, injected for tests. */
 export interface CliIo {

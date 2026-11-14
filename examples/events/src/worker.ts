@@ -33,7 +33,7 @@ export default {
     },
   }),
   source: createBullmqSource({
-    name: queueName(),
+    queue: queueName(),
     connection: redisConnection(redisUrl),
     concurrency: 5,
   }),

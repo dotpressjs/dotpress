@@ -60,6 +60,7 @@ export const createFakeEventBus = (): FakeEventBus => {
     }
     return Object.freeze({
       emit,
+      close: async () => {},
       withContext: ({ logger, metadata: added }: EventBusContext = {}) => {
         if (logger !== undefined) checkLogger('withContext()', logger)
         return create({

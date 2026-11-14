@@ -16,7 +16,7 @@ import {
   type ListenerHandler,
 } from '../src/index.js'
 import {
-  createServiceBusFunctionHandler,
+  createServiceBusHandler,
   createServiceBusSource,
   createServiceBusTransport,
 } from '../src/transports/azure-service-bus.js'
@@ -509,8 +509,8 @@ describe('Service Bus source', () => {
       createServiceBusSource({
         client: client as never,
         queue: 'events',
-        maxConcurrentCalls: 8,
-        maxAutoLockRenewalDurationInMs: 600_000,
+        concurrency: 8,
+        maxLockRenewal: '10m',
       })
     )
     await vi.waitFor(() => expect(receiver.subscribe).toHaveBeenCalled())
@@ -590,7 +590,7 @@ describe('Service Bus source', () => {
       createServiceBusSource({
         client: client as never,
         queue: 'events',
-        closeTimeout: 50,
+        closeTimeout: '50ms',
       }),
       { logger }
     )
@@ -651,27 +651,23 @@ describe('Service Bus source', () => {
     expect(create({ client: undefined })).toThrow(
       `${label}: set client or connectionString.`
     )
-    for (const maxConcurrentCalls of [0, 1.5, '2']) {
-      expect(create({ maxConcurrentCalls })).toThrow(
-        `${label}: maxConcurrentCalls must be a positive integer.`
+    for (const concurrency of [0, 1.5, '2']) {
+      expect(create({ concurrency })).toThrow(
+        `${label}: concurrency must be a positive integer.`
       )
     }
-    for (const maxAutoLockRenewalDurationInMs of [-1, 0.5, '1000']) {
-      expect(create({ maxAutoLockRenewalDurationInMs })).toThrow(
-        `${label}: maxAutoLockRenewalDurationInMs must be a non-negative integer (milliseconds).`
+    for (const maxLockRenewal of [-1, '1000', '1 m']) {
+      expect(create({ maxLockRenewal })).toThrow(
+        `${label}: maxLockRenewal must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.`
       )
     }
-    for (const closeTimeout of [-1, 0.5, '1000']) {
+    for (const closeTimeout of [-1, '1000']) {
       expect(create({ closeTimeout })).toThrow(
-        `${label}: closeTimeout must be a non-negative integer (milliseconds).`
+        `${label}: closeTimeout must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.`
       )
     }
     expect(
-      create({
-        maxConcurrentCalls: 1,
-        maxAutoLockRenewalDurationInMs: 0,
-        closeTimeout: 0,
-      })
+      create({ concurrency: 1, maxLockRenewal: 0, closeTimeout: '500ms' })
     ).not.toThrow()
   })
 })
@@ -685,7 +681,7 @@ describe('Service Bus Azure Functions handler', () => {
 
   it('runs the listener of the message', async () => {
     const handle = vi.fn()
-    const handler = createServiceBusFunctionHandler(workerOf(handle))
+    const handler = createServiceBusHandler(workerOf(handle))
     await handler(envelopeOf(), { triggerMetadata: { deliveryCount: 3 } })
     await handler(JSON.stringify(envelopeOf()))
     expect(
@@ -697,7 +693,7 @@ describe('Service Bus Azure Functions handler', () => {
   })
 
   it('throws to have failed messages delivered again', async () => {
-    const handler = createServiceBusFunctionHandler(
+    const handler = createServiceBusHandler(
       workerOf(() => {
         throw new Error('down')
       })
@@ -705,7 +701,7 @@ describe('Service Bus Azure Functions handler', () => {
     await expect(
       handler(envelopeOf(), { triggerMetadata: {} })
     ).rejects.toThrow(new Error('down'))
-    const failing = createServiceBusFunctionHandler(
+    const failing = createServiceBusHandler(
       workerOf(() => {
         throw 'not an error'
       })
@@ -721,27 +717,30 @@ describe('Service Bus Azure Functions handler', () => {
       'Unknown listener "removed": this worker runs send-welcome-mail.'
     )
     const onFailure = vi.fn()
-    await createServiceBusFunctionHandler(
-      createWorker({ listeners: [], onFailure })
-    )(envelopeOf(), { triggerMetadata: { deliveryCount: '2' } }).catch(() => {})
+    await createServiceBusHandler(createWorker({ listeners: [], onFailure }))(
+      envelopeOf(),
+      { triggerMetadata: { deliveryCount: '2' } }
+    ).catch(() => {})
     expect(onFailure.mock.calls[0]?.[1]).toMatchObject({ attempt: 1 })
   })
 
   it('refuses batches', async () => {
-    const handler = createServiceBusFunctionHandler(workerOf(() => {}))
+    const handler = createServiceBusHandler(workerOf(() => {}))
     await expect(handler([envelopeOf()])).rejects.toThrow(
       new TypeError(
-        'createServiceBusFunctionHandler(): expected one message per invocation (cardinality "one").'
+        'createServiceBusHandler(): expected one message per invocation (cardinality "one").'
       )
     )
   })
 
   it('sends dead messages to the dead-letter queue', async () => {
+    const logger = createLogger()
     const { client, batches, sendMessages } = fakeClient()
-    const handler = createServiceBusFunctionHandler(
+    const handler = createServiceBusHandler(
       workerOf(() => {}),
       {
         deadLetter: { client: client as never, queue: 'events-dlq' },
+        logger,
       }
     )
     const body = envelopeOf({ listener: 'removed' })
@@ -767,11 +766,16 @@ describe('Service Bus Azure Functions handler', () => {
       message: 'Cannot send the message to the dead-letter queue.',
       cause: new Error('QuotaExceeded'),
     })
+    expect(logger.entries).toContainEqual({
+      level: 'error',
+      message: 'Cannot send the message to the dead-letter queue',
+      data: { error: 'QuotaExceeded' },
+    })
   })
 
   it('does not send retried messages to the dead-letter queue', async () => {
     const { client, sendMessages } = fakeClient()
-    const handler = createServiceBusFunctionHandler(
+    const handler = createServiceBusHandler(
       workerOf(() => {
         throw new Error('down')
       }),
@@ -782,23 +786,23 @@ describe('Service Bus Azure Functions handler', () => {
   })
 
   it('checks its options', () => {
-    const label = 'createServiceBusFunctionHandler()'
+    const label = 'createServiceBusHandler()'
     const worker = workerOf(() => {})
     const { client } = fakeClient()
-    expect(() => createServiceBusFunctionHandler({} as never)).toThrow(
+    expect(() => createServiceBusHandler({} as never)).toThrow(
       `${label}: expected a worker created by createWorker().`
     )
-    expect(() => createServiceBusFunctionHandler(null as never)).toThrow(
+    expect(() => createServiceBusHandler(null as never)).toThrow(
       'expected a worker'
     )
     expect(() =>
-      createServiceBusFunctionHandler(worker, { retryDelay: 1 } as never)
+      createServiceBusHandler(worker, { retryDelay: 1 } as never)
     ).toThrow(`${label}: unknown option "retryDelay".`)
     expect(() =>
-      createServiceBusFunctionHandler(worker, { deadLetter: 'dlq' as never })
+      createServiceBusHandler(worker, { deadLetter: 'dlq' as never })
     ).toThrow(`${label}: deadLetter: expected an object of options.`)
     expect(() =>
-      createServiceBusFunctionHandler(worker, {
+      createServiceBusHandler(worker, {
         deadLetter: {
           client: client as never,
           queue: 'dlq',
@@ -807,7 +811,7 @@ describe('Service Bus Azure Functions handler', () => {
       })
     ).toThrow(`${label}: deadLetter: unknown option "delay".`)
     expect(() =>
-      createServiceBusFunctionHandler(worker, {
+      createServiceBusHandler(worker, {
         deadLetter: { queue: 'dlq' } as never,
       })
     ).toThrow(`${label}: deadLetter: set client or connectionString.`)
@@ -874,7 +878,7 @@ describe.skipIf(!connectionString)('Service Bus (emulator)', () => {
     await events.emit(userCreated, { userId: '42' })
     const running = startWorker(
       createWorker({ listeners, maxAttempts: 3 }),
-      createServiceBusSource({ client, queue: 'events', maxConcurrentCalls: 2 })
+      createServiceBusSource({ client, queue: 'events', concurrency: 2 })
     )
     await vi.waitFor(() => expect(attempts.sort()).toEqual([1, 10, 2]), {
       timeout: 15_000,
@@ -978,10 +982,9 @@ describe.skipIf(!connectionString)('Service Bus (emulator)', () => {
   })
 
   it('sends dead messages of Azure Functions to a queue', async () => {
-    const handler = createServiceBusFunctionHandler(
-      createWorker({ listeners: [] }),
-      { deadLetter: { client, queue: 'events-functions-dlq' } }
-    )
+    const handler = createServiceBusHandler(createWorker({ listeners: [] }), {
+      deadLetter: { client, queue: 'events-functions-dlq' },
+    })
     await handler(envelopeOf({ listener: 'removed' }), {
       triggerMetadata: { deliveryCount: 1 },
     })

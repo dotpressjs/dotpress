@@ -39,7 +39,7 @@ export type ClosableTransport = Transport & { close(): Promise<void> }
 export const createTransport = (env: Env = process.env): ClosableTransport => {
   if (env.REDIS_URL) {
     return createBullmqTransport({
-      name: queueName(env),
+      queue: queueName(env),
       connection: redisConnection(env.REDIS_URL),
     })
   }

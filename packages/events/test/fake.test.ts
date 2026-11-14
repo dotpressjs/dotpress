@@ -43,7 +43,7 @@ describe('createFakeEventBus()', () => {
     ).rejects.toThrow('emit(): expected an event created by defineEvent().')
     await expect(
       events.emit(userCreated, { userId: '42' }, { delay: -1 })
-    ).rejects.toThrow('delay must be a non-negative integer (seconds).')
+    ).rejects.toThrow('delay must be a number of seconds')
     await expect(
       events.emit(
         userCreated,

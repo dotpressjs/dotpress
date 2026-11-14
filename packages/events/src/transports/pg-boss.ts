@@ -3,15 +3,18 @@
 import {
   PgBoss,
   type ConstructorOptions,
-  type Job,
   type JobInsert,
-  type JobResult,
   type QueueOptions,
 } from 'pg-boss'
+import {
+  optionalMilliseconds,
+  toMilliseconds,
+  type Duration,
+} from '../duration.js'
 import type { Envelope } from '../envelope.js'
 import type { EventsLogger } from '../logger.js'
 import type { Source, Transport } from '../transport.js'
-import type { Worker } from '../worker.js'
+import { DEFAULT_QUEUE_OPTIONS, handlerOf } from './pg-boss-internal.js'
 
 /** Options of the queue, used when the transport or the source creates it. */
 export interface PgBossQueueOptions extends QueueOptions {
@@ -42,26 +45,23 @@ export interface PgBossOptions {
 /** Options of `createPgBossSource()`. */
 export interface PgBossSourceOptions extends PgBossOptions {
   /** Jobs fetched at once, handled in parallel. Defaults to 1. */
-  batchSize?: number | undefined
-  /** Wait between two fetches of an empty queue, in seconds. */
-  pollingIntervalSeconds?: number | undefined
+  concurrency?: number | undefined
   /**
-   * On stop, how long to wait for the jobs in progress, in milliseconds,
-   * before stopping anyway. Defaults to 30 seconds.
+   * Wait between two fetches of an empty queue, at least half a second.
+   * Defaults to the one of pg-boss (2 seconds).
    */
-  closeTimeout?: number | undefined
+  pollInterval?: Duration | undefined
+  /**
+   * On stop, how long to wait for the jobs in progress before stopping
+   * anyway. Defaults to 30 seconds.
+   */
+  closeTimeout?: Duration | undefined
 }
 
 /** pg-boss transport: close it to stop the instance it created. */
 export interface PgBossTransport extends Transport {
   /** Stops the pg-boss instance, if the transport created it. */
   close(): Promise<void>
-}
-
-export const DEFAULT_QUEUE_OPTIONS: QueueOptions = {
-  retryLimit: 2,
-  retryDelay: 1,
-  retryBackoff: true,
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -175,33 +175,6 @@ export const createPgBossTransport = (
   }
 }
 
-const describe = (error: unknown) =>
-  error instanceof Error ? error.message : String(error)
-
-/**
- * Handler of a batch of jobs, with a result per job: completed, failed
- * (retried within the retry limit), or sent to the dead-letter queue.
- */
-export const handlerOf =
-  (worker: Worker, deadLetter: () => string | undefined) =>
-  (jobs: Job<Envelope>[]): Promise<JobResult[]> =>
-    Promise.all(
-      jobs.map(async ({ id, data, retryCount }) => {
-        const result = await worker.handle(data, { attempt: retryCount + 1 })
-        if (result.status === 'success') return { id, status: 'completed' }
-        return {
-          id,
-          // Without dead-letter queue, dead messages fail until the limit.
-          status:
-            result.status === 'dead' && deadLetter() ? 'deadletter' : 'failed',
-          output: {
-            reason: result.status === 'dead' ? result.reason : 'listener-error',
-            error: describe(result.error),
-          },
-        }
-      })
-    )
-
 /**
  * Creates a source that works on the pg-boss queue, for `startWorker()` and
  * `dotpress-events work` (Node.js and Bun).
@@ -219,33 +192,27 @@ export const createPgBossSource = (options: PgBossSourceOptions): Source => {
     'boss',
     'queue',
     'queueOptions',
-    'batchSize',
-    'pollingIntervalSeconds',
+    'concurrency',
+    'pollInterval',
     'closeTimeout',
   ])
   const { instance, owned, queue, prepare } = bossOf(label, values)
-  const {
-    batchSize = 1,
-    pollingIntervalSeconds,
-    closeTimeout = 30_000,
-  } = values
+  const batchSize = values.concurrency ?? 1
   if (!Number.isInteger(batchSize) || (batchSize as number) < 1) {
-    throw new TypeError(`${label}: batchSize must be a positive integer.`)
+    throw new TypeError(`${label}: concurrency must be a positive integer.`)
   }
-  if (
-    pollingIntervalSeconds !== undefined &&
-    (typeof pollingIntervalSeconds !== 'number' ||
-      !((pollingIntervalSeconds as number) >= 0.5))
-  ) {
-    throw new TypeError(
-      `${label}: pollingIntervalSeconds must be a number of seconds, at least 0.5.`
-    )
+  const pollingIntervalSeconds =
+    values.pollInterval === undefined
+      ? undefined
+      : toMilliseconds(values.pollInterval, `${label}: pollInterval`) / 1000
+  if (pollingIntervalSeconds !== undefined && pollingIntervalSeconds < 0.5) {
+    throw new TypeError(`${label}: pollInterval must be at least 0.5 seconds.`)
   }
-  if (!Number.isInteger(closeTimeout) || (closeTimeout as number) < 0) {
-    throw new TypeError(
-      `${label}: closeTimeout must be a non-negative integer (milliseconds).`
-    )
-  }
+  const closeTimeout = optionalMilliseconds(
+    values.closeTimeout,
+    `${label}: closeTimeout`,
+    30_000
+  )
 
   return {
     kind: 'pg-boss',
@@ -264,7 +231,7 @@ export const createPgBossSource = (options: PgBossSourceOptions): Source => {
             perJobResults: true,
             ...(pollingIntervalSeconds === undefined
               ? {}
-              : { pollingIntervalSeconds: pollingIntervalSeconds as number }),
+              : { pollingIntervalSeconds }),
           },
           handlerOf(worker, () => deadLetter)
         )
@@ -277,7 +244,7 @@ export const createPgBossSource = (options: PgBossSourceOptions): Source => {
             await instance.offWork(queue, { wait: true })
             if (owned) await instance.stop({ graceful: true })
           },
-          closeTimeout as number,
+          closeTimeout,
           logger,
           queue
         )

@@ -59,7 +59,10 @@ const STRING_FIELDS = [
  */
 export const parseEnvelope = (
   message: unknown
-): { envelope: Envelope } | { problem: string } => {
+):
+  | { envelope: Envelope }
+  | { problem: string }
+  | { unsupportedVersion: number } => {
   let value = message
   if (typeof value === 'string') {
     try {
@@ -69,6 +72,11 @@ export const parseEnvelope = (
     }
   }
   if (!isRecord(value)) return { problem: 'the message is not an object' }
+  // An envelope of a later version, emitted by a newer deployment: a newer
+  // worker will handle it. Adding fields keeps `v: 1`.
+  if (Number.isInteger(value.v) && (value.v as number) > 1) {
+    return { unsupportedVersion: value.v as number }
+  }
   if (value.v !== 1) {
     return {
       problem: `unsupported envelope version ${JSON.stringify(value.v)}`,

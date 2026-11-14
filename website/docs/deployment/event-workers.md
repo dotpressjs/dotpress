@@ -53,7 +53,7 @@ node_modules/.bin/dotpress-events work src/worker.ts --watch # development: rest
 - **The module** exports `{ worker, source }` and optionally a `logger`, or a function returning them; `--export` chooses another export than `default`. TypeScript modules need Node.js 22.18 or later (erasable syntax, relative imports ending in `.ts`); otherwise, run the compiled module, or the command with `NODE_OPTIONS="--import tsx"`.
 - **Stop**: `SIGTERM` (or Ctrl+C) stops reading, and waits for the messages in progress; a second signal, a second later or more, exits at once. Repeats within one second are ignored, because `npm run`, `pnpm run` and `--watch` relay the signal they receive. Give the platform a stop delay above your slowest listener.
 - **Logs**: JSON lines on the standard error.
-- **Scale**: raise the number of messages a worker handles at once (`concurrency` for BullMQ, `batchSize` for SQS, pg-boss and Cloudflare, `maxMessages` for Pub/Sub, `maxConcurrentCalls` for Service Bus), then the number of worker instances.
+- **Scale**: raise the number of messages a worker handles at once (`concurrency`, on every source), then the number of worker instances.
 - **In a container**: the image of the API, with another command. See [Containers](./node#containers).
 
 In code, `startWorker(worker, source, { logger, signal })` does the same, and returns `{ stop() }`.
@@ -70,13 +70,13 @@ import { createBullmqSource, createBullmqTransport } from '@dotpress/events/bull
 const connection = { host: 'redis.internal', port: 6379, maxRetriesPerRequest: null }
 
 // The API
-const transport = createBullmqTransport({ name: 'events', connection })
+const transport = createBullmqTransport({ queue: 'events', connection })
 // On shutdown: await transport.close()
 
 // worker.ts
 export default {
   worker: createWorker({ listeners, maxAttempts: 3 }),
-  source: createBullmqSource({ name: 'events', connection, concurrency: 5 }),
+  source: createBullmqSource({ queue: 'events', connection, concurrency: 5 }),
 }
 ```
 
@@ -113,7 +113,7 @@ const transport = createPgBossTransport({ boss, queue: 'events', queueOptions })
 // worker.ts
 export default {
   worker: createWorker({ listeners, maxAttempts: 3 }),
-  source: createPgBossSource({ boss, queue: 'events', queueOptions, batchSize: 5 }),
+  source: createPgBossSource({ boss, queue: 'events', queueOptions, concurrency: 5 }),
 }
 ```
 
@@ -122,7 +122,7 @@ export default {
 - **Queues** are created on first use, with `queueOptions` merged with the defaults: 3 attempts (`retryLimit: 2`), an exponential backoff from 1 second (`retryDelay: 1`, `retryBackoff: true`). Existing queues are not changed. Set `maxAttempts` to `retryLimit + 1`.
 - **Dead letters**: with `deadLetter`, the dead-letter queue is created too. Failed jobs go there after their last attempt, and messages that can never be handled at once.
 - **Duplicates**: the job id is the message id: the same message sent again is ignored.
-- **The source** handles `batchSize` jobs at a time (1 by default), in parallel, each with its own result: one failure does not retry the others. `pollingIntervalSeconds` sets the wait on an empty queue (0.5 at least). On stop, it waits for the jobs in progress, up to `closeTimeout` (30 seconds by default).
+- **The source** handles `concurrency` jobs at a time (1 by default), in parallel, each with its own result: one failure does not retry the others. `pollInterval` sets the wait on an empty queue (half a second at least). On stop, it waits for the jobs in progress, up to `closeTimeout` (30 seconds by default).
 
 ## Amazon SQS
 
@@ -146,8 +146,8 @@ Messages are sent in batches of 10 (`SendMessageBatch`), with `event` and `liste
 import { createSqsHandler } from '@dotpress/events/aws-sqs'
 
 export const handler = createSqsHandler(createWorker({ listeners, logger, maxAttempts: 5 }), {
-  deadLetterQueueUrl: process.env.EVENTS_DLQ_URL, // optional, see below
-  retryDelay: (attempt) => 30 * 2 ** (attempt - 1), // optional backoff, in seconds
+  deadLetter: process.env.EVENTS_DLQ_URL, // optional, see below
+  retryDelay: (attempt) => 30 * 2 ** (attempt - 1), // optional backoff, in seconds or like '30s'
 })
 ```
 
@@ -156,7 +156,7 @@ The messages of a batch run in parallel; on a FIFO queue, in order, stopping at 
 - **`ReportBatchItemFailures`** on the event source mapping: the handler returns the failed messages, and only they are retried. Without it, one failure retries the whole batch.
 - **A dead-letter queue**, with a redrive policy: `maxReceiveCount` is the number of attempts. Set `maxAttempts` to the same value.
 - **A visibility timeout** of at least 6 times the timeout of the function (AWS recommendation). A failed message becomes visible again after it; `retryDelay(attempt)` sets another delay (`ChangeMessageVisibility`, up to 12 hours).
-- With `deadLetterQueueUrl`, messages that can never be handled are copied to the dead-letter queue at once, with `reason` and `error` attributes, instead of failing until `maxReceiveCount`.
+- With `deadLetter`, the URL of the dead-letter queue, messages that can never be handled are copied to the dead-letter queue at once, with `reason` and `error` attributes, instead of failing until `maxReceiveCount`.
 
 ```ts
 // AWS CDK
@@ -205,7 +205,7 @@ export default {
 }
 ```
 
-The source reads the queue by long polling (`waitTimeSeconds`, 20 by default; `batchSize`, 10 by default), runs the messages of a batch in parallel, and deletes the handled ones. With `visibilityTimeout`, it extends the visibility of a message while its listener runs, every half timeout. Receive errors are logged and retried, after 1 second, then up to 30 seconds. At startup, it warns when the queue has no dead-letter queue.
+The source reads the queue by long polling (`waitTime`, 20 seconds by default; `concurrency`, 10 messages by default), runs the messages of a batch in parallel, and deletes the handled ones. With `visibilityTimeout`, it extends the visibility of a message while its listener runs, every half timeout. Receive errors are logged and retried, after 1 second, then up to 30 seconds. At startup, it warns when the queue has no dead-letter queue.
 
 During development, `dotpress-events work` reads your development queue as the Lambda would, without deploying.
 
@@ -247,8 +247,8 @@ import { createCloudflareQueueHandler } from '@dotpress/events/cloudflare-queues
 
 export default {
   queue: createCloudflareQueueHandler(createWorker({ listeners, maxAttempts: 6 }), {
-    retryDelay: (attempt) => 30 * attempt, // optional, in seconds
-    deadLetterQueue: () => env.EVENTS_DLQ, // optional producer binding, see below
+    retryDelay: (attempt) => 30 * attempt, // optional, in seconds or like '30s'
+    deadLetter: () => env.EVENTS_DLQ, // optional producer binding, see below
   }),
 }
 ```
@@ -260,21 +260,21 @@ Each message is acknowledged or retried on its own: a failure does not retry the
 To run the workers outside Cloudflare (a container, your machine with `dotpress-events work`), enable an HTTP pull consumer on the queue: `wrangler queues consumer http add events`. A queue has either a Worker consumer or a pull consumer.
 
 ```ts
-import { createCloudflarePullSource } from '@dotpress/events/cloudflare-queues'
+import { createCloudflareQueueSource } from '@dotpress/events/cloudflare-queues'
 
 export default {
   worker: createWorker({ listeners, maxAttempts: 6 }),
-  source: createCloudflarePullSource({
+  source: createCloudflareQueueSource({
     accountId,
     queueId,
     apiToken, // Queues Read and Write permissions
-    visibilityTimeoutMs: 60_000, // the lease: longer than your slowest listener
-    deadLetterQueueId, // optional: dead messages are pushed there at once
+    visibilityTimeout: '1m', // the lease: longer than your slowest listener
+    deadLetter: deadLetterQueueId, // optional: dead messages are pushed there at once
   }),
 }
 ```
 
-The source pulls `batchSize` messages (10 by default, up to 100), runs them in parallel, then acknowledges or retries them in one request. The API cannot extend a lease: set `visibilityTimeoutMs` (30 seconds by default, up to 12 hours) above your slowest listener. An empty queue is pulled again after `pollInterval` (1 second by default). Errors are logged and retried, after 1 second, then up to 30 seconds.
+The source pulls `concurrency` messages (10 by default, up to 100), runs them in parallel, then acknowledges or retries them in one request. The API cannot extend a lease: set `visibilityTimeout` (30 seconds by default, up to 12 hours) above your slowest listener. An empty queue is pulled again after `pollInterval` (1 second by default). Errors are logged and retried, after 1 second, then up to 30 seconds.
 
 ## Google Cloud Pub/Sub
 
@@ -309,7 +309,7 @@ gcloud pubsub subscriptions create events-worker --topic=events \
 
 With a dead-letter policy, Pub/Sub counts the delivery attempts, and moves a message to the dead-letter topic after `--max-delivery-attempts` (5 to 100); its service account needs the Publisher role on the dead-letter topic and the Subscriber role on the subscription. Set `maxAttempts` to `--max-delivery-attempts`. Without a dead-letter policy, every delivery counts as the first attempt, and a failing message is delivered again until the retention of the subscription expires (7 days by default).
 
-With the `deadLetter` option of the push handler or `deadLetterTopic` of the pull source, messages that can never be handled are published at once to that topic, with the attributes `reason` and `error`.
+With the `deadLetter` option (`{ topic }`) of the push handler or of the pull source, messages that can never be handled are published at once to that topic, with the attributes `reason` and `error`.
 
 ### Push endpoints
 
@@ -323,9 +323,9 @@ gcloud pubsub subscriptions create events-push --topic=events \
 ```
 
 ```ts
-import { createPubSubPushHandler } from '@dotpress/events/google-pubsub'
+import { createPubSubHandler } from '@dotpress/events/google-pubsub'
 
-const push = createPubSubPushHandler(createWorker({ listeners, maxAttempts: 5 }), {
+const push = createPubSubHandler(createWorker({ listeners, maxAttempts: 5 }), {
   audience: 'https://api.example.com/pubsub', // the push endpoint, or --push-auth-token-audience
   serviceAccountEmail: 'pubsub-push@my-project.iam.gserviceaccount.com',
   deadLetter: { topic: 'projects/my-project/topics/events-dlq' }, // optional
@@ -344,14 +344,14 @@ The handler verifies the token with `jose`: the signature with the keys of Googl
 ### Pull workers
 
 ```ts
-import { createPubSubPullSource } from '@dotpress/events/google-pubsub'
+import { createPubSubSource } from '@dotpress/events/google-pubsub'
 
 export default {
   worker: createWorker({ listeners, maxAttempts: 5 }),
-  source: createPubSubPullSource({
+  source: createPubSubSource({
     subscription: 'projects/my-project/subscriptions/events-worker',
-    maxMessages: 10, // messages handled at once (the default)
-    deadLetterTopic: 'projects/my-project/topics/events-dlq', // optional
+    concurrency: 10, // messages handled at once (the default)
+    deadLetter: { topic: 'projects/my-project/topics/events-dlq' }, // optional
   }),
 }
 ```
@@ -378,7 +378,7 @@ const transport = createServiceBusTransport({ ...connection, queue: 'events' })
 // worker.ts
 export default {
   worker: createWorker({ listeners, maxAttempts: 10 }), // the maxDeliveryCount of the queue
-  source: createServiceBusSource({ ...connection, queue: 'events', maxConcurrentCalls: 4 }),
+  source: createServiceBusSource({ ...connection, queue: 'events', concurrency: 4 }),
 }
 ```
 
@@ -386,7 +386,7 @@ The SDK speaks AMQP: Node.js only. With a connection string, the transport and t
 
 - **Messages** carry the envelope as JSON, `subject` (the event) and the application properties `event` and `listener`. The `messageId` is the message id: with duplicate detection on the queue (`requiresDuplicateDetection`, set when the queue is created; Standard and Premium tiers), the same message sent again within the detection window is ignored. `delay` schedules the message (`scheduledEnqueueTimeUtc`).
 - **Limits**: 256 KB per message in the Standard tier, properties included; in the Premium tier, 1 MB unless raised on the queue (up to 100 MB). Batches are filled up to the size the queue accepts, 1 MB at most.
-- **The source** handles `maxConcurrentCalls` messages at a time (1 by default), in peek-lock mode. The lock of a message in progress is renewed for `maxAutoLockRenewalDurationInMs` (5 minutes by default; the lock itself lasts 1 minute by default, 5 at most). A failed message is abandoned: Service Bus delivers it again at once, until the `maxDeliveryCount` of the queue (10 by default), then moves it to the dead-letter queue. Messages that can never be handled go there at once, with a `deadLetterReason` (`invalid-envelope`, `unknown-listener`, `invalid-payload`). On stop, the source waits for the messages in progress, up to `closeTimeout` (30 seconds by default).
+- **The source** handles `concurrency` messages at a time (1 by default), in peek-lock mode. The lock of a message in progress is renewed for `maxLockRenewal` (5 minutes by default; the lock itself lasts 1 minute by default, 5 at most). A failed message is abandoned: Service Bus delivers it again at once, until the `maxDeliveryCount` of the queue (10 by default), then moves it to the dead-letter queue. Messages that can never be handled go there at once, with a `deadLetterReason` (`invalid-envelope`, `unknown-listener`, `invalid-payload`). On stop, the source waits for the messages in progress, up to `closeTimeout` (30 seconds by default).
 
 Service Bus does not wait between attempts: a listener that calls a service which is down fails its attempts within seconds. Keep `maxDeliveryCount` high enough, and retry short outages inside the listener.
 
@@ -394,12 +394,12 @@ Service Bus does not wait between attempts: a listener that calls a service whic
 
 ```ts
 import { app } from '@azure/functions'
-import { createServiceBusFunctionHandler } from '@dotpress/events/azure-service-bus'
+import { createServiceBusHandler } from '@dotpress/events/azure-service-bus'
 
 app.serviceBusQueue('events', {
   connection: 'SERVICE_BUS_CONNECTION',
   queueName: 'events',
-  handler: createServiceBusFunctionHandler(createWorker({ listeners, maxAttempts: 10 }), {
+  handler: createServiceBusHandler(createWorker({ listeners, maxAttempts: 10 }), {
     // optional, see below
     deadLetter: { connectionString: process.env.SERVICE_BUS_CONNECTION!, queue: 'events-failed' },
   }),

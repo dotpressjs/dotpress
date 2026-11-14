@@ -1,3 +1,4 @@
+import { optionalMilliseconds, type Duration } from '../duration.js'
 import type { PubSub } from '@google-cloud/pubsub'
 import type { Envelope } from '../envelope.js'
 import { PartialSendError } from '../errors.js'
@@ -23,8 +24,8 @@ export interface PubSubPublishOptions {
   fetch?: typeof fetch | undefined
 }
 
-/** Options of `createPubSubPushHandler()`. */
-export interface PubSubPushHandlerOptions {
+/** Options of `createPubSubHandler()`. */
+export interface PubSubHandlerOptions {
   /**
    * Checks the OIDC token of push requests (`Authorization: Bearer`).
    * Defaults to true; set `false` only behind a proxy that checks it.
@@ -47,7 +48,7 @@ export interface PubSubPushHandlerOptions {
 }
 
 /** Push endpoint of a subscription. */
-export interface PubSubPushHandler {
+export interface PubSubHandler {
   /** Handles a push request (Web `Request`), and returns the response. */
   fetch(request: Request): Promise<Response>
   /**
@@ -57,8 +58,8 @@ export interface PubSubPushHandler {
   handle(body: unknown, authorization: string | undefined): Promise<number>
 }
 
-/** Options of `createPubSubPullSource()`. */
-export interface PubSubPullSourceOptions {
+/** Options of `createPubSubSource()`. */
+export interface PubSubSourceOptions {
   /** Full subscription name: `projects/{project}/subscriptions/{name}`. */
   subscription: string
   /** Existing client. Defaults to a client created with `clientConfig`. */
@@ -66,14 +67,17 @@ export interface PubSubPullSourceOptions {
   /** Options of the created client (`projectId`, `credentials`…). */
   clientConfig?: ConstructorParameters<typeof PubSub>[0] | undefined
   /** Messages handled at the same time. Defaults to 10. */
-  maxMessages?: number | undefined
-  /** Full name of the topic for messages that can never be handled. */
-  deadLetterTopic?: string | undefined
+  concurrency?: number | undefined
   /**
-   * On stop, how long to wait for the messages in progress, in
-   * milliseconds. Defaults to 30 seconds.
+   * Topic where messages that can never be handled are published at once,
+   * instead of failing until `maxDeliveryAttempts`: its full name.
    */
-  closeTimeout?: number | undefined
+  deadLetter?: { topic: string } | undefined
+  /**
+   * On stop, how long to wait for the messages in progress. Defaults to 30
+   * seconds.
+   */
+  closeTimeout?: Duration | undefined
 }
 
 // Limits of the publish API: 1,000 messages and 10 MB per request.
@@ -386,18 +390,18 @@ const moveToDeadLetter = async (
  * Bun, Deno, Cloud Run), or call `handle` from another framework.
  *
  * ```ts
- * const push = createPubSubPushHandler(worker, {
+ * const push = createPubSubHandler(worker, {
  *   audience: 'https://api.example.com/pubsub',
  *   serviceAccountEmail: 'pubsub-push@my-project.iam.gserviceaccount.com',
  * })
  * app.post('/pubsub', (c) => push.fetch(c.req.raw))
  * ```
  */
-export const createPubSubPushHandler = (
+export const createPubSubHandler = (
   worker: Worker,
-  options: PubSubPushHandlerOptions = {}
-): PubSubPushHandler => {
-  const label = 'createPubSubPushHandler()'
+  options: PubSubHandlerOptions = {}
+): PubSubHandler => {
+  const label = 'createPubSubHandler()'
   if (typeof worker?.handle !== 'function') {
     throw new TypeError(
       `${label}: expected a worker created by createWorker().`
@@ -453,7 +457,7 @@ export const createPubSubPushHandler = (
       ? undefined
       : publisherOf(label, { ...values.deadLetter, fetch: values.fetch })
 
-  const handle: PubSubPushHandler['handle'] = async (body, authorization) => {
+  const handle: PubSubHandler['handle'] = async (body, authorization) => {
     if (verify) {
       const token = /^Bearer (.+)$/.exec(authorization ?? '')?.[1]
       if (!token) return 401
@@ -508,20 +512,18 @@ export const createPubSubPushHandler = (
  * ```ts
  * export default {
  *   worker: createWorker({ listeners }),
- *   source: createPubSubPullSource({ subscription: 'projects/my-project/subscriptions/events' }),
+ *   source: createPubSubSource({ subscription: 'projects/my-project/subscriptions/events' }),
  * }
  * ```
  */
-export const createPubSubPullSource = (
-  options: PubSubPullSourceOptions
-): Source => {
-  const label = 'createPubSubPullSource()'
+export const createPubSubSource = (options: PubSubSourceOptions): Source => {
+  const label = 'createPubSubSource()'
   const values = checkOptions(label, options, [
     'subscription',
     'client',
     'clientConfig',
-    'maxMessages',
-    'deadLetterTopic',
+    'concurrency',
+    'deadLetter',
     'closeTimeout',
   ])
   const subscriptionName = checkName(
@@ -531,13 +533,12 @@ export const createPubSubPullSource = (
     SUBSCRIPTION,
     'projects/my-project/subscriptions/events'
   )
-  const {
-    client,
-    clientConfig,
-    maxMessages = 10,
-    deadLetterTopic,
-    closeTimeout = 30_000,
-  } = values
+  const { client, clientConfig, concurrency: maxMessages = 10 } = values
+  const closeTimeout = optionalMilliseconds(
+    values.closeTimeout,
+    `${label}: closeTimeout`,
+    30_000
+  )
   if (client !== undefined && clientConfig !== undefined) {
     throw new TypeError(`${label}: set client or clientConfig, not both.`)
   }
@@ -548,20 +549,19 @@ export const createPubSubPullSource = (
     throw new TypeError(`${label}: client must be a PubSub client.`)
   }
   if (!Number.isInteger(maxMessages) || (maxMessages as number) < 1) {
-    throw new TypeError(`${label}: maxMessages must be a positive integer.`)
+    throw new TypeError(`${label}: concurrency must be a positive integer.`)
   }
-  if (deadLetterTopic !== undefined) {
-    checkName(
+  let deadLetterTopic: string | undefined
+  if (values.deadLetter !== undefined) {
+    const deadLetter = checkOptions(`${label}: deadLetter`, values.deadLetter, [
+      'topic',
+    ])
+    deadLetterTopic = checkName(
       label,
-      'deadLetterTopic',
-      deadLetterTopic,
+      'deadLetter.topic',
+      deadLetter.topic,
       TOPIC,
       'projects/my-project/topics/events-dlq'
-    )
-  }
-  if (!Number.isInteger(closeTimeout) || (closeTimeout as number) < 0) {
-    throw new TypeError(
-      `${label}: closeTimeout must be a non-negative integer (milliseconds).`
     )
   }
 
@@ -582,7 +582,7 @@ export const createPubSubPullSource = (
       const deadTopic =
         deadLetterTopic === undefined
           ? undefined
-          : pubsub.topic(deadLetterTopic as string)
+          : pubsub.topic(deadLetterTopic)
 
       subscription.on('message', (message) => {
         void (async () => {
@@ -627,7 +627,7 @@ export const createPubSubPullSource = (
       const closed = await Promise.race([
         subscription.close().then(() => true),
         new Promise<false>((resolve) => {
-          timer = setTimeout(() => resolve(false), closeTimeout as number)
+          timer = setTimeout(() => resolve(false), closeTimeout)
         }),
       ])
       clearTimeout(timer)

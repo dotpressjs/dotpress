@@ -1,5 +1,12 @@
+import {
+  optionalMilliseconds,
+  retryDelayOf,
+  type Duration,
+} from '../duration.js'
 import type { Envelope } from '../envelope.js'
 import { PartialSendError } from '../errors.js'
+import { checkLogger, silentLogger, type EventsLogger } from '../logger.js'
+import { decodePulledBody } from './cloudflare-queues-internal.js'
 import type { Source, Transport } from '../transport.js'
 import type { HandleResult, Worker } from '../worker.js'
 
@@ -60,31 +67,37 @@ export interface CloudflareQueueHandlerOptions {
    * Producer binding of the dead-letter queue: messages that can never be
    * handled are sent there at once, instead of failing until `max_retries`.
    */
-  deadLetterQueue?:
+  deadLetter?:
     CloudflareQueueBinding | (() => CloudflareQueueBinding) | undefined
-  /** Delay before a retry, in seconds, given the attempt number. */
-  retryDelay?: ((attempt: number) => number) | undefined
+  /**
+   * Delay before a retry, given the attempt number: a number of seconds,
+   * or a duration like `'30s'`, rounded up to the second.
+   */
+  retryDelay?: ((attempt: number) => Duration) | undefined
+  logger?: EventsLogger | undefined
 }
 
-/** Options of `createCloudflarePullSource()`. */
-export interface CloudflarePullSourceOptions extends CloudflareApiOptions {
-  /** Messages per pull (1 to 100). Defaults to 10. */
-  batchSize?: number | undefined
+/** Options of `createCloudflareQueueSource()`. */
+export interface CloudflareQueueSourceOptions extends CloudflareApiOptions {
+  /** Messages pulled at once and handled together (1 to 100). Defaults to 10. */
+  concurrency?: number | undefined
   /**
-   * Lease of the pulled messages, in milliseconds (up to 12 hours): longer
-   * than your slowest listener, since it cannot be extended. Defaults to
-   * 30 seconds.
+   * Lease of the pulled messages (up to 12 hours): longer than your slowest
+   * listener, since it cannot be extended. Defaults to 30 seconds.
    */
-  visibilityTimeoutMs?: number | undefined
-  /** Wait before pulling again an empty queue, in milliseconds. Defaults to 1 second. */
-  pollInterval?: number | undefined
-  /** Delay before a retry, in seconds, given the attempt number. */
-  retryDelay?: ((attempt: number) => number) | undefined
+  visibilityTimeout?: Duration | undefined
+  /** Wait before pulling again an empty queue. Defaults to 1 second. */
+  pollInterval?: Duration | undefined
+  /**
+   * Delay before a retry, given the attempt number: a number of seconds,
+   * or a duration like `'30s'`, rounded up to the second.
+   */
+  retryDelay?: ((attempt: number) => Duration) | undefined
   /**
    * Queue ID of the dead-letter queue: messages that can never be handled
    * are pushed there at once, instead of failing until `max_retries`.
    */
-  deadLetterQueueId?: string | undefined
+  deadLetter?: string | undefined
 }
 
 // Limits of Cloudflare Queues (1 KB = 1000 bytes). Messages also carry
@@ -327,13 +340,24 @@ export const createCloudflareQueueTransport = (
   }
 }
 
+/** Delay of a retry, in whole seconds; undefined without `retryDelay`. */
 const delayOf = (
-  retryDelay: ((attempt: number) => number) | undefined,
-  attempt: number
-) =>
-  retryDelay === undefined
-    ? undefined
-    : Math.min(MAX_DELAY_SECONDS, Math.max(0, Math.round(retryDelay(attempt))))
+  label: string,
+  retryDelay: ((attempt: number) => Duration) | undefined,
+  attempt: number,
+  logger: EventsLogger
+) => {
+  if (retryDelay === undefined) return undefined
+  try {
+    return Math.min(
+      MAX_DELAY_SECONDS,
+      Math.ceil(retryDelayOf(label, retryDelay, attempt) / 1000)
+    )
+  } catch (error) {
+    logger.error({ error: describe(error) }, 'Invalid retry delay')
+    return undefined
+  }
+}
 
 /**
  * Creates the `queue()` handler of a Worker consuming the queue. Each
@@ -357,31 +381,43 @@ export const createCloudflareQueueHandler = (
       `${label}: expected a worker created by createWorker().`
     )
   }
-  const values = checkOptions(label, options, ['deadLetterQueue', 'retryDelay'])
+  const values = checkOptions(label, options, [
+    'deadLetter',
+    'retryDelay',
+    'logger',
+  ])
   checkFunction(label, 'retryDelay', values.retryDelay)
   const retryDelay =
     values.retryDelay as CloudflareQueueHandlerOptions['retryDelay']
-  const deadLetterQueue =
-    values.deadLetterQueue === undefined
+  const deadLetter =
+    values.deadLetter === undefined
       ? undefined
-      : bindingOf(label, 'deadLetterQueue', values.deadLetterQueue)
+      : bindingOf(label, 'deadLetter', values.deadLetter)
+  const logger =
+    values.logger === undefined
+      ? silentLogger
+      : checkLogger(label, values.logger)
 
   const settle = async (
     message: CloudflareQueueMessage,
     result: HandleResult
   ) => {
     if (result.status === 'success') return message.ack()
-    if (result.status === 'dead' && deadLetterQueue) {
+    if (result.status === 'dead' && deadLetter) {
       try {
-        await deadLetterQueue().sendBatch([
+        await deadLetter().sendBatch([
           { body: message.body, contentType: 'json' },
         ])
         return message.ack()
-      } catch {
+      } catch (error) {
         // Retried: it reaches the dead-letter queue after max_retries.
+        logger.error(
+          { messageId: message.id, error: describe(error) },
+          'Cannot send the message to the dead-letter queue'
+        )
       }
     }
-    const delaySeconds = delayOf(retryDelay, message.attempts)
+    const delaySeconds = delayOf(label, retryDelay, message.attempts, logger)
     message.retry(delaySeconds === undefined ? undefined : { delaySeconds })
   }
 
@@ -404,22 +440,6 @@ interface PulledMessage {
   metadata?: unknown
 }
 
-/**
- * Body of a pulled message: JSON messages may come base64-encoded (RFC
- * 4648), as the documentation says, or as is, as its examples show.
- */
-export const decodePulledBody = (body: unknown) => {
-  // Plain JSON is not base64 ("{" is not a base64 character): atob()
-  // fails, and the body is kept as is.
-  if (typeof body !== 'string') return body
-  try {
-    const bytes = Uint8Array.from(atob(body), (char) => char.charCodeAt(0))
-    return new TextDecoder().decode(bytes)
-  } catch {
-    return body
-  }
-}
-
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
     const timer = setTimeout(done, ms)
@@ -437,43 +457,51 @@ const sleep = (ms: number, signal: AbortSignal) =>
  * Enable an HTTP pull consumer on the queue first
  * (`wrangler queues consumer http add <queue>`).
  */
-export const createCloudflarePullSource = (
-  options: CloudflarePullSourceOptions
+export const createCloudflareQueueSource = (
+  options: CloudflareQueueSourceOptions
 ): Source => {
-  const label = 'createCloudflarePullSource()'
+  const label = 'createCloudflareQueueSource()'
   const values = checkOptions(label, options, [
     'accountId',
     'queueId',
     'apiToken',
     'baseUrl',
     'fetch',
-    'batchSize',
-    'visibilityTimeoutMs',
+    'concurrency',
+    'visibilityTimeout',
     'pollInterval',
     'retryDelay',
-    'deadLetterQueueId',
+    'deadLetter',
   ])
   const api = apiOf(label, values)
   const batchSize =
-    checkInteger(label, 'batchSize', values.batchSize, 1, MAX_PULL_BATCH) ?? 10
-  const visibilityTimeoutMs =
-    checkInteger(
-      label,
-      'visibilityTimeoutMs',
-      values.visibilityTimeoutMs,
-      1,
-      MAX_VISIBILITY_MS
-    ) ?? 30_000
-  const pollInterval =
-    checkInteger(label, 'pollInterval', values.pollInterval, 0, 3_600_000) ??
+    checkInteger(label, 'concurrency', values.concurrency, 1, MAX_PULL_BATCH) ??
+    10
+  const visibilityTimeoutMs = optionalMilliseconds(
+    values.visibilityTimeout,
+    `${label}: visibilityTimeout`,
+    30_000
+  )
+  if (visibilityTimeoutMs < 1 || visibilityTimeoutMs > MAX_VISIBILITY_MS) {
+    throw new TypeError(
+      `${label}: visibilityTimeout must be from 1 millisecond to 12 hours.`
+    )
+  }
+  const pollInterval = optionalMilliseconds(
+    values.pollInterval,
+    `${label}: pollInterval`,
     1000
+  )
+  if (pollInterval > 3_600_000) {
+    throw new TypeError(`${label}: pollInterval must be 1 hour at most.`)
+  }
   checkFunction(label, 'retryDelay', values.retryDelay)
   const retryDelay =
-    values.retryDelay as CloudflarePullSourceOptions['retryDelay']
+    values.retryDelay as CloudflareQueueSourceOptions['retryDelay']
   const deadLetterQueueId =
-    values.deadLetterQueueId === undefined
+    values.deadLetter === undefined
       ? undefined
-      : checkString(label, 'deadLetterQueueId', values.deadLetterQueueId)
+      : checkString(label, 'deadLetter', values.deadLetter)
 
   return {
     kind: 'cloudflare-queues',
@@ -529,12 +557,12 @@ export const createCloudflarePullSource = (
                 return
               } catch (error) {
                 logger.error(
-                  { deadLetterQueueId, error: describe(error) },
+                  { deadLetter: deadLetterQueueId, error: describe(error) },
                   'Cannot copy the message to the dead-letter queue'
                 )
               }
             }
-            const delay = delayOf(retryDelay, attempt)
+            const delay = delayOf(label, retryDelay, attempt, logger)
             retries.push({
               lease_id: leaseId,
               ...(delay === undefined ? {} : { delay_seconds: delay }),

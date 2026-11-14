@@ -22,9 +22,9 @@ import {
   createSqsHandler,
   createSqsSource,
   createSqsTransport,
-  queueUrlOf,
   type SqsRecord,
 } from '../src/transports/aws-sqs.js'
+import { queueUrlOf } from '../src/transports/aws-sqs-internal.js'
 import { createLogger, envelopeOf, userCreated } from './support.js'
 import { startSqsServer } from './aws-sqs-server.js'
 
@@ -520,7 +520,7 @@ describe('SQS Lambda handler', () => {
     const dlq = newQueue('-dlq')
     const handler = createSqsHandler(workerOf({ ok: () => {} }), {
       client,
-      deadLetterQueueUrl: dlq.url,
+      deadLetter: dlq.url,
     })
     const envelope = envelopeOf({ listener: 'removed-listener' })
     const response = await handler({ Records: [recordOf(envelope)] })
@@ -552,7 +552,7 @@ describe('SQS Lambda handler', () => {
     )
     const handler = createSqsHandler(workerOf({}), {
       client,
-      deadLetterQueueUrl: dlq.url,
+      deadLetter: dlq.url,
       logger,
     })
     const response = await handler({ Records: [recordOf(envelopeOf())] })
@@ -563,7 +563,7 @@ describe('SQS Lambda handler', () => {
       {
         level: 'error',
         message: 'Cannot copy the message to the dead-letter queue',
-        data: { deadLetterQueueUrl: dlq.url, error: 'Access denied.' },
+        data: { deadLetter: dlq.url, error: 'Access denied.' },
       },
     ])
   })
@@ -615,7 +615,7 @@ describe('SQS Lambda handler', () => {
       }),
       {
         client: { send },
-        retryDelay: (attempt) => (attempt === 1 ? -5 : 1e9),
+        retryDelay: (attempt) => (attempt === 1 ? '0.2s' : '1000d'),
         logger,
       }
     )
@@ -632,7 +632,8 @@ describe('SQS Lambda handler', () => {
     expect(send.mock.calls.map(([command]) => command.input)).toEqual([
       expect.objectContaining({
         QueueUrl: 'https://sqs.eu-west-3.amazonaws.com/123456789012/events',
-        VisibilityTimeout: 0,
+        // Rounded up to the second.
+        VisibilityTimeout: 1,
       }),
       expect.objectContaining({ VisibilityTimeout: 43_200 }),
     ])
@@ -670,7 +671,7 @@ describe('SQS Lambda handler', () => {
     )
     const handler = createSqsHandler(workerOf(many), {
       client: { send },
-      deadLetterQueueUrl: 'https://sqs.eu-west-3.amazonaws.com/1/dlq',
+      deadLetter: 'https://sqs.eu-west-3.amazonaws.com/1/dlq',
     })
     await handler({ Records: [recordOf(envelopeOf())] })
     const [command] = send.mock.calls[0] as unknown as [
@@ -716,8 +717,8 @@ describe('SQS Lambda handler', () => {
     [
       'an invalid dead-letter queue',
       'worker',
-      { deadLetterQueueUrl: 'dlq' },
-      'createSqsHandler(): deadLetterQueueUrl must be the URL of an SQS queue.',
+      { deadLetter: 'dlq' },
+      'createSqsHandler(): deadLetter must be the URL of an SQS queue.',
     ],
     [
       'an invalid queue URL',
@@ -771,7 +772,7 @@ describe('SQS source', () => {
       listeners,
     })
     const { running, logger } = run(
-      createSqsSource({ queueUrl: queue.url, client, waitTimeSeconds: 1 }),
+      createSqsSource({ queueUrl: queue.url, client, waitTime: 1 }),
       listeners
     )
     await events.emit(userCreated, { userId: '42' })
@@ -819,7 +820,7 @@ describe('SQS source', () => {
   it('warns about a queue without dead-letter queue', async () => {
     const queue = newQueue()
     const { running, logger } = run(
-      createSqsSource({ queueUrl: queue.url, client, waitTimeSeconds: 0 }),
+      createSqsSource({ queueUrl: queue.url, client, waitTime: 0 }),
       []
     )
     await vi.waitFor(() =>
@@ -844,7 +845,7 @@ describe('SQS source', () => {
       queue.url
     )
     const { running, logger } = run(
-      createSqsSource({ queueUrl: queue.url, client, waitTimeSeconds: 0 }),
+      createSqsSource({ queueUrl: queue.url, client, waitTime: 0 }),
       []
     )
     await vi.waitFor(() =>
@@ -873,10 +874,10 @@ describe('SQS source', () => {
       createSqsSource({
         queueUrl: queue.url,
         client,
-        waitTimeSeconds: 0,
-        batchSize: 5,
+        waitTime: 0,
+        concurrency: 5,
         retryDelay: () => 0,
-        deadLetterQueueUrl: dlq.url,
+        deadLetter: dlq.url,
       }),
       listeners
     )
@@ -917,7 +918,7 @@ describe('SQS source', () => {
       createSqsSource({
         queueUrl: queue.url,
         client,
-        waitTimeSeconds: 0,
+        waitTime: 0,
         visibilityTimeout: 2,
       }),
       listeners
@@ -959,7 +960,7 @@ describe('SQS source', () => {
       createSqsSource({
         queueUrl: queue.url,
         client,
-        waitTimeSeconds: 0,
+        waitTime: 0,
         visibilityTimeout: 1,
       }),
       listeners,
@@ -994,7 +995,7 @@ describe('SQS source', () => {
       listenerOf('a', ({ payload }) => void received.push(payload.userId)),
     ]
     const { running, logger } = run(
-      createSqsSource({ queueUrl: queue.url, client, waitTimeSeconds: 0 }),
+      createSqsSource({ queueUrl: queue.url, client, waitTime: 0 }),
       listeners
     )
     await createEventBus({
@@ -1083,7 +1084,7 @@ describe('SQS source', () => {
       createSqsSource({
         queueUrl: queue.url,
         client,
-        waitTimeSeconds: 0,
+        waitTime: 0,
         logger: own,
       }),
       []
@@ -1101,43 +1102,48 @@ describe('SQS source', () => {
     ],
     [
       'an unknown option',
-      { queueUrl: 'https://x/1/q', concurrency: 2 },
-      'createSqsSource(): unknown option "concurrency".',
+      { queueUrl: 'https://x/1/q', batchSize: 2 },
+      'createSqsSource(): unknown option "batchSize".',
     ],
     [
       'a long poll over 20 seconds',
-      { queueUrl: 'https://x/1/q', waitTimeSeconds: 21 },
-      'createSqsSource(): waitTimeSeconds must be an integer from 0 to 20.',
+      { queueUrl: 'https://x/1/q', waitTime: 21 },
+      'createSqsSource(): waitTime must be from 0 to 20 seconds.',
     ],
     [
       'a negative long poll',
-      { queueUrl: 'https://x/1/q', waitTimeSeconds: -1 },
-      'createSqsSource(): waitTimeSeconds must be an integer from 0 to 20.',
+      { queueUrl: 'https://x/1/q', waitTime: -1 },
+      "createSqsSource(): waitTime must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
     [
       'a batch over 10',
-      { queueUrl: 'https://x/1/q', batchSize: 11 },
-      'createSqsSource(): batchSize must be an integer from 1 to 10.',
+      { queueUrl: 'https://x/1/q', concurrency: 11 },
+      'createSqsSource(): concurrency must be an integer from 1 to 10.',
     ],
     [
       'an empty batch',
-      { queueUrl: 'https://x/1/q', batchSize: 0 },
-      'createSqsSource(): batchSize must be an integer from 1 to 10.',
+      { queueUrl: 'https://x/1/q', concurrency: 0 },
+      'createSqsSource(): concurrency must be an integer from 1 to 10.',
     ],
     [
       'a batch size that is not an integer',
-      { queueUrl: 'https://x/1/q', batchSize: 2.5 },
-      'createSqsSource(): batchSize must be an integer from 1 to 10.',
+      { queueUrl: 'https://x/1/q', concurrency: 2.5 },
+      'createSqsSource(): concurrency must be an integer from 1 to 10.',
     ],
     [
       'a visibility of 0',
       { queueUrl: 'https://x/1/q', visibilityTimeout: 0 },
-      'createSqsSource(): visibilityTimeout must be an integer from 1 to 43200.',
+      'createSqsSource(): visibilityTimeout must be from 1 to 43200 seconds.',
+    ],
+    [
+      'an invalid visibility',
+      { queueUrl: 'https://x/1/q', visibilityTimeout: '12h1s' as never },
+      "createSqsSource(): visibilityTimeout must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.",
     ],
     [
       'a visibility over 12 hours',
-      { queueUrl: 'https://x/1/q', visibilityTimeout: 43_201 },
-      'createSqsSource(): visibilityTimeout must be an integer from 1 to 43200.',
+      { queueUrl: 'https://x/1/q', visibilityTimeout: '721m' },
+      'createSqsSource(): visibilityTimeout must be from 1 to 43200 seconds.',
     ],
     [
       'an invalid redrive check',
@@ -1154,8 +1160,8 @@ describe('SQS source', () => {
     expect(
       createSqsSource({
         queueUrl: 'https://x/1/q',
-        waitTimeSeconds: 0,
-        batchSize: 1,
+        waitTime: 0,
+        concurrency: 1,
         visibilityTimeout: 43_200,
         checkRedrivePolicy: true,
       }).kind

@@ -94,23 +94,28 @@ describe('auth routes', () => {
       })
       store.users.get('u1')!.passwordHash = bcrypt.hashSync('secret', rounds)
 
-      const median = async (username: string) => {
-        const durations: number[] = []
-        for (let index = 0; index < 5; index++) {
+      const usernames = ['ada', 'grace', 'margaret'] as const
+      const durations = new Map(usernames.map((name) => [name, [] as number[]]))
+      // Warm-up, then the three logins in turn: a slower moment of the
+      // machine (CI runners, tests running in parallel) slows all of them.
+      for (const username of usernames) {
+        await login(fetch, { username, password: 'wrong' })
+      }
+      for (let index = 0; index < 7; index++) {
+        for (const username of usernames) {
           const start = performance.now()
           await login(fetch, { username, password: 'wrong' })
-          durations.push(performance.now() - start)
+          durations.get(username)!.push(performance.now() - start)
         }
-        return durations.sort((a, b) => a - b)[2]!
       }
+      const median = (username: (typeof usernames)[number]) =>
+        durations.get(username)!.sort((a, b) => a - b)[3]!
 
-      const wrongPassword = await median('ada')
-      const unknownUser = await median('grace')
-      const withoutPassword = await median('margaret')
-
-      // Without dummy hash: about 0.3 ms against 15 ms.
-      expect(unknownUser).toBeGreaterThan(wrongPassword / 2)
-      expect(withoutPassword).toBeGreaterThan(wrongPassword / 2)
+      const wrongPassword = median('ada')
+      // Without dummy hash: about 0.3 ms against 15 ms, 50 times less. A
+      // third leaves room for the noise of the measure.
+      expect(median('grace')).toBeGreaterThan(wrongPassword / 3)
+      expect(median('margaret')).toBeGreaterThan(wrongPassword / 3)
     })
 
     it('validates the request body', async () => {

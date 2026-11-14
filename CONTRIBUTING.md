@@ -44,9 +44,20 @@ pnpm test             # every package and example; or pnpm --filter @dotpress/co
 pnpm check:core       # core, openapi and the main entries stay runtime-agnostic
 pnpm check:packages   # manifests, publint and Are the Types Wrong? (after the build)
 pnpm check:examples   # examples declare the current versions, linked to the sources
+pnpm api:check        # the API reports match the built declarations (after the build)
 pnpm test:packed      # installs the packed packages in a new project, and checks them as a consumer
 pnpm release:dry-run  # replays the release on a local Verdaccio registry (CI; needs a clean working tree)
 ```
+
+### Public API
+
+Each entry point of a package has an API report, `packages/<package>/api/<entry>.api.md`: the declarations it exports, read from the built `.d.ts` files, and the declarations they refer to without exporting them. The reports are committed, so a change of the public API shows in the diff of the pull request. When you change the API on purpose, update them and commit them with the change:
+
+```sh
+pnpm build && pnpm api:update
+```
+
+`pnpm api:check` fails in the CI when a report is out of date. Comments are left out: a change of documentation alone does not change the reports.
 
 ### Documentation site
 

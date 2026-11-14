@@ -669,7 +669,7 @@ describe('defineCacheEntry()', () => {
     }
     for (const ttl of [-1, '10 minutes', '1y', null]) {
       expect(define({ name: 'user', ttl })).toThrow(
-        `defineCacheEntry("user"): ttl must be a number of seconds, or a duration like '30s', '10m', '1h' or '7d'.`
+        `defineCacheEntry("user"): ttl must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.`
       )
     }
     expect(define({ name: 'user', ttl: 0 })).toThrow(

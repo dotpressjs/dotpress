@@ -23,6 +23,7 @@ const guides: SidebarGroup[] = [
       { text: 'Request context', link: '/concepts/context' },
       { text: 'End-to-end typing', link: '/concepts/typing' },
       { text: 'Returned errors', link: '/concepts/errors' },
+      { text: 'Options and durations', link: '/concepts/options' },
     ],
   },
   {

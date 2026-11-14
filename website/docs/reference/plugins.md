@@ -85,7 +85,7 @@ The registration methods work during `setup()` only: called later, they throw.
 | Field | Description |
 | --- | --- |
 | `request` | The normalized request. |
-| `response` | The normalized response: `status`, `headers`, `body`, `kind`. |
+| `response` | The normalized response: `status`, `headers`, `body`. |
 | `requestId` | The ID of the request. |
 | `ctx` | The context, `undefined` when no route matched. |
 | `route` | The route (`RouteInfo`), `undefined` when no route matched. |

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { isHttpError } from '../src/index.js'
 import {
   DEFAULT_BODY_LIMIT,
-  isHttpError,
   parseQueryString,
   parseRequestBody,
-} from '../src/index.js'
+} from '../src/adapter-api.js'
 
 const bytes = (value: string) => new TextEncoder().encode(value)
 

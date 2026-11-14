@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { toMilliseconds } from '../src/duration.js'
+import { parseDuration } from '../src/index.js'
 
-describe('toMilliseconds()', () => {
+describe('parseDuration()', () => {
   it('reads seconds and durations with a unit', () => {
     const cases: [unknown, number][] = [
       [0, 0],
@@ -17,8 +17,14 @@ describe('toMilliseconds()', () => {
       ['0.0015s', 2],
     ]
     for (const [value, expected] of cases) {
-      expect(toMilliseconds('ttl', value)).toBe(expected)
+      expect(parseDuration(value)).toBe(expected)
     }
+  })
+
+  it('names the option in its errors', () => {
+    expect(() => parseDuration('soon')).toThrow(
+      /^Duration must be a number of seconds/
+    )
   })
 
   it('refuses other values', () => {
@@ -39,9 +45,9 @@ describe('toMilliseconds()', () => {
       undefined,
       [1],
     ]) {
-      expect(() => toMilliseconds('options.ttl', value)).toThrow(
+      expect(() => parseDuration(value, 'options.ttl')).toThrow(
         new TypeError(
-          `options.ttl must be a number of seconds, or a duration like '30s', '10m', '1h' or '7d'.`
+          `options.ttl must be a number of seconds, or a duration like '500ms', '30s', '10m', '1h' or '7d'.`
         )
       )
     }

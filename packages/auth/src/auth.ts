@@ -1,7 +1,8 @@
-import type {
-  DotpressRequest,
-  DotpressResponse,
-  PluginCors,
+import {
+  createMemoryRateLimitStore,
+  type DotpressRequest,
+  type DotpressResponse,
+  type PluginCors,
 } from '@dotpress/core'
 import bcrypt from 'bcryptjs'
 import {
@@ -19,7 +20,6 @@ import {
 } from 'jose'
 import { sha256, toHex } from './crypto.js'
 import { isCookieAuthenticationAllowed } from './csrf.js'
-import { memoryRateLimitStore } from './rate-limit.js'
 import type {
   AuthInitOptions,
   AuthSession,
@@ -241,7 +241,7 @@ const resolveLoginThrottle = (
     return { max: resolved.max, window: resolved.window }
   }
 
-  const store = input?.store ?? memoryRateLimitStore()
+  const store = input?.store ?? createMemoryRateLimitStore()
   if (
     typeof store.increment !== 'function' ||
     typeof store.reset !== 'function'

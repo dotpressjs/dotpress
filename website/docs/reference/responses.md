@@ -70,19 +70,26 @@ return file(pdf, { filename: 'invoice-2026-001.pdf', contentType: 'application/p
 
 ## Error helpers
 
-Each one returns an `HttpError`: `return notFoundError()` or `throw notFoundError()`. `message` replaces the default message; `data` adds details to the body.
+Each one returns an `HttpError`: `return notFoundError()` or `throw notFoundError()`. `message` replaces the default message. The options:
+
+| Option | Description |
+| --- | --- |
+| `data` | Details added to the body: `notFoundError('Task not found', { data: { id } })`. |
+| `cause` | The original error (`error.cause`), for the logs and `onError`. Never sent. |
+
+Unknown options are rejected: `notFoundError('Task not found', { id })` throws a `TypeError`.
 
 | Helper | Status | `error` code | Default message |
 | --- | --- | --- | --- |
-| `badRequestError(message?, data?)` | 400 | `BAD_REQUEST` | Bad Request |
-| `unauthorizedError(message?, data?)` | 401 | `UNAUTHORIZED` | Unauthorized |
-| `forbiddenError(message?, data?)` | 403 | `FORBIDDEN` | Forbidden |
-| `notFoundError(message?, data?)` | 404 | `NOT_FOUND` | Not Found |
-| `conflictError(message?, data?)` | 409 | `CONFLICT` | Conflict |
-| `unprocessableError(message?, data?)` | 422 | `UNPROCESSABLE_ENTITY` | Unprocessable Entity |
-| `tooManyRequestsError(message?, data?)` | 429 | `TOO_MANY_REQUESTS` | Too Many Requests |
-| `internalError(message?, data?)` | 500 | `INTERNAL_ERROR` | Internal Server Error |
-| `errorResponse(status, code, message, data?)` | any | any | — |
+| `badRequestError(message?, options?)` | 400 | `BAD_REQUEST` | Bad Request |
+| `unauthorizedError(message?, options?)` | 401 | `UNAUTHORIZED` | Unauthorized |
+| `forbiddenError(message?, options?)` | 403 | `FORBIDDEN` | Forbidden |
+| `notFoundError(message?, options?)` | 404 | `NOT_FOUND` | Not Found |
+| `conflictError(message?, options?)` | 409 | `CONFLICT` | Conflict |
+| `unprocessableError(message?, options?)` | 422 | `UNPROCESSABLE_ENTITY` | Unprocessable Entity |
+| `tooManyRequestsError(message?, options?)` | 429 | `TOO_MANY_REQUESTS` | Too Many Requests |
+| `internalError(message?, options?)` | 500 | `INTERNAL_ERROR` | Internal Server Error |
+| `errorResponse(status, code, message, options?)` | any | any | — |
 
 ### Errors produced by Dotpress
 
@@ -134,8 +141,7 @@ class HttpError extends Error {
     status: number, // 400 to 599
     code: string,
     message: string,
-    data?: Record<string, unknown>,
-    options?: { cause?: unknown }
+    options?: { data?: Record<string, unknown>; cause?: unknown }
   )
   readonly status: number
   readonly code: string
@@ -148,7 +154,7 @@ Subclass it, or wrap `errorResponse()`, for the errors of your domain:
 
 ```ts
 export const quotaExceededError = (limit: number) =>
-  errorResponse(402, 'QUOTA_EXCEEDED', 'Quota exceeded', { limit })
+  errorResponse(402, 'QUOTA_EXCEEDED', 'Quota exceeded', { data: { limit } })
 ```
 
 `isHttpError(value)` recognizes an `HttpError`, even one created by another copy of `@dotpress/core`. `toErrorBody(error)` returns its body.

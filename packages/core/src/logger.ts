@@ -1,3 +1,5 @@
+import { assertKnownOptions } from './options.js'
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 /**
@@ -24,6 +26,11 @@ export interface ConsoleLoggerOptions {
   bindings?: Record<string, unknown>
 }
 
+const LOGGER_OPTIONS: ReadonlySet<string> = new Set([
+  'level',
+  'bindings',
+] satisfies (keyof ConsoleLoggerOptions)[])
+
 const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
@@ -37,7 +44,13 @@ const LEVEL_RANK: Record<LogLevel, number> = {
 export const createConsoleLogger = (
   options: ConsoleLoggerOptions = {}
 ): Logger => {
+  assertKnownOptions('createConsoleLogger()', options, LOGGER_OPTIONS)
   const level = options.level ?? 'info'
+  if (!Object.hasOwn(LEVEL_RANK, level)) {
+    throw new TypeError(
+      `createConsoleLogger(): level must be one of ${Object.keys(LEVEL_RANK).join(', ')}.`
+    )
+  }
   const bindings = options.bindings ?? {}
 
   const write =

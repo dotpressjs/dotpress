@@ -50,9 +50,6 @@ export type UploadedFiles = Record<string, File | File[]>
 export type ResponseBody =
   string | Uint8Array | ReadableStream<Uint8Array> | null
 
-export type ResponseKind =
-  'json' | 'text' | 'stream' | 'file' | 'redirect' | 'empty'
-
 /**
  * Framework-agnostic request handed by an adapter to the core.
  */
@@ -100,5 +97,4 @@ export interface NormalizedResponse {
   status: number
   headers: ResponseHeaders
   body: ResponseBody
-  kind: ResponseKind
 }

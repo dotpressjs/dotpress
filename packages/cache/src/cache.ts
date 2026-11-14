@@ -1,4 +1,4 @@
-import { toMilliseconds, type Duration } from './duration.js'
+import { parseDuration, type Duration } from '@dotpress/core'
 import {
   CacheStoreError,
   CacheTimeoutError,
@@ -158,7 +158,7 @@ const policyOf = (label: string, values: Record<string, unknown>): Policy => {
       option === 'hardTimeout' ||
       option === 'lock'
         ? positive(`${label}: ${option}`, value)
-        : toMilliseconds(`${label}: ${option}`, value)
+        : parseDuration(value, `${label}: ${option}`)
   }
   return policy
 }
@@ -238,7 +238,7 @@ export function defineCacheEntry(options: unknown): {
 }
 
 const positive = (label: string, value: unknown) => {
-  const ms = toMilliseconds(label, value)
+  const ms = parseDuration(value, label)
   if (ms < 1) throw new TypeError(`${label} must be at least 1 millisecond.`)
   return ms
 }

@@ -8,6 +8,7 @@ import type { Middleware, ResponseFilter } from './context.js'
 import { createCorsPolicy, type CorsOptions, type CorsPolicy } from './cors.js'
 import type { NormalizedRequest } from './http.js'
 import { createConsoleLogger, type Logger } from './logger.js'
+import { assertKnownOptions } from './options.js'
 import { createRouteMatcher, type RouteMatcher } from './matcher.js'
 import { joinPaths, normalizeBasePath, prefixPath, routeKey } from './path.js'
 import {
@@ -28,7 +29,13 @@ import {
   type ResponseHook,
 } from './plugins.js'
 import { getRequestSource, type DotpressRequest } from './request.js'
-import { createRouter, globalRouter, type Router } from './routes.js'
+import {
+  createRouter,
+  getRouterState,
+  globalRouter,
+  loadedCopies,
+  type Router,
+} from './routes.js'
 
 export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
   /** HTTP adapter (Express, Hono, Fastify…). */
@@ -88,6 +95,21 @@ export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
   /** Called with unexpected errors, for instance to report them to Sentry. */
   onError?: ErrorHook
 }
+
+const APP_OPTIONS: ReadonlySet<string> = new Set<keyof AppOptions>([
+  'adapter',
+  'routers',
+  'plugins',
+  'middlewares',
+  'responseFilters',
+  'basePath',
+  'publicBasePath',
+  'cors',
+  'logger',
+  'exposeErrors',
+  'generateRequestId',
+  'onError',
+])
 
 type NativeOf<TAdapter> =
   TAdapter extends HttpAdapter<infer TNative> ? TNative : unknown
@@ -336,9 +358,14 @@ const compileRouters = (
   const seen = new Map<string, string>()
 
   for (const router of routers) {
-    const filters = router.getResponseFilters()
+    const state = getRouterState(router)
+    if (state === undefined) {
+      throw new TypeError(
+        'createApp(): every router must be created with createRouter().'
+      )
+    }
 
-    for (const record of router.getRoutes()) {
+    for (const record of state.routes) {
       const route = basePath
         ? { ...record, path: joinPaths(basePath, record.path) }
         : record
@@ -352,7 +379,7 @@ const compileRouters = (
       }
 
       seen.set(key, `${route.method.toUpperCase()} ${route.path}`)
-      compiled.push(compileRoute(route, filters, config))
+      compiled.push(compileRoute(route, state.filters, config))
     }
   }
 
@@ -365,6 +392,10 @@ const compileRouters = (
 export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
   options: AppOptions<TAdapter>
 ): Promise<App<NativeOf<TAdapter>>> => {
+  if (typeof options !== 'object' || options === null) {
+    throw new TypeError('createApp() requires an options object.')
+  }
+  assertKnownOptions('createApp()', options, APP_OPTIONS)
   const { adapter } = options
 
   if (!adapter || typeof adapter.mount !== 'function') {
@@ -373,6 +404,13 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
 
   const paths = resolveBasePaths(options)
   const logger = options.logger ?? createConsoleLogger()
+  const copies = loadedCopies()
+  if (copies.length > 1) {
+    logger.warn(
+      { copies },
+      'Several copies of @dotpress/core are loaded: the routes, context keys and plugins of one copy are not seen by the others. Install a single version of @dotpress/core.'
+    )
+  }
   const cors =
     options.cors === undefined
       ? undefined

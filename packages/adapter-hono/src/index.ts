@@ -1,6 +1,11 @@
 import {
-  DEFAULT_BODY_LIMIT,
   HttpError,
+  type HttpAdapter,
+  type NormalizedRequest,
+  type NormalizedResponse,
+} from '@dotpress/core'
+import {
+  DEFAULT_BODY_LIMIT,
   createRouteMatcher,
   fromWebRequest,
   parseRequestBody,
@@ -9,12 +14,9 @@ import {
   toWebResponse,
   type CompiledRoute,
   type DotpressRuntime,
-  type HttpAdapter,
-  type NormalizedRequest,
-  type NormalizedResponse,
   type RequestBody,
   type RouteMatch,
-} from '@dotpress/core'
+} from '@dotpress/core/adapter'
 import { Hono, type Context } from 'hono'
 
 /**
@@ -163,7 +165,7 @@ const fromNativeError = (error: unknown): unknown => {
     'CLIENT_ERROR',
     'Client Error',
   ]
-  return new HttpError(status, code, message || defaultMessage, undefined, {
+  return new HttpError(status, code, message || defaultMessage, {
     cause: error,
   })
 }

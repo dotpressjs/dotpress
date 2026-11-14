@@ -2,17 +2,19 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 import type { Readable } from 'node:stream'
 import {
-  DEFAULT_BODY_LIMIT,
   HttpError,
+  type HttpAdapter,
+  type NormalizedRequest,
+  type NormalizedResponse,
+} from '@dotpress/core'
+import {
+  DEFAULT_BODY_LIMIT,
   parseQueryString,
   readRequestBody,
   type CompiledRoute,
   type DotpressRuntime,
-  type HttpAdapter,
-  type NormalizedRequest,
-  type NormalizedResponse,
   type RequestBody,
-} from '@dotpress/core'
+} from '@dotpress/core/adapter'
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -200,7 +202,6 @@ const fromNativeError = (error: unknown): unknown => {
     statusCode,
     ERROR_CODES[statusCode] ?? 'CLIENT_ERROR',
     error.message || 'Bad Request',
-    undefined,
     { cause: error }
   )
 }

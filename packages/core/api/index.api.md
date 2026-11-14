@@ -5,6 +5,7 @@
 ## Exports
 
 ```ts
+import type { CompiledRoute, DotpressRuntime } from '@dotpress/core/adapter'
 import type {
   $ZodArray,
   $ZodType,
@@ -46,13 +47,6 @@ export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
 export type BaseContextKey =
   'req' | 'res' | 'requestId' | 'logger' | 'raw' | 'publicPath'
 
-export interface CompiledRoute {
-  readonly method: HttpMethod
-  readonly path: string
-  readonly definition: RouteInfo
-  execute(request: NormalizedRequest): Promise<NormalizedResponse>
-}
-
 export interface ConsoleLoggerOptions {
   level?: LogLevel
   bindings?: Record<string, unknown>
@@ -87,8 +81,6 @@ export type CorsOrigin =
   | RegExp
   | readonly (string | RegExp)[]
   | ((origin: string, request: NormalizedRequest) => boolean | Promise<boolean>)
-
-export declare const DEFAULT_BODY_LIMIT: number
 
 export type DecoratableContextKey = Exclude<
   keyof RequestContext,
@@ -127,14 +119,9 @@ export interface DotpressResponse {
   clearCookie(name: string, options?: CookieOptions): this
 }
 
-export interface DotpressRuntime {
-  readonly logger: Logger
-  handleNotFound(request: NormalizedRequest): Promise<NormalizedResponse>
-  handleError(
-    error: unknown,
-    request?: NormalizedRequest
-  ): Promise<NormalizedResponse>
-}
+export type Duration = number | `${number}${DurationUnit}`
+
+export type DurationUnit = 'ms' | 's' | 'm' | 'h' | 'd'
 
 export type EmptyObject = Record<never, never>
 
@@ -166,8 +153,6 @@ export interface FileResult extends BaseResult {
   readonly kind: 'file'
   readonly body: Uint8Array | ReadableStream<Uint8Array>
 }
-
-export declare const HTTP_METHODS: readonly HttpMethod[]
 
 export type HandlerContext<
   S,
@@ -209,13 +194,13 @@ export declare class HttpError extends Error {
     status: number,
     code: string,
     message: string,
-    data?: ErrorData,
     options?: HttpErrorOptions
   )
   toJSON(): ErrorBody
 }
 
 export interface HttpErrorOptions {
+  data?: ErrorData | undefined
   cause?: unknown
 }
 
@@ -244,6 +229,10 @@ export interface Logger {
   warn: LogFn
   error: LogFn
   child(bindings: Record<string, unknown>): Logger
+}
+
+export interface MemoryRateLimitStoreOptions {
+  maxKeys?: number
 }
 
 export interface Middleware<TProvides = unknown> {
@@ -280,12 +269,6 @@ export interface NormalizedResponse {
   status: number
   headers: ResponseHeaders
   body: ResponseBody
-  kind: ResponseKind
-}
-
-export interface ParsedBody {
-  readonly body: unknown
-  readonly files: UploadedFiles | undefined
 }
 
 export type PathParams<P extends string> = string extends P
@@ -347,6 +330,16 @@ export type ProvidedContext<TProvided extends readonly unknown[]> =
 
 export type QueryValues = Record<string, string | string[]>
 
+export interface RateLimitState {
+  count: number
+  resetAt: Date
+}
+
+export interface RateLimitStore {
+  increment(key: string, windowSeconds: number): Promise<RateLimitState>
+  reset(key: string): Promise<void>
+}
+
 export type RawResult = Exclude<ResponseResult, JsonResult>
 
 export interface RedirectResult extends BaseResult {
@@ -355,10 +348,6 @@ export interface RedirectResult extends BaseResult {
 }
 
 export type RedirectStatus = 301 | 302 | 303 | 307 | 308
-
-export interface RequestBody extends ParsedBody {
-  readonly rawBody: Uint8Array | undefined
-}
 
 export interface RequestContext {
   req: DotpressRequest
@@ -400,9 +389,6 @@ export type ResponseHeaders = Record<string, string | string[]>
 export type ResponseHook = (
   event: ResponseEvent
 ) => void | NormalizedResponse | Promise<void | NormalizedResponse>
-
-export type ResponseKind =
-  'json' | 'text' | 'stream' | 'file' | 'redirect' | 'empty'
 
 export type ResponseResult =
   | JsonResult
@@ -482,16 +468,6 @@ export interface RouteInfo {
   readonly bodyLimit: number | undefined
 }
 
-export interface RouteMatch {
-  readonly route: CompiledRoute
-  readonly params: Record<string, string>
-}
-
-export interface RouteMatcher {
-  match(method: string, path: string): RouteMatch | undefined
-  allowedMethods(path: string): HttpMethod[]
-}
-
 export interface RouteMeta {
   summary?: string
   description?: string
@@ -501,18 +477,6 @@ export interface RouteMeta {
   security?: string[]
   hidden?: boolean
   responses?: Record<number, string | RouteResponse>
-}
-
-export interface RouteRecord {
-  readonly method: HttpMethod
-  readonly path: string
-  readonly schema: SchemaDefinition<RouteSchema> | undefined
-  readonly middlewares: readonly Middleware[]
-  readonly handler: RouteHandler<RouteSchema, Record<string, string>>
-  readonly meta: RouteMeta
-  readonly status: number | undefined
-  readonly rawBody: boolean
-  readonly bodyLimit: number | undefined
 }
 
 export type RouteRequest<S, TPathParams, TRawBody = false> = DotpressRequest<
@@ -543,8 +507,6 @@ export interface RouteSchema {
 
 export interface Router extends RouteGroup {
   addResponseFilter(filter: ResponseFilter): void
-  getRoutes(): readonly RouteRecord[]
-  getResponseFilters(): readonly ResponseFilter[]
   clear(): void
 }
 
@@ -619,22 +581,16 @@ export interface ValidationIssue {
   message: string
 }
 
-export interface WebRequestOptions {
-  ip?: string
-  signal?: AbortSignal
-  raw?: unknown
-}
-
 export declare const arrayOf: <T extends Schema>(schema: T) => ArrayOf<T>
 
 export declare const badRequestError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
 
 export declare const conflictError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
 
 export declare const createApp: <TAdapter extends HttpAdapter<unknown>>(
@@ -645,11 +601,11 @@ export declare const createConsoleLogger: (
   options?: ConsoleLoggerOptions
 ) => Logger
 
-export declare const createRouteGroup: Router['createGroup']
+export declare const createMemoryRateLimitStore: (
+  options?: MemoryRateLimitStoreOptions
+) => RateLimitStore
 
-export declare const createRouteMatcher: (
-  routes: readonly CompiledRoute[]
-) => RouteMatcher
+export declare const createRouteGroup: Router['createGroup']
 
 export declare const createRouter: () => Router
 
@@ -675,7 +631,7 @@ export declare const errorResponse: (
   status: number,
   code: string,
   message: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
 
 export declare const file: (
@@ -685,59 +641,26 @@ export declare const file: (
 
 export declare const forbiddenError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
-
-export declare const fromWebHeaders: (headers: Headers) => IncomingHeaders
-
-export declare const fromWebRequest: (
-  request: Request,
-  options?: WebRequestOptions
-) => NormalizedRequest
 
 export declare const globalRouter: Router
 
 export declare const internalError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
 
 export declare const isHttpError: (value: unknown) => value is HttpError
 
-export declare const isHttpMethod: (value: unknown) => value is HttpMethod
-
-export declare const isResponseResult: (
-  value: unknown
-) => value is ResponseResult
-
 export declare const json: <T>(data: T, init?: ResultInit) => JsonResult<T>
-
-export declare const malformedBodyError: (message?: string) => HttpError
-
-export declare const methodNotAllowedError: () => HttpError
 
 export declare const notFoundError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
 
-export declare const parseCookieHeader: (
-  header: string | undefined
-) => Record<string, string>
-
-export declare const parseQueryString: (search: string) => QueryValues
-
-export declare const parseRequestBody: (
-  bytes: Uint8Array,
-  contentTypeHeader: string | undefined
-) => Promise<ParsedBody>
-
-export declare const payloadTooLargeError: (message?: string) => HttpError
-
-export declare const readRequestBody: (
-  request: Request,
-  limit: number
-) => Promise<RequestBody>
+export declare const parseDuration: (value: unknown, label?: string) => number
 
 export declare const redirect: (
   location: string,
@@ -745,14 +668,6 @@ export declare const redirect: (
 ) => RedirectResult
 
 export declare const registerResponseFilter: (filter: ResponseFilter) => void
-
-export declare const routeNotFoundError: () => HttpError
-
-export declare const serializeCookie: (
-  name: string,
-  value: string,
-  options?: CookieOptions
-) => string
 
 export declare const sse: (
   source: StreamSource<SseMessage>,
@@ -768,27 +683,20 @@ export declare const text: (body: string, init?: ResultInit) => TextResult
 
 export declare const toErrorBody: (error: HttpError) => ErrorBody
 
-export declare const toWebResponse: (
-  response: NormalizedResponse,
-  method: string
-) => Promise<Response>
-
 export declare const tooManyRequestsError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
 
 export declare const unauthorizedError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
 
 export declare const unprocessableError: (
   message?: string,
-  data?: ErrorData
+  options?: HttpErrorOptions
 ) => HttpError
-
-export declare const unsupportedMediaTypeError: (message?: string) => HttpError
 
 export declare const validationError: (issues: ValidationIssue[]) => HttpError
 ```

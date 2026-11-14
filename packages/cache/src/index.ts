@@ -12,7 +12,6 @@ export type {
   CacheValue,
   Untyped,
 } from './cache.js'
-export type { Duration } from './duration.js'
 export {
   CacheError,
   CacheStoreError,

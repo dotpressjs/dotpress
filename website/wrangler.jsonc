@@ -10,7 +10,14 @@
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page",
   },
-  // Preview on dotpress-website.<subdomain>.workers.dev until dotpress.dev
-  // is set up.
-  "workers_dev": true,
+  // Custom domains: Cloudflare creates their DNS records and certificates.
+  // www.dotpress.dev is redirected to dotpress.dev by a redirect rule of the
+  // zone, which runs before the Worker.
+  "routes": [
+    { "pattern": "dotpress.dev", "custom_domain": true },
+    { "pattern": "www.dotpress.dev", "custom_domain": true },
+  ],
+  // Served on dotpress.dev only.
+  "workers_dev": false,
+  "preview_urls": false,
 }

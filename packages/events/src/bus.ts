@@ -46,6 +46,15 @@ export type EventBusOptions = {
 
 /** Options of `emit()`. */
 export interface EmitOptions {
+  /**
+   * Identifier of the emission, random by default. The message ids derive
+   * from it: emitting again with the same `emissionId` gives the same ids,
+   * so that listeners (and some queues) ignore the duplicates. It is the
+   * idempotency key of the emission, and must name one occurrence of the
+   * fact (`${order.id}:${order.version}`, the id of an outbox row), not
+   * only its entity. 1 to 200 characters, without control characters.
+   */
+  emissionId?: string | undefined
   /** Delay before delivery, in seconds, within the limit of the transport. */
   delay?: number | undefined
   /** Metadata of the emission, passed to the listeners. */
@@ -89,6 +98,8 @@ const OPTIONS = new Set([
 ])
 const METADATA_KEY = /^[A-Za-z0-9._-]{1,128}$/
 const LINE_BREAK = /[\r\n]/
+const CONTROL = /\p{Cc}/u
+const MAX_EMISSION_ID = 200
 
 export const checkMetadata = (label: string, metadata: unknown) => {
   if (metadata === undefined) return {}
@@ -114,14 +125,17 @@ export const checkMetadata = (label: string, metadata: unknown) => {
   return metadata as Record<string, string>
 }
 
+/** A message of an emission, with its envelope. */
+type Message = { readonly ref: MessageRef; readonly envelope: Envelope }
+
 /** Transport name of a listener: its own, the one of its event, or default. */
 export const routeOf = (listener: ListenerDefinition): string =>
   listener.transport ?? listener.event.transport ?? 'default'
 
 /**
- * Checks an emission like `emit()`: the event, the delay, the metadata,
- * and the payload, which travels as JSON. Returns the payload received by
- * the listeners and the metadata of the emission.
+ * Checks an emission like `emit()`: the event, the identifier, the delay,
+ * the metadata, and the payload, which travels as JSON. Returns the
+ * payload received by the listeners and the metadata of the emission.
  */
 export const checkEmission = async (
   event: unknown,
@@ -133,7 +147,18 @@ export const checkEmission = async (
     throw new TypeError('emit(): expected an event created by defineEvent().')
   }
   const emitLabel = `emit("${event.name}")`
-  const { delay, metadata } = emitOptions ?? {}
+  const { emissionId, delay, metadata } = emitOptions ?? {}
+  if (
+    emissionId !== undefined &&
+    (typeof emissionId !== 'string' ||
+      emissionId.length === 0 ||
+      emissionId.length > MAX_EMISSION_ID ||
+      CONTROL.test(emissionId))
+  ) {
+    throw new TypeError(
+      `${emitLabel}: emissionId must be a string of 1 to ${MAX_EMISSION_ID} characters, without control characters.`
+    )
+  }
   if (delay !== undefined && (!Number.isInteger(delay) || delay < 0)) {
     throw new TypeError(
       `${emitLabel}: delay must be a non-negative integer (seconds).`
@@ -166,7 +191,7 @@ export const checkEmission = async (
       }))
     )
   }
-  return { event, json, delay, metadata: checked }
+  return { event, json, emissionId, delay, metadata: checked }
 }
 
 /**
@@ -258,19 +283,55 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
   const listenersOf = (event: string) =>
     [...listeners.values()].filter((listener) => listener.event.name === event)
 
+  // One send() per transport, in parallel.
+  const sendMessages = async (
+    messages: readonly Message[],
+    delay: number | undefined
+  ) => {
+    const groups = new Map<string, Message[]>()
+    for (const message of messages) {
+      const { transport } = message.ref
+      groups.set(transport, [...(groups.get(transport) ?? []), message])
+    }
+    const sent: MessageRef[] = []
+    const failed: FailedMessage[] = []
+    await Promise.all(
+      [...groups].map(async ([name, group]) => {
+        try {
+          await (transports.get(name) as Transport).send(
+            group.map(({ envelope }) => envelope),
+            { delay }
+          )
+          for (const { ref } of group) sent.push(ref)
+        } catch (error) {
+          const partial =
+            error instanceof PartialSendError
+              ? new Map(error.failed.map((item) => [item.id, item.error]))
+              : undefined
+          for (const { ref } of group) {
+            if (partial && !partial.has(ref.id)) sent.push(ref)
+            else failed.push({ ...ref, error: partial?.get(ref.id) ?? error })
+          }
+        }
+      })
+    )
+    return { sent, failed }
+  }
+
   const create = (context: {
     logger: EventsLogger
     metadata: Readonly<Record<string, string>>
   }): EventBus => {
     const emit: EventBus['emit'] = async (event, payload, emitOptions = {}) => {
-      const { json, delay, metadata } = await checkEmission(
+      const checked = await checkEmission(
         event,
         payload,
         emitOptions,
         context.metadata
       )
+      const { json, delay, metadata } = checked
 
-      const emissionId = crypto.randomUUID()
+      const emissionId = checked.emissionId ?? crypto.randomUUID()
       const targets = listenersOf(event.name)
       if (targets.length === 0) {
         context.logger.debug?.(
@@ -288,7 +349,7 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
         emittedAt: new Date().toISOString(),
         metadata,
       }
-      const messages: { ref: MessageRef; envelope: Envelope }[] = []
+      const messages: Message[] = []
       for (const listener of targets) {
         const id = await messageId(emissionId, listener.name)
         messages.push({
@@ -297,52 +358,36 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
         })
       }
 
-      // One send() per transport, in parallel.
-      const groups = new Map<string, typeof messages>()
-      for (const message of messages) {
-        const { transport } = message.ref
-        groups.set(transport, [...(groups.get(transport) ?? []), message])
-      }
-      const sent: MessageRef[] = []
-      const failed: FailedMessage[] = []
-      await Promise.all(
-        [...groups].map(async ([name, group]) => {
-          try {
-            await (transports.get(name) as Transport).send(
-              group.map(({ envelope }) => envelope),
-              { delay }
-            )
-            for (const { ref } of group) sent.push(ref)
-          } catch (error) {
-            const partial =
-              error instanceof PartialSendError
-                ? new Map(error.failed.map((item) => [item.id, item.error]))
-                : undefined
-            for (const { ref } of group) {
-              if (partial && !partial.has(ref.id)) sent.push(ref)
-              else failed.push({ ...ref, error: partial?.get(ref.id) ?? error })
-            }
-          }
-        })
-      )
-
-      const order = <T extends MessageRef>(refs: T[]) =>
-        refs.sort(
+      // In the order of the listeners.
+      const order = <T extends MessageRef>(refs: readonly T[]) =>
+        [...refs].sort(
           (a, b) =>
             targets.findIndex(({ name }) => name === a.listener) -
             targets.findIndex(({ name }) => name === b.listener)
         )
-      if (failed.length > 0) {
-        throw new EventEmitError(event.name, order(sent), order(failed))
+
+      // Sends the pending messages; the error of a failure can send the
+      // failed ones again, with the same envelopes.
+      const deliver = async (
+        pending: readonly Message[],
+        before: readonly MessageRef[]
+      ): Promise<EmitResult> => {
+        const { sent, failed } = await sendMessages(pending, delay)
+        const done = [...before, ...sent]
+        if (failed.length > 0) {
+          const ids = new Set(failed.map(({ id }) => id))
+          const again = pending.filter(({ ref }) => ids.has(ref.id))
+          throw new EventEmitError(event.name, order(done), order(failed), () =>
+            deliver(again, done)
+          )
+        }
+        context.logger.info(
+          { event: event.name, emissionId, messages: messages.length },
+          'Event emitted'
+        )
+        return { emissionId, messages: order(messages.map(({ ref }) => ref)) }
       }
-      context.logger.info(
-        { event: event.name, emissionId, messages: sent.length },
-        'Event emitted'
-      )
-      return {
-        emissionId,
-        messages: order(messages.map(({ ref }) => ref)),
-      }
+      return deliver(messages, [])
     }
 
     return Object.freeze({

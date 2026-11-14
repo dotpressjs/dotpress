@@ -399,6 +399,32 @@ describe.skipIf(!redisUrl)('BullMQ with Redis', () => {
     await transport.close()
   })
 
+  it('ignores an emission sent again until its job is done', async () => {
+    const received: string[] = []
+    const { events, running, queue, transport } = setup([
+      listenerOf('a', ({ id }) => void received.push(id)),
+    ])
+    const options = { emissionId: 'user-created:42', delay: 1 }
+    const first = await events.emit(userCreated, { userId: '42' }, options)
+    const second = await events.emit(userCreated, { userId: '42' }, options)
+    expect(second.messages).toEqual(first.messages)
+    expect(await queue.getJobCounts('delayed')).toEqual({ delayed: 1 })
+    const id = first.messages[0]?.id
+    await vi.waitFor(() => expect(received).toEqual([id]), { timeout: 3000 })
+    // The completed job is removed: the same message is a new job.
+    await vi.waitFor(async () =>
+      expect(await queue.getJobCounts('completed')).toEqual({ completed: 0 })
+    )
+    await events.emit(
+      userCreated,
+      { userId: '42' },
+      { emissionId: options.emissionId }
+    )
+    await vi.waitFor(() => expect(received).toEqual([id, id]))
+    await running.stop()
+    await transport.close()
+  })
+
   it('waits for the jobs in progress on stop', async () => {
     const steps: string[] = []
     const { events, running, transport } = setup([

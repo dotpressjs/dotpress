@@ -5,6 +5,9 @@ import {
   createMemoryTransport,
   defineEvent,
   defineListener,
+  EventEmitError,
+  type EmitOptions,
+  type EmitResult,
   type EventInput,
   type EventPayload,
 } from '../src/index.js'
@@ -55,6 +58,27 @@ describe('types', () => {
       await events.emit(invoicePaid, { invoiceId: 'F-1', paidAt: new Date() })
       // @ts-expect-error: missing field
       await events.emit(invoicePaid, { invoiceId: 'F-1' })
+    })
+  })
+
+  it('types the emission id and retry()', () => {
+    expectTypeOf<EmitOptions['emissionId']>().toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf<EventEmitError['retry']>().returns.toEqualTypeOf<
+      Promise<EmitResult>
+    >()
+    const events = createEventBus({
+      transport: createMemoryTransport(),
+      listeners: [],
+    })
+    void (async () => {
+      await events.emit(
+        invoicePaid,
+        { invoiceId: 'F-1', paidAt: '2026-11-10T10:00:00Z' },
+        // @ts-expect-error: the emission id is a string
+        { emissionId: 42 }
+      )
     })
   })
 

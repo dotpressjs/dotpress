@@ -29,7 +29,7 @@ export interface FakeEventBus extends EventBus {
 
 /**
  * Creates an event bus that checks emissions like `createEventBus()` (event,
- * payload, delay, metadata) and records them, without running listeners:
+ * payload, emissionId, delay, metadata) and records them, without running listeners:
  * to test the code that emits, with `expectEventEmitted()` of
  * `@dotpress/testing`.
  *
@@ -45,7 +45,7 @@ export const createFakeEventBus = (): FakeEventBus => {
   const create = (metadata: Readonly<Record<string, string>>): EventBus => {
     const emit: EventBus['emit'] = async (event, payload, options) => {
       const checked = await checkEmission(event, payload, options, metadata)
-      const emissionId = crypto.randomUUID()
+      const emissionId = checked.emissionId ?? crypto.randomUUID()
       emitted.push(
         Object.freeze({
           emissionId,

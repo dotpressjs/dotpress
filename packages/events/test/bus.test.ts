@@ -1,3 +1,4 @@
+import { inspect } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
@@ -261,6 +262,50 @@ describe('emit()', () => {
     expect(first.messages[0]?.id).not.toBe(second.messages[0]?.id)
   })
 
+  it('derives the identifiers from the given emissionId', async () => {
+    const transport = createRecordingTransport()
+    const events = createEventBus({ transport, listeners: [welcome, geocode] })
+    const emissionId = 'user-created:42'
+    const first = await events.emit(
+      userCreated,
+      { userId: '42' },
+      { emissionId }
+    )
+    const second = await events.emit(
+      userCreated,
+      { userId: '42' },
+      { emissionId }
+    )
+    const ids = [
+      await messageId(emissionId, 'send-welcome-mail'),
+      await messageId(emissionId, 'geocode-user'),
+    ]
+    expect(first.emissionId).toBe(emissionId)
+    expect(first.messages.map(({ id }) => id)).toEqual(ids)
+    expect(second).toEqual(first)
+    expect(ids[0]).not.toBe(ids[1])
+    expect(
+      transport.sent.flatMap(({ envelopes }) =>
+        envelopes.map((envelope) => [envelope.emissionId, envelope.id])
+      )
+    ).toEqual([
+      [emissionId, ids[0]],
+      [emissionId, ids[1]],
+      [emissionId, ids[0]],
+      [emissionId, ids[1]],
+    ])
+  })
+
+  it('returns the given emissionId without listeners', async () => {
+    const events = createEventBus({
+      transport: createRecordingTransport(),
+      listeners: [],
+    })
+    await expect(
+      events.emit(userCreated, { userId: '1' }, { emissionId: 'import:7' })
+    ).resolves.toEqual({ emissionId: 'import:7', messages: [] })
+  })
+
   describe('payload', () => {
     const event = defineEvent({
       name: 'invoice.paid',
@@ -377,10 +422,24 @@ describe('emit()', () => {
       ],
       [{ metadata: { a: 1 } }, 'metadata.a must be a string on one line.'],
       [{ metadata: { a: 'x\ny' } }, 'metadata.a must be a string on one line.'],
+      ...[42, '', 'x'.repeat(201), 'a\nb', 'a\u0000b', 'a\u007fb'].map(
+        (emissionId): [object, string] => [
+          { emissionId },
+          'emissionId must be a string of 1 to 200 characters, without control characters.',
+        ]
+      ),
     ])('rejects %j', async (options, message) => {
       await expect(
         events.emit(userCreated, { userId: '1' }, options as never)
       ).rejects.toThrow(new TypeError(`emit("user.created"): ${message}`))
+    })
+
+    it('accepts emission ids up to 200 characters', async () => {
+      for (const emissionId of ['a', 'x'.repeat(200), 'order:42 · ü 🎉']) {
+        await expect(
+          events.emit(userCreated, { userId: '1' }, { emissionId })
+        ).resolves.toMatchObject({ emissionId })
+      }
     })
 
     it('accepts no options', async () => {
@@ -471,13 +530,140 @@ describe('emit()', () => {
       )
     })
 
-    it('gives the same identifiers when emitting again', async () => {
-      const ids = await Promise.all([
-        messageId('emission', 'send-welcome-mail'),
-        messageId('emission', 'send-welcome-mail'),
-      ])
-      expect(ids[0]).toBe(ids[1])
+    it('describes a partial send error', () => {
       expect(new PartialSendError([]).message).toBe('0 messages not sent.')
+    })
+  })
+
+  describe('retry()', () => {
+    it('sends the failed messages again, and only them', async () => {
+      const aws = createRecordingTransport()
+      aws.send.mockRejectedValueOnce(new Error('SQS unavailable'))
+      const edge = createRecordingTransport()
+      const logger = createLogger()
+      const events = createEventBus({
+        transports: { default: aws, edge } as never,
+        listeners: [welcome, geocode, invalidate],
+        logger,
+      })
+      const error = (await events
+        .emit(
+          userCreated,
+          { userId: '42' },
+          { delay: 30, metadata: { source: 'import' } }
+        )
+        .catch((e: unknown) => e)) as EventEmitError
+
+      const result = await error.retry()
+      const [failedCall, retryCall] = aws.send.mock.calls
+      expect(retryCall).toEqual(failedCall)
+      expect(retryCall?.[1]).toEqual({ delay: 30 })
+      expect(retryCall?.[0].map(({ listener }) => listener)).toEqual([
+        'send-welcome-mail',
+        'geocode-user',
+      ])
+      expect(edge.send).toHaveBeenCalledOnce()
+      expect(result).toEqual({
+        emissionId: retryCall?.[0][0]?.emissionId,
+        messages: [
+          expect.objectContaining({ listener: 'send-welcome-mail' }),
+          expect.objectContaining({ listener: 'geocode-user' }),
+          expect.objectContaining({ listener: 'invalidate-cache' }),
+        ],
+      })
+      expect(result.messages.map(({ id }) => id)).toEqual([
+        ...error.failed.map(({ id }) => id),
+        ...error.sent.map(({ id }) => id),
+      ])
+      expect(logger.entries).toEqual([
+        {
+          level: 'info',
+          message: 'Event emitted',
+          data: {
+            event: 'user.created',
+            emissionId: result.emissionId,
+            messages: 3,
+          },
+        },
+      ])
+    })
+
+    it('throws a new error that adds up the sent messages', async () => {
+      const transport = createRecordingTransport()
+      const edge = createRecordingTransport()
+      transport.send.mockRejectedValueOnce(new Error('down'))
+      transport.send.mockImplementationOnce(async (envelopes) => {
+        throw new PartialSendError([
+          { id: (envelopes[1] as Envelope).id, error: new Error('throttled') },
+        ])
+      })
+      const events = createEventBus({
+        transports: { default: transport, edge } as never,
+        listeners: [welcome, geocode, invalidate],
+      })
+      const first = (await events
+        .emit(userCreated, { userId: '42' })
+        .catch((e: unknown) => e)) as EventEmitError
+      const second = (await first
+        .retry()
+        .catch((e: unknown) => e)) as EventEmitError
+
+      expect(second).toBeInstanceOf(EventEmitError)
+      expect(second).not.toBe(first)
+      const listeners = (refs: readonly { listener: string }[]) =>
+        refs.map(({ listener }) => listener)
+      expect(listeners(second.sent)).toEqual([
+        'send-welcome-mail',
+        'invalidate-cache',
+      ])
+      expect(listeners(second.failed)).toEqual(['geocode-user'])
+      expect(second.message).toBe(
+        'Event "user.created" not fully emitted: 1 of 3 messages failed (geocode-user): throttled'
+      )
+
+      const result = await second.retry()
+      expect(listeners(result.messages)).toEqual([
+        'send-welcome-mail',
+        'geocode-user',
+        'invalidate-cache',
+      ])
+      expect(
+        transport.send.mock.calls.map(([envelopes]) => listeners(envelopes))
+      ).toEqual([
+        ['send-welcome-mail', 'geocode-user'],
+        ['send-welcome-mail', 'geocode-user'],
+        ['geocode-user'],
+      ])
+      expect(edge.send).toHaveBeenCalledOnce()
+    })
+
+    it('keeps the payload out of the error', async () => {
+      const transport = createRecordingTransport()
+      transport.send.mockRejectedValueOnce(new Error('down'))
+      const events = createEventBus({ transport, listeners: [welcome] })
+      const error = (await events
+        .emit(userCreated, { userId: 'secret-user' })
+        .catch((e: unknown) => e)) as EventEmitError
+      expect(JSON.stringify(error)).not.toContain('secret-user')
+      expect(inspect(error, { depth: Infinity })).not.toContain('secret-user')
+      expect(Object.keys(error).sort()).toEqual([
+        'event',
+        'failed',
+        'name',
+        'sent',
+      ])
+      await expect(error.retry()).resolves.toMatchObject({
+        messages: [{ listener: 'send-welcome-mail' }],
+      })
+    })
+
+    it('cannot retry an error not thrown by emit()', async () => {
+      const error = new EventEmitError('user.created', [], [])
+      await expect(error.retry()).rejects.toThrow(
+        new EventsError(
+          'Event "user.created": this EventEmitError was not thrown by emit(), it cannot be retried.'
+        )
+      )
     })
   })
 
@@ -589,6 +775,37 @@ describe('sync transport', () => {
         final: true,
       })
     )
+  })
+
+  it('runs only the failed listeners on retry()', async () => {
+    const ran: string[] = []
+    let down = true
+    const events = createEventBus({
+      transport: createSyncTransport(),
+      listeners: [
+        defineListener(userCreated, {
+          name: 'flaky',
+          handle: () => {
+            ran.push('flaky')
+            if (down) throw new Error('down')
+          },
+        }),
+        defineListener(userCreated, {
+          name: 'working',
+          handle: () => void ran.push('working'),
+        }),
+      ],
+    })
+    const error = (await events
+      .emit(userCreated, { userId: '42' })
+      .catch((e: unknown) => e)) as EventEmitError
+    down = false
+    const result = await error.retry()
+    expect(ran).toEqual(['flaky', 'working', 'flaky'])
+    expect(result.messages.map(({ listener }) => listener)).toEqual([
+      'flaky',
+      'working',
+    ])
   })
 
   it('fails without a bus', async () => {

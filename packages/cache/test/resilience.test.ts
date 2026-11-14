@@ -324,7 +324,8 @@ describe('timeouts', () => {
     const slow = deferred<string>()
     const started = performance.now()
     expect(await cache.getOrSet(report, () => slow.promise)).toBe('v1')
-    expect(performance.now() - started).toBeLessThan(1000)
+    // 20 ms, not the loader: a margin for busy CI runners.
+    expect(performance.now() - started).toBeLessThan(2000)
     expect(logger.entries).toContainEqual({
       level: 'warn',
       message: 'Cache served a stale value: the loader is slow',

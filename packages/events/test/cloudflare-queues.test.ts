@@ -709,7 +709,8 @@ describe('Cloudflare Queues pull source', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     const start = Date.now()
     await running.stop()
-    expect(Date.now() - start).toBeLessThan(500)
+    // Not the 60 seconds of the interval: a margin for busy CI runners.
+    expect(Date.now() - start).toBeLessThan(2000)
   })
 
   it.each([

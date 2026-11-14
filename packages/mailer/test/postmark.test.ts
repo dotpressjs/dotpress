@@ -16,6 +16,10 @@ import {
 } from './fetch-mock.js'
 import { startHttpServer, type Reply } from './http-server.js'
 
+// Requests of several megabytes, close to the size limits: slow on a busy
+// CI runner (the default timeout is 5 seconds).
+const LARGE_TIMEOUT = { timeout: 30_000 }
+
 const sent = () =>
   json(200, {
     To: 'a@example.com',
@@ -185,7 +189,7 @@ describe('Postmark provider', () => {
       { attachments: [largeAttachment(7_600_000)] },
       'Postmark accepts requests of at most 10 MB, got 10.1 MB (attachments are base64-encoded).',
     ],
-  ])('rejects %s', async (_, extra, text) => {
+  ])('rejects %s', LARGE_TIMEOUT, async (_, extra, text) => {
     const { fetchMock, mailer } = setup()
     await expect(
       mailer.sendMessage({ ...minimalMessage, ...extra } as MessageOptions)

@@ -124,9 +124,20 @@ const describe = (error: unknown) =>
 
 const encoder = new TextEncoder()
 
+/** Bytes turned into characters at once: below the argument limits. */
+const CHUNK = 0x8000
+
+/**
+ * Base64 of the UTF-8 bytes of a text (Web APIs only): `Uint8Array#toBase64`
+ * when the runtime has it, `btoa` by chunks otherwise.
+ */
 const base64 = (text: string) => {
+  const bytes: Uint8Array & { toBase64?: () => string } = encoder.encode(text)
+  if (typeof bytes.toBase64 === 'function') return bytes.toBase64()
   let binary = ''
-  for (const byte of encoder.encode(text)) binary += String.fromCharCode(byte)
+  for (let start = 0; start < bytes.length; start += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(start, start + CHUNK))
+  }
   return btoa(binary)
 }
 

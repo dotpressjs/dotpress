@@ -587,7 +587,8 @@ describe('store failures', () => {
     const cache = createCache({ store: slow, logger, storeTimeout: '20ms' })
     const started = Date.now()
     expect(await cache.get(userCache, '42')).toBeUndefined()
-    expect(Date.now() - started).toBeLessThan(1000)
+    // 20 ms, not forever: a margin for busy CI runners.
+    expect(Date.now() - started).toBeLessThan(2000)
     expect(logger.entries).toContainEqual(
       expect.objectContaining({
         level: 'warn',

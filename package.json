@@ -14,7 +14,7 @@
     "check:packages": "node scripts/check-packages.mjs",
     "check:examples": "node scripts/check-examples.mjs",
     "test:packed": "node scripts/test-packed.mjs",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --workspace-concurrency=1 test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

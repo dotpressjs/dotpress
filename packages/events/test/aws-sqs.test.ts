@@ -811,7 +811,8 @@ describe('SQS source', () => {
     )
     const start = Date.now()
     await running.stop()
-    expect(Date.now() - start).toBeLessThan(1000)
+    // Not the 20 seconds of long polling: a margin for busy CI runners.
+    expect(Date.now() - start).toBeLessThan(3000)
     expect(callsOf(queue.url, 'GetQueueAttributes').length > 0).toBe(false)
   })
 

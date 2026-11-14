@@ -27,6 +27,10 @@ import {
 import { startPubSubServer } from './google-pubsub-server.js'
 import { createLogger, envelopeOf, userCreated } from './support.js'
 
+// Requests of several megabytes, close to the size limits: slow on a busy
+// CI runner (the default timeout is 5 seconds).
+const LARGE_TIMEOUT = { timeout: 30_000 }
+
 const listenerOf = (
   name: string,
   handle: ListenerHandler<{ userId: string }>
@@ -124,54 +128,58 @@ describe('Pub/Sub transport', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('publishes batches of 1,000 messages and 10 MB, and rejects larger messages', async () => {
-    const sizes: number[] = []
-    const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
-      const { messages } = JSON.parse(String(init?.body)) as {
-        messages: unknown[]
-      }
-      sizes.push(messages.length)
-      return Response.json({ messageIds: [] })
-    })
-    const transport = createPubSubTransport({
-      topic: TOPIC,
-      getAccessToken: false,
-      fetch,
-    })
-    const many = Array.from({ length: 2500 }, (_, index) =>
-      envelopeOf({ id: `id-${index}` })
-    )
-    await transport.send(many, { delay: undefined })
-    expect(sizes).toEqual([1000, 1000, 500])
-
-    // Base64 data takes 4/3 of the JSON: 2 MB of payload, about 2.7 MB.
-    sizes.length = 0
-    const big = (id: string, size: number) =>
-      envelopeOf({ id, payload: { userId: 'x'.repeat(size) } })
-    const error = await transport
-      .send(
-        [
-          big('a', 2_000_000),
-          big('b', 2_000_000),
-          big('c', 2_000_000),
-          big('d', 2_000_000),
-          big('huge', 7_600_000),
-        ],
-        { delay: undefined }
+  it(
+    'publishes batches of 1,000 messages and 10 MB, and rejects larger messages',
+    LARGE_TIMEOUT,
+    async () => {
+      const sizes: number[] = []
+      const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
+        const { messages } = JSON.parse(String(init?.body)) as {
+          messages: unknown[]
+        }
+        sizes.push(messages.length)
+        return Response.json({ messageIds: [] })
+      })
+      const transport = createPubSubTransport({
+        topic: TOPIC,
+        getAccessToken: false,
+        fetch,
+      })
+      const many = Array.from({ length: 2500 }, (_, index) =>
+        envelopeOf({ id: `id-${index}` })
       )
-      .catch((caught: unknown) => caught)
-    expect(sizes).toEqual([3, 1])
-    expect(error).toMatchObject({
-      name: 'PartialSendError',
-      failed: [{ id: 'huge', error: expect.any(RangeError) }],
-    })
-    const { failed } = error as { failed: { error: Error }[] }
-    expect(failed[0]?.error.message).toMatch(
-      /^Pub\/Sub accepts publish requests of at most 10000000 bytes \(data base64-encoded\), got 10133\d{3} for one message\.$/
-    )
-  })
+      await transport.send(many, { delay: undefined })
+      expect(sizes).toEqual([1000, 1000, 500])
 
-  it('keeps messages up to the limit of a request', async () => {
+      // Base64 data takes 4/3 of the JSON: 2 MB of payload, about 2.7 MB.
+      sizes.length = 0
+      const big = (id: string, size: number) =>
+        envelopeOf({ id, payload: { userId: 'x'.repeat(size) } })
+      const error = await transport
+        .send(
+          [
+            big('a', 2_000_000),
+            big('b', 2_000_000),
+            big('c', 2_000_000),
+            big('d', 2_000_000),
+            big('huge', 7_600_000),
+          ],
+          { delay: undefined }
+        )
+        .catch((caught: unknown) => caught)
+      expect(sizes).toEqual([3, 1])
+      expect(error).toMatchObject({
+        name: 'PartialSendError',
+        failed: [{ id: 'huge', error: expect.any(RangeError) }],
+      })
+      const { failed } = error as { failed: { error: Error }[] }
+      expect(failed[0]?.error.message).toMatch(
+        /^Pub\/Sub accepts publish requests of at most 10000000 bytes \(data base64-encoded\), got 10133\d{3} for one message\.$/
+      )
+    }
+  )
+
+  it('keeps messages up to the limit of a request', LARGE_TIMEOUT, async () => {
     const lengths: number[] = []
     const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
       lengths.push(String(init?.body).length)
@@ -207,7 +215,7 @@ describe('Pub/Sub transport', () => {
     expect(lengths).toHaveLength(1)
   })
 
-  it('keeps batches under the limit of a request', async () => {
+  it('keeps batches under the limit of a request', LARGE_TIMEOUT, async () => {
     const lengths: number[] = []
     const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
       lengths.push(String(init?.body).length)

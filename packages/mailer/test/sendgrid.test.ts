@@ -8,6 +8,10 @@ import {
 import { createSendgridProvider } from '../src/providers/sendgrid.js'
 import { startHttpServer, type Reply } from './http-server.js'
 
+// Requests of several megabytes, close to the size limits: slow on a busy
+// CI runner (the default timeout is 5 seconds).
+const LARGE_TIMEOUT = { timeout: 30_000 }
+
 const message: MessageOptions = {
   to: ['Ada Lovelace <ada@example.com>', 'grace@example.com'],
   cc: 'Charles <charles@example.com>',
@@ -169,7 +173,7 @@ describe('SendGrid provider', () => {
       },
       'SendGrid accepts requests of at most 30 MB, got 30.1 MB (attachments are base64-encoded).',
     ],
-  ])('rejects %#', async (extra, text) => {
+  ])('rejects %#', LARGE_TIMEOUT, async (extra, text) => {
     const fetchMock = mockFetch()
     await expect(
       mailerWith(

@@ -14,13 +14,13 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  jwt_id TEXT NOT NULL,
-  family_id TEXT NOT NULL, -- the session
+  access_token_id TEXT NOT NULL,
+  session_id TEXT NOT NULL, -- the session
   expires_at TEXT NOT NULL,
   used_at TEXT,
   revoked_at TEXT
 );
-CREATE INDEX IF NOT EXISTS refresh_tokens_family_id ON refresh_tokens (family_id);
+CREATE INDEX IF NOT EXISTS refresh_tokens_session_id ON refresh_tokens (session_id);
 CREATE INDEX IF NOT EXISTS refresh_tokens_user_id ON refresh_tokens (user_id);
 
 CREATE TABLE IF NOT EXISTS projects (

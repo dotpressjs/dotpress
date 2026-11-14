@@ -10,7 +10,7 @@ Access tokens are JWTs following [RFC 9068](https://www.rfc-editor.org/rfc/rfc90
 - the claims are `iss`, `aud`, `sub`, `jti`, `iat`, `exp` and `auth_time`, plus `sid` (the session) and `client_id` (the client, with the [`clients` setting](./clients));
 - the type, issuer, audience and client are checked on every request.
 
-They are valid **15 minutes** (`accessTokenTTL: 900`). A short lifetime limits the use of a leaked token, and of the tokens of a revoked session (see [Revocation](#revocation)).
+They are valid **15 minutes** (`accessTokenTTL: '15m'`). A short lifetime limits the use of a leaked token, and of the tokens of a revoked session (see [Revocation](#revocation)).
 
 The username is not written in the token: it is often an email address, and a JWT is only encoded, readable by anyone who holds it, in logs and browsers. `sub` identifies the user, and `ctx.user` holds the profile. `usernameClaim: true` writes it if you need it.
 
@@ -23,8 +23,8 @@ When a used refresh token comes back, it was probably stolen: the attacker and t
 ```ts
 createAuth({
   // …
-  onRefreshTokenReuse: ({ userId, familyId, jwtId }) => {
-    securityLog.warn({ userId, sessionId: familyId }, 'Refresh token reused: session revoked')
+  onRefreshTokenReuse: ({ userId, sessionId, accessTokenId }) => {
+    securityLog.warn({ userId, sessionId: sessionId }, 'Refresh token reused: session revoked')
   },
 })
 ```
@@ -33,7 +33,7 @@ Within 10 seconds after its first use (`refreshTokenReuseInterval`), a token pre
 
 ## Session lifetimes
 
-A session ends after one of two timeouts, in seconds:
+A session ends after one of two timeouts, numbers of seconds or [durations](/concepts/options#durations) like `'14d'`:
 
 | Setting | Default | The session ends… |
 | --- | --- | --- |
@@ -41,11 +41,9 @@ A session ends after one of two timeouts, in seconds:
 | `session.absoluteTimeout` | none | this delay after login, even when it is active |
 
 ```ts
-const DAY = 24 * 60 * 60
-
-session: { idleTimeout: 30 * DAY } // consumer app: never logged out while active
-session: { idleTimeout: DAY, absoluteTimeout: DAY } // backoffice: log in every day
-session: { idleTimeout: 7 * DAY, absoluteTimeout: 28 * DAY } // log in every 4 weeks
+session: { idleTimeout: '30d' } // consumer app: never logged out while active
+session: { idleTimeout: '1d', absoluteTimeout: '1d' } // backoffice: log in every day
+session: { idleTimeout: '7d', absoluteTimeout: '28d' } // log in every 4 weeks
 ```
 
 With an absolute timeout, no token or cookie outlives the session, and the responses return `sessionExpiresAt`, so that the client can warn the user. The session starts at login (the `auth_time` claim): adding an absolute timeout also ends the sessions opened before, once they are older than it. An ended session makes `/auth/refresh` answer `401 EXPIRED_REFRESH_TOKEN`: the user logs in again.
@@ -63,7 +61,7 @@ Applications with privileged users (backoffices, admin consoles) should have an 
 
 - In cookie mode, the refresh token cookie of a cross-origin request gets `403 CROSS_ORIGIN_REQUEST`, as on `/auth/refresh`.
 
-Outside the routes, `auth.revokeSession(refreshToken, { scope })` does the same, and returns `{ userId, sessionId }`, or `undefined` when nothing was revoked. `ctx.auth.sessionId` lets an app list the sessions of a user, and log out one device with `dataProvider.revokeTokenFamily(sessionId)`.
+Outside the routes, `auth.revokeSession(refreshToken, { scope })` does the same, and returns `{ userId, sessionId }`, or `undefined` when nothing was revoked. `ctx.auth.sessionId` lets an app list the sessions of a user, and log out one device with `dataProvider.revokeSessionTokens(sessionId)`.
 
 ## Revoke every session after a password change
 
@@ -76,7 +74,7 @@ From the [Auth example](/examples/auth):
 ```ts
 await store.users.setPasswordHash(user.id, await auth.hashPassword(req.body.newPassword))
 // A stolen session must not survive a password change.
-await auth.settings.dataProvider.revokeTokens(user.id)
+await auth.revokeUserSessions(user.id)
 ```
 
 Do the same when an account is disabled, or when the email address changes.
@@ -88,7 +86,7 @@ The access tokens are verified without a database lookup: revoking a session doe
 | Event | Refresh | Access tokens already issued |
 | --- | --- | --- |
 | Account deleted or disabled (`findUserById` returns `undefined`) | rejected, the session is revoked | rejected at once |
-| Logout, `scope: 'all'`, refresh token reuse, `revokeTokens()` | rejected | valid until they expire (15 minutes), or rejected at once with `isSessionRevoked` |
+| Logout, `scope: 'all'`, refresh token reuse, `revokeUserTokens()` | rejected | valid until they expire (15 minutes), or rejected at once with `isSessionRevoked` |
 
 ### Immediate revocation
 
@@ -99,7 +97,7 @@ The revoked sessions are already in the refresh tokens table:
 ```ts
 isSessionRevoked: async (sessionId) => {
   const { rowCount } = await pool.query(
-    'SELECT 1 FROM refresh_tokens WHERE family_id = $1 AND revoked_at IS NOT NULL LIMIT 1',
+    'SELECT 1 FROM refresh_tokens WHERE session_id = $1 AND revoked_at IS NOT NULL LIMIT 1',
     [sessionId]
   )
   return rowCount > 0
@@ -110,19 +108,19 @@ For faster lookups, record the revoked sessions in Redis when revoking them, for
 
 ```ts
 const ACCESS_TOKEN_TTL = 900 // same as accessTokenTTL
-const markRevoked = (familyIds: string[]) =>
-  Promise.all(familyIds.map((id) => redis.set(`revoked-session:${id}`, '1', { EX: ACCESS_TOKEN_TTL })))
+const markRevoked = (sessionIds: string[]) =>
+  Promise.all(sessionIds.map((id) => redis.set(`revoked-session:${id}`, '1', { EX: ACCESS_TOKEN_TTL })))
 
 const dataProvider: DataProvider = {
   // …
-  revokeTokenFamily: async (familyId) => {
-    await db.refreshTokens.revokeFamily(familyId)
-    await markRevoked([familyId])
+  revokeSessionTokens: async (sessionId) => {
+    await db.refreshTokens.revokeSession(sessionId)
+    await markRevoked([sessionId])
   },
-  revokeTokens: async (userId) => {
-    const familyIds = await db.refreshTokens.activeFamilyIds(userId)
+  revokeUserTokens: async (userId) => {
+    const sessionIds = await db.refreshTokens.activeSessionIds(userId)
     await db.refreshTokens.revokeUser(userId)
-    await markRevoked(familyIds)
+    await markRevoked(sessionIds)
   },
   isSessionRevoked: async (sessionId) => (await redis.exists(`revoked-session:${sessionId}`)) === 1,
 }

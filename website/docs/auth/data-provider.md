@@ -8,11 +8,11 @@
 | --- | --- | --- |
 | `findUserIdentifiers(username)` | ✓ | At login: `{ userId, passwordHash, role? }`, or `undefined` for an unknown username. `passwordHash` is `null` for an account without password (SSO). |
 | `findUserById(userId)` | ✓ | On every authenticated request and every refresh: the user, which becomes `ctx.user` |
-| `storeRefreshToken(payload)` | ✓ | At login and at each refresh: `{ token, tokenHash, userId, jwtId, familyId, expiresAt }`. Store the hash, never the token. |
-| `findRefreshToken(tokenHash)` | ✓ | At each refresh and logout: `{ userId, jwtId, familyId, expiresAt, isUsed, usedAt, revokedAt }`, or `undefined`. `isUsed` can be derived from `usedAt`. |
+| `storeRefreshToken(payload)` | ✓ | At login and at each refresh: `{ tokenHash, userId, accessTokenId, sessionId, expiresAt }`. The token itself is never given: only its SHA-256 hash. |
+| `findRefreshToken(tokenHash)` | ✓ | At each refresh and logout: `{ userId, accessTokenId, sessionId, expiresAt, isUsed, usedAt, revokedAt }`, or `undefined`. `isUsed` can be derived from `usedAt`. |
 | `markRefreshTokenAsUsed(tokenHash, usedAt)` | ✓ | At each refresh |
-| `revokeTokenFamily(familyId)` | ✓ | At logout, and when a stolen refresh token is detected: revokes one session |
-| `revokeTokens(userId)` | ✓ | At logout of every device: revokes every session of the user |
+| `revokeSessionTokens(sessionId)` | ✓ | At logout, and when a stolen refresh token is detected: revokes one session |
+| `revokeUserTokens(userId)` | ✓ | At logout of every device, and by `auth.revokeUserSessions(userId)`: revokes every session of the user |
 | `isSessionRevoked(sessionId)` | | On every authenticated request: rejects the access tokens of a revoked session at once, see [Revocation](./sessions#revocation) |
 | `updatePasswordHash(userId, passwordHash)` | | After a successful login, when the cost of the hash changed, see [Passwords](./passwords#raising-the-cost) |
 
@@ -24,19 +24,19 @@ Return only what the handlers need from `findUserById()`: it becomes `ctx.user`,
 
 ## The refresh tokens table
 
-A refresh token is stored by its SHA-256 hash, never in clear. The tokens of a session share a `familyId`, the session ID:
+A refresh token is stored by its SHA-256 hash, never in clear. The tokens of a session share a `sessionId`, the session ID:
 
 ```sql
 CREATE TABLE refresh_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  jwt_id TEXT NOT NULL,
-  family_id TEXT NOT NULL, -- the session
+  access_token_id TEXT NOT NULL,
+  session_id TEXT NOT NULL, -- the session
   expires_at TIMESTAMP NOT NULL,
   used_at TIMESTAMP,
   revoked_at TIMESTAMP
 );
-CREATE INDEX refresh_tokens_family_id ON refresh_tokens (family_id);
+CREATE INDEX refresh_tokens_session_id ON refresh_tokens (session_id);
 CREATE INDEX refresh_tokens_user_id ON refresh_tokens (user_id);
 ```
 

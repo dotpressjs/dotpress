@@ -29,7 +29,7 @@ Rotate the signing keys on a schedule, every few months for instance, and at onc
 
 ```ts
 keys: {
-  secretKey: env.JWT_PRIVATE_KEY, // the new pair
+  privateKey: env.JWT_PRIVATE_KEY, // the new pair
   publicKey: env.JWT_PUBLIC_KEY,
   additionalPublicKeys: [env.JWT_PREVIOUS_PUBLIC_KEY], // the old public key
 }

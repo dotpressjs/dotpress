@@ -1,4 +1,4 @@
-import { authPlugin, type KeyPairSettings } from '@dotpress/auth'
+import { authPlugin, type KeyPairOptions } from '@dotpress/auth'
 import { createCache, type CacheStore } from '@dotpress/cache'
 import { cachePlugin } from '@dotpress/cache/plugin'
 import { createApp, type HttpAdapter, type Logger } from '@dotpress/core'
@@ -14,7 +14,7 @@ export interface TasksAppOptions<TAdapter extends HttpAdapter> {
   adapter: TAdapter
   /** The repositories of `createRepositories()`, over one database. */
   repositories: Repositories
-  keys: KeyPairSettings
+  keys: KeyPairOptions
   /** Public URL of the API: the issuer of the tokens. */
   publicUrl: string
   cacheStore: CacheStore

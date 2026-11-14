@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto'
-import type { KeyPairSettings } from '@dotpress/auth'
+import type { KeyPairOptions } from '@dotpress/auth'
 
 /**
  * Generates an RSA key pair, PEM encoded as `@dotpress/auth` expects it:
@@ -8,13 +8,13 @@ import type { KeyPairSettings } from '@dotpress/auth'
  *   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
  *   openssl pkey -in private.pem -pubout -out public.pem
  */
-export const generateKeys = (): KeyPairSettings => {
+export const generateKeys = (): KeyPairOptions => {
   const { privateKey, publicKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     publicKeyEncoding: { type: 'spki', format: 'pem' },
   })
-  return { secretKey: privateKey, publicKey }
+  return { privateKey, publicKey }
 }
 
 /** Platforms storing a PEM in one line escape its line breaks. */
@@ -27,11 +27,11 @@ const pem = (value: string) => value.replaceAll('\\n', '\n')
  */
 export const loadKeys = (
   env: Record<string, string | undefined> = process.env
-): KeyPairSettings & { generated: boolean } => {
+): KeyPairOptions & { generated: boolean } => {
   const { JWT_PRIVATE_KEY, JWT_PUBLIC_KEY } = env
   if (JWT_PRIVATE_KEY && JWT_PUBLIC_KEY) {
     return {
-      secretKey: pem(JWT_PRIVATE_KEY),
+      privateKey: pem(JWT_PRIVATE_KEY),
       publicKey: pem(JWT_PUBLIC_KEY),
       generated: false,
     }

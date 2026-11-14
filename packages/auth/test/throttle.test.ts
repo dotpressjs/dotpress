@@ -5,11 +5,11 @@ import {
 } from '@dotpress/core'
 import { createTestApp } from '@dotpress/testing'
 import { describe, expect, it, vi } from 'vitest'
-import { authPlugin, createAuth, type AuthSettings } from '../src/index.js'
+import { authPlugin, createAuth, type AuthOptions } from '../src/index.js'
 import { createStore, keys, postJson, TEST_HASH_ROUNDS } from './support.js'
 
 /** Apps sharing one auth service (and its throttle store), per IP address. */
-const setup = async (settings: Partial<AuthSettings> = {}) => {
+const setup = async (settings: Partial<AuthOptions> = {}) => {
   const store = createStore()
   const auth = createAuth({
     keys,
@@ -165,7 +165,7 @@ describe('login throttle', () => {
     ],
     [
       { limits: { username: { max: 5, window: -1 } } },
-      'Invalid loginThrottle.limits.username',
+      'loginThrottle.limits.username.window must be a number of seconds',
     ],
     [{ store: {} as RateLimitStore }, 'Invalid loginThrottle.store'],
   ])('rejects invalid settings (%o)', async (loginThrottle, message) => {

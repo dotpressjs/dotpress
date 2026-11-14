@@ -8,7 +8,7 @@ const auth = createAuth({
   clients: {
     allowed: ['app', 'backoffice'],
     required: true, // clientId required at login
-    isUserRoleAllowed: (role, clientId) => clientId !== 'backoffice' || role === 'admin',
+    isUserRoleAllowed: ({ role, clientId }) => clientId !== 'backoffice' || role === 'admin',
   },
 })
 
@@ -16,7 +16,7 @@ createRouteGroup('/backoffice', [requireClient('backoffice'), requireRole('admin
 ```
 
 - The `clientId` of the login must be one of `allowed`: otherwise `400`.
-- `isUserRoleAllowed(role, clientId)` decides whether a user may get a token for this client: here, only admins get backoffice tokens.
+- `isUserRoleAllowed({ userId, role, clientId })` decides whether a user may get a token for this client: here, only admins get backoffice tokens. `role` is the one returned by `findUserIdentifiers()`.
 - The token carries a `client_id` claim, exposed as `ctx.auth.clientId`.
 - `requireClient(...clientIds)` answers `403` to the tokens of other clients.
 - Removing a client from `allowed` rejects its tokens, and its sessions can no longer be refreshed.

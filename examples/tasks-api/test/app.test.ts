@@ -89,7 +89,7 @@ describe('files', () => {
   it('generates the development keys once, in the data directory', () => {
     const path = join(dir, 'data/dev-keys.json')
     const first = loadKeys({}, path)
-    expect(first.secretKey).toMatch(/^-----BEGIN PRIVATE KEY-----/)
+    expect(first.privateKey).toMatch(/^-----BEGIN PRIVATE KEY-----/)
     expect(loadKeys({}, path)).toEqual(first)
   })
 

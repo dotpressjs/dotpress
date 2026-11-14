@@ -114,7 +114,7 @@ export const usersRouter = (auth: Auth, store: Store) => {
         await auth.hashPassword(req.body.newPassword)
       )
       // A stolen session must not survive a password change.
-      await auth.settings.dataProvider.revokeTokens(user.id)
+      await auth.revokeUserSessions(user.id)
       return empty()
     },
   })

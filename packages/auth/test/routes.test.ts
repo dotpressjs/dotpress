@@ -1,20 +1,27 @@
 import bcrypt from 'bcryptjs'
 import { decodeJwt } from 'jose'
 import { createTestApp } from '@dotpress/testing'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { authPlugin, createAuth } from '../src/index.js'
 import {
   ACCESS_COOKIE,
+  type AuthAppOptions,
   cookieHeader,
   cookiesOf,
   createAuthApp,
   createStore,
+  initAuth,
   keys,
   login,
   postJson,
   REFRESH_COOKIE,
-  type AuthAppOptions,
+  settingsOf,
 } from './support.js'
+
+// Some tests move the clock forward to expire the access tokens.
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const COOKIES = { enabled: true, accessTokenInCookie: true }
 const DAY = 24 * 60 * 60
@@ -135,7 +142,7 @@ describe('auth routes', () => {
           clients: {
             allowed: ['app', 'backoffice'],
             required: true,
-            isUserRoleAllowed: (role, clientId) =>
+            isUserRoleAllowed: ({ role, clientId }) =>
               clientId !== 'backoffice' || role === 'admin',
           },
         },
@@ -443,10 +450,12 @@ describe('auth routes', () => {
     })
 
     it('refreshes the session when the access token expired', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
       const { fetch } = await createAuthApp({
-        settings: { cookies: COOKIES, accessTokenTTL: -10 },
+        settings: { cookies: COOKIES, accessTokenTTL: 1 },
       })
       const { body: tokens } = await login(fetch)
+      vi.setSystemTime(Date.now() + 5000)
 
       const res = await restore(fetch, {
         [REFRESH_COOKIE]: tokens.refreshToken,
@@ -458,8 +467,7 @@ describe('auth routes', () => {
       expect(res.status).toBe(200)
       expect(restored).toEqual({
         userId: 'u1',
-        // The access token issued with a negative lifetime is expired.
-        expiresIn: 0,
+        expiresIn: 1,
         expiresAt: expect.any(String),
         user: { id: 'u1', username: 'ada', roles: ['admin'] },
       })
@@ -710,12 +718,13 @@ describe('auth routes', () => {
         (token) => token.revokedAt
       )
       expect(revoked).toHaveLength(1)
-      expect(revoked[0]!.familyId).not.toBe(decodeJwt(other.accessToken).sid)
+      expect(revoked[0]!.sessionId).not.toBe(decodeJwt(other.accessToken).sid)
     })
 
     it('does not require a valid access token in cookie mode', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
       const { fetch, store } = await createAuthApp({
-        settings: { cookies: COOKIES, accessTokenTTL: -10 },
+        settings: { cookies: COOKIES, accessTokenTTL: 1 },
       })
       const { res: loginRes } = await login(fetch, {
         username: 'ada',
@@ -723,6 +732,7 @@ describe('auth routes', () => {
         mode: 'cookie',
       })
       const other = (await login(fetch)).body
+      vi.setSystemTime(Date.now() + 5000)
       const refreshToken = cookiesOf(loginRes)[REFRESH_COOKIE]!.value
 
       const res = await logout(fetch, undefined, {
@@ -741,7 +751,7 @@ describe('auth routes', () => {
         (token) => token.revokedAt
       )
       expect(revoked).toHaveLength(1)
-      expect(revoked[0]!.familyId).not.toBe(decodeJwt(other.accessToken).sid)
+      expect(revoked[0]!.sessionId).not.toBe(decodeJwt(other.accessToken).sid)
     })
 
     it('rejects the refresh token cookie of cross-origin requests', async () => {
@@ -916,7 +926,7 @@ describe('auth routes', () => {
         const sent = await cookieLogin(fetch, '/auth/login')
 
         expect(sent[REFRESH_COOKIE]?.raw).toContain('Path=/auth;')
-        expect(auth.settings.cookies.refreshTokenPath).toBe('/auth')
+        expect(settingsOf(auth).cookies.refreshTokenPath).toBe('/auth')
       })
 
       it('follows a custom prefix', async () => {
@@ -996,7 +1006,7 @@ describe('auth routes', () => {
           app: { basePath: '/api' },
         })
 
-        expect(auth.settings.cookies.refreshTokenPath).toBe('/auth')
+        expect(settingsOf(auth).cookies.refreshTokenPath).toBe('/auth')
       })
 
       it('cannot differ between two apps sharing an auth service', async () => {
@@ -1014,7 +1024,7 @@ describe('auth routes', () => {
         await expect(app({ basePath: '/b' })).rejects.toThrow(
           'This auth service already serves routes under "/a/auth": create one auth service per app to serve them under "/b/auth".'
         )
-        expect(auth.settings.cookies.refreshTokenPath).toBe('/a/auth')
+        expect(settingsOf(auth).cookies.refreshTokenPath).toBe('/a/auth')
       })
 
       it('rejects an invalid routes path', async () => {
@@ -1024,7 +1034,7 @@ describe('auth routes', () => {
           issuer: 'https://api.example.com',
         })
 
-        await expect(auth.init({ routesPath: 'auth' })).rejects.toThrow(
+        await expect(initAuth(auth, { routesPath: 'auth' })).rejects.toThrow(
           'Invalid routesPath: expected a path starting with "/", received "auth".'
         )
       })

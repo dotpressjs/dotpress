@@ -21,6 +21,7 @@ import {
   cookieHeader,
   createAuthApp,
   createStore,
+  issueAccessToken,
   keys,
   login,
   postJson,
@@ -39,6 +40,23 @@ const whoAmI = (router: ReturnType<typeof createRouter>) => {
 }
 
 describe('authPlugin()', () => {
+  it('checks its arguments', () => {
+    const auth = createAuth({
+      keys,
+      dataProvider: createStore().provider,
+      issuer: 'https://api.example.com',
+    })
+
+    expect(() => authPlugin({} as never)).toThrow(
+      new TypeError(
+        'authPlugin() expects an auth service created with createAuth().'
+      )
+    )
+    expect(() => authPlugin(auth, { prefixe: '/login' } as never)).toThrow(
+      new TypeError('authPlugin(): unknown option "prefixe".')
+    )
+  })
+
   describe('authentication', () => {
     it('reads the bearer token, then the cookie', async () => {
       const { fetch } = await createAuthApp({
@@ -129,13 +147,13 @@ describe('authPlugin()', () => {
 
     it('treats invalid, expired and orphan tokens as anonymous', async () => {
       const { fetch, logger, auth } = await createAuthApp({ routes: whoAmI })
-      const expired = jwt.sign({ username: 'ada' }, keys.secretKey, {
+      const expired = jwt.sign({ username: 'ada' }, keys.privateKey, {
         algorithm: 'RS256',
         subject: 'u1',
         expiresIn: -10,
       })
       // Valid token of a user that no longer exists.
-      const { accessToken: orphan } = await auth.generateAccessToken({
+      const { accessToken: orphan } = await issueAccessToken(auth, {
         userId: 'u404',
         username: 'ghost',
       })
@@ -160,7 +178,7 @@ describe('authPlugin()', () => {
     it('challenges the 401 responses (RFC 6750)', async () => {
       const { fetch, auth } = await createAuthApp()
       const { body: tokens } = await login(fetch)
-      const { accessToken: orphan } = await auth.generateAccessToken({
+      const { accessToken: orphan } = await issueAccessToken(auth, {
         userId: 'u404',
       })
       const me = (headers: Record<string, string> = {}) =>
@@ -569,14 +587,14 @@ describe('authPlugin()', () => {
   describe('setup', () => {
     it('fails at startup on invalid keys', async () => {
       const auth = createAuth({
-        keys: { secretKey: 'invalid', publicKey: keys.publicKey },
+        keys: { privateKey: 'invalid', publicKey: keys.publicKey },
         dataProvider: createStore().provider,
         issuer: 'https://api.example.com',
       })
 
       await expect(
         createTestApp({ routers: [], plugins: [authPlugin(auth)] })
-      ).rejects.toThrow('Invalid auth secretKey')
+      ).rejects.toThrow('Invalid auth privateKey')
     })
 
     it('exposes the service and the security schemes to other plugins', () => {

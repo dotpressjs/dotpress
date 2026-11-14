@@ -20,7 +20,7 @@ In a handler, `ctx` also holds the properties guaranteed by the [typed middlewar
 | Key | Type | Plugin |
 | --- | --- | --- |
 | `user` | `AuthUser \| undefined` | [`authPlugin`](/auth/): the authenticated user. Typed `AuthUser` after `requireAuth`. |
-| `auth` | `AuthSession \| undefined` | `authPlugin`: the token of the user, `userId`, `username`, `tokenId`, `sessionId`, `clientId`, `roles`, `claims`. Typed `AuthSession` after `requireAuth`. |
+| `auth` | `AuthSession \| undefined` | `authPlugin`: the token of the user, `userId`, `username`, `accessTokenId`, `sessionId`, `clientId`, `roles`, `claims`. Typed `AuthSession` after `requireAuth`. |
 | `memo` | `Memo` | [`cachePlugin`](/services/cache): the memo of the request. |
 | `cache` | `Cache` | `cachePlugin({ cache })`: the cache, with the request logger. |
 | `events` | `EventBus` | [`eventsPlugin`](/services/events): the bus, with the request logger and `requestId`. |

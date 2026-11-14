@@ -1,4 +1,4 @@
-import { createAuth, type KeyPairSettings } from '@dotpress/auth'
+import { createAuth, type KeyPairOptions } from '@dotpress/auth'
 import type { Store } from './store.ts'
 
 // Type of ctx.user: what dataProvider.findUserById() returns.
@@ -11,7 +11,7 @@ declare module '@dotpress/auth' {
 }
 
 export interface AuthOptions {
-  keys: KeyPairSettings
+  keys: KeyPairOptions
   store: Store
   /** `iss` claim of the tokens: the URL of the API, per environment. */
   issuer: string

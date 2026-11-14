@@ -30,7 +30,7 @@ export const createKeys = async () => {
     ['sign', 'verify']
   )
   return {
-    secretKey: pem(
+    privateKey: pem(
       'PRIVATE KEY',
       await crypto.subtle.exportKey('pkcs8', pair.privateKey)
     ),

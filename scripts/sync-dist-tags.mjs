@@ -8,6 +8,10 @@
 // - stable release: `latest` is the new version, and the prerelease tags of
 //   older versions are removed.
 //
+// The registry takes a moment to list a version just published: the script
+// waits for it (5 minutes at most for the whole run), then fails if it is
+// still missing.
+//
 // npm authenticates with trusted publishing in CI (npm 11.21 or later, with
 // "Allow npm dist-tag" on the trusted publisher), or with the npmrc of the
 // environment (release dry run). DRY_RUN=1 only prints the changes.
@@ -20,6 +24,41 @@ const dryRun = Boolean(process.env.DRY_RUN)
 
 const npm = (args) =>
   execFileSync('npm', args, { cwd: root, encoding: 'utf8' }).trim()
+
+// One deadline for all the packages: a run never waits more than 5 minutes.
+const deadline = Date.now() + 5 * 60_000
+const RETRY_DELAY = 15_000
+const sleep = (ms) =>
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+
+/** The versions and dist-tags of a package, once `version` is listed. */
+const viewPublished = (name, version) => {
+  for (;;) {
+    let reason = 'not listed yet'
+    try {
+      const info = JSON.parse(
+        npm([
+          'view',
+          name,
+          'versions',
+          'dist-tags',
+          '--json',
+          '--prefer-online',
+        ])
+      )
+      const versions = [].concat(info.versions ?? [])
+      if (versions.includes(version)) {
+        return { versions, tags: info['dist-tags'] ?? {} }
+      }
+    } catch (error) {
+      // A package published for the first time can answer 404 for a while.
+      reason = (error.stderr || error.message).trim().split('\n')[0]
+    }
+    if (Date.now() + RETRY_DELAY > deadline) return undefined
+    console.log(`${name}@${version}: ${reason}, waiting`)
+    sleep(RETRY_DELAY)
+  }
+}
 
 /** [major, minor, patch] of a version, and whether it is a prerelease. */
 const parse = (version) => {
@@ -45,15 +84,13 @@ for (const dir of readdirSync(join(root, 'packages')).sort()) {
   } = JSON.parse(readFileSync(file, 'utf8'))
   if (isPrivate) continue
 
-  const info = JSON.parse(
-    npm(['view', name, 'versions', 'dist-tags', '--json'])
-  )
-  const versions = [].concat(info.versions ?? [])
-  const tags = info['dist-tags'] ?? {}
-  if (!versions.includes(version)) {
-    console.log(`${name}@${version}: not published, skipped`)
+  const published = viewPublished(name, version)
+  if (!published) {
+    failed = true
+    console.error(`${name}@${version}: not listed by the registry, skipped`)
     continue
   }
+  const { versions, tags } = published
   const hasStable = versions.some((value) => !parse(value).prerelease)
 
   const add = {}

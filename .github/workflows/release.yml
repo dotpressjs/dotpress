@@ -10,6 +10,9 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  # Run by hand: sets the dist-tags of the current versions again (the
+  # dist-tags job), for instance after a failure of the publish job.
+  workflow_dispatch:
 
 permissions: {}
 
@@ -132,3 +135,26 @@ jobs:
       # on the trusted publisher of each package.
       - if: steps.publish.outputs.published == 'true'
         run: node scripts/sync-dist-tags.mjs
+
+  dist-tags:
+    if: >-
+      vars.RELEASE_ENABLED == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Trusted publishing: like the publish job.
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --global npm@11.21.2
+      # Node.js built-ins only: no dependencies to install.
+      - run: node scripts/sync-dist-tags.mjs

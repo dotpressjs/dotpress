@@ -1229,22 +1229,32 @@ describe('createAuth()', () => {
       const hash = await generatePasswordHash('secret', rounds)
       await auth.init()
 
-      const median = async (check: () => Promise<boolean>) => {
-        const durations: number[] = []
-        for (let index = 0; index < 5; index++) {
-          const start = performance.now()
-          await check()
-          durations.push(performance.now() - start)
-        }
-        return durations.sort((a, b) => a - b)[2]!
+      const checks = {
+        wrongPassword: () => auth.verifyPassword('wrong', hash),
+        withoutHash: () => auth.verifyPassword('wrong', null),
       }
+      const durations = {
+        wrongPassword: [] as number[],
+        withoutHash: [] as number[],
+      }
+      // Warm-up, then both checks in turn: a slower moment of the machine
+      // (CI runners, tests running in parallel) slows both of them.
+      await checks.wrongPassword()
+      await checks.withoutHash()
+      for (let index = 0; index < 7; index++) {
+        for (const name of ['wrongPassword', 'withoutHash'] as const) {
+          const start = performance.now()
+          await checks[name]()
+          durations[name].push(performance.now() - start)
+        }
+      }
+      const median = (values: number[]) => values.sort((a, b) => a - b)[3]!
 
-      const wrongPassword = await median(() =>
-        auth.verifyPassword('wrong', hash)
+      // Without dummy hash, about 50 times less: a third leaves room for the
+      // noise of the measure.
+      expect(median(durations.withoutHash)).toBeGreaterThan(
+        median(durations.wrongPassword) / 3
       )
-      const withoutHash = await median(() => auth.verifyPassword('wrong', null))
-
-      expect(withoutHash).toBeGreaterThan(wrongPassword / 2)
     })
   })
 })

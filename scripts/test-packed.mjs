@@ -7,7 +7,8 @@
 // - without the optional peer dependencies: the main entries load, and the
 //   other entries load or fail naming the missing peer;
 // - with them: every entry loads with import and with require();
-// - types: every entry type-checks with the node16 and bundler resolutions;
+// - types: every entry type-checks with the node16 and bundler resolutions,
+//   with the TypeScript of the repository and with the oldest supported one;
 // - built-in modules imported with the node: prefix;
 // - binaries, and a request through each adapter (one @dotpress/core).
 //
@@ -239,8 +240,12 @@ for (const { pkg, specifier } of entries) {
 
 // 4. With every optional peer dependency.
 step('Installing the optional peer dependencies')
+// The oldest TypeScript supported, as documented in Installation: Zod 4
+// needs 5.5.
+const OLDEST_TYPESCRIPT = '~5.5.4'
 const tools = [
   `typescript@${rootPkg.devDependencies.typescript}`,
+  `typescript-oldest@npm:typescript@${OLDEST_TYPESCRIPT}`,
   `@types/node@${rootPkg.devDependencies['@types/node']}`,
   '@types/express@^5.0.0',
   'esbuild@^0.28.0',
@@ -258,9 +263,22 @@ for (const mode of ['import', 'require']) {
 }
 
 // 5. Types, as a TypeScript project of the consumer would resolve them.
-for (const resolution of ['node16', 'bundler']) {
-  step(`Type-checking every entry (moduleResolution: ${resolution})`)
-  const dir = join(app, `types-${resolution}`)
+const compilers = [
+  { name: 'typescript', target: 'es2023' },
+  // TypeScript 5.5 knows no es2023 target.
+  { name: 'typescript-oldest', target: 'es2022' },
+]
+const checks = compilers.flatMap((compiler) =>
+  ['node16', 'bundler'].map((resolution) => ({ ...compiler, resolution }))
+)
+for (const { name, target, resolution } of checks) {
+  const version = JSON.parse(
+    readFileSync(join(app, 'node_modules', name, 'package.json'), 'utf8')
+  ).version
+  step(
+    `Type-checking every entry (TypeScript ${version}, moduleResolution: ${resolution})`
+  )
+  const dir = join(app, `types-${name}-${resolution}`)
   mkdirSync(dir)
   writeFileSync(
     join(dir, 'tsconfig.json'),
@@ -268,8 +286,8 @@ for (const resolution of ['node16', 'bundler']) {
       compilerOptions: {
         module: resolution === 'node16' ? 'node16' : 'esnext',
         moduleResolution: resolution,
-        target: 'es2023',
-        lib: ['es2023'],
+        target: target,
+        lib: [target],
         types: ['node'],
         strict: true,
         noEmit: true,
@@ -289,7 +307,7 @@ for (const resolution of ['node16', 'bundler']) {
   )
   const result = run(
     process.execPath,
-    [join(app, 'node_modules/typescript/bin/tsc'), '-p', dir],
+    [join(app, 'node_modules', name, 'bin/tsc'), '-p', dir],
     { cwd: app }
   )
   // Errors in our declarations or in the consumer file: the declarations of
@@ -302,9 +320,10 @@ for (const resolution of ['node16', 'bundler']) {
       !line.startsWith('node_modules/') ||
       line.startsWith('node_modules/@dotpress/')
   )
-  if (ours.length > 0) fail(`tsc (${resolution}):\n${ours.join('\n')}`)
+  const label = `tsc ${version} (${resolution})`
+  if (ours.length > 0) fail(`${label}:\n${ours.join('\n')}`)
   else if (result.status !== 0 && errors.length === 0) {
-    fail(`tsc (${resolution}): ${result.stdout}${result.stderr}`)
+    fail(`${label}: ${result.stdout}${result.stderr}`)
   } else {
     ok(
       `${entries.length} entries` +

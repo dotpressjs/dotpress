@@ -2,17 +2,26 @@ name: Release
 
 # After a successful CI run of a push to main: opens or updates the "Version
 # Packages" pull request while changesets are pending, and publishes the
-# packages to npm once it is merged. Publishing uses npm trusted publishing
-# (OIDC, with provenance): no npm token. The trusted publisher of each
-# package names this file and the `npm` environment.
+# packages to npm once it is merged, then deploys the documentation site.
+# Publishing uses npm trusted publishing (OIDC, with provenance): no npm
+# token. The trusted publisher of each package names this file and the `npm`
+# environment.
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  # Run by hand: sets the dist-tags of the current versions again (the
-  # dist-tags job), for instance after a failure of the publish job.
+  # Run by hand, on main:
+  # - dist-tags: sets the dist-tags of the current versions again, for
+  #   instance after a failure of the publish job;
+  # - website: deploys the documentation site, for instance to fix a page
+  #   between two releases.
   workflow_dispatch:
+    inputs:
+      job:
+        description: The job to run
+        type: choice
+        options: [dist-tags, website]
 
 permissions: {}
 
@@ -112,6 +121,8 @@ jobs:
     permissions:
       contents: write # git tags and GitHub releases
       id-token: write # npm trusted publishing
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -140,6 +151,7 @@ jobs:
     if: >-
       vars.RELEASE_ENABLED == 'true' &&
       github.event_name == 'workflow_dispatch' &&
+      inputs.job == 'dist-tags' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Trusted publishing: like the publish job.
@@ -158,3 +170,43 @@ jobs:
       - run: npm install --global npm@11.21.2
       # Node.js built-ins only: no dependencies to install.
       - run: node scripts/sync-dist-tags.mjs
+
+  website:
+    # After a release (the site documents the published versions), or by
+    # hand on main.
+    needs: publish
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'workflow_run' &&
+          needs.publish.outputs.published == 'true') ||
+        (github.event_name == 'workflow_dispatch' &&
+          inputs.job == 'website' &&
+          github.ref == 'refs/heads/main')
+      )
+    runs-on: ubuntu-latest
+    # Holds the Cloudflare settings: CLOUDFLARE_API_TOKEN (secret, "Edit
+    # Cloudflare Workers" limited to the account and the dotpress.dev zone)
+    # and CLOUDFLARE_ACCOUNT_ID (variable).
+    environment: website
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The released commit, or main for a run by hand.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      # The site and the packages it compiles its examples against.
+      - run: pnpm --filter "dotpress-website..." build
+      - run: npx --yes wrangler@4.161.0 deploy
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: false

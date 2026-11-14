@@ -11,3 +11,4 @@ coverage/
 .vscode/
 .serverless/
 .claude/settings.local.json
+.wrangler/

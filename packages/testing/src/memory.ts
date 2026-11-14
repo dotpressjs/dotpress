@@ -1,18 +1,20 @@
 import {
-  DEFAULT_BODY_LIMIT,
   createApp,
+  type App,
+  type AppOptions,
+  type HttpAdapter,
+  type NormalizedResponse,
+} from '@dotpress/core'
+import {
+  DEFAULT_BODY_LIMIT,
   createRouteMatcher,
   fromWebRequest,
   readRequestBody,
   toWebResponse,
-  type App,
-  type AppOptions,
   type CompiledRoute,
   type DotpressRuntime,
-  type HttpAdapter,
-  type NormalizedResponse,
   type RouteMatcher,
-} from '@dotpress/core'
+} from '@dotpress/core/adapter'
 import { createMemoryLogger, type MemoryLogger } from './logger.js'
 import { toRequest } from './request.js'
 

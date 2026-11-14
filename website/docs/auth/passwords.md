@@ -72,10 +72,10 @@ The IP address comes from the HTTP server. Behind a load balancer or a reverse p
 
 ### A shared store
 
-The default store keeps the counters in memory: with several instances of the API, each one counts on its own. Use a shared store, which increments a counter atomically:
+The default store, `createMemoryRateLimitStore()`, keeps the counters in memory: with several instances of the API, each one counts on its own. Use a shared store, which increments a counter atomically. `RateLimitStore` is the contract of `@dotpress/core`, so a store can serve other rate limits of your app too:
 
 ```ts
-import type { RateLimitStore } from '@dotpress/auth'
+import type { RateLimitStore } from '@dotpress/core'
 
 // Redis (ioredis)
 const redisStore: RateLimitStore = {

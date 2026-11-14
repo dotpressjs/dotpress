@@ -1,21 +1,9 @@
 export { createApp, type App, type AppOptions } from './app.js'
 export type { CorsOptions, CorsOrigin } from './cors.js'
 
-export {
-  DEFAULT_BODY_LIMIT,
-  parseQueryString,
-  parseRequestBody,
-  type ParsedBody,
-} from './body.js'
-
 export { arrayOf } from './array-of.js'
 
-export type {
-  CompiledRoute,
-  DotpressRuntime,
-  HttpAdapter,
-  RouteInfo,
-} from './adapter.js'
+export type { HttpAdapter, RouteInfo } from './adapter.js'
 
 export {
   defineMiddleware,
@@ -32,11 +20,9 @@ export {
   type RouteRequest,
 } from './context.js'
 
-export {
-  parseCookieHeader,
-  serializeCookie,
-  type CookieOptions,
-} from './cookies.js'
+export type { CookieOptions } from './cookies.js'
+
+export { parseDuration, type Duration, type DurationUnit } from './duration.js'
 
 export {
   HttpError,
@@ -46,16 +32,11 @@ export {
   forbiddenError,
   internalError,
   isHttpError,
-  malformedBodyError,
-  methodNotAllowedError,
   notFoundError,
-  payloadTooLargeError,
-  routeNotFoundError,
   toErrorBody,
   tooManyRequestsError,
   unauthorizedError,
   unprocessableError,
-  unsupportedMediaTypeError,
   validationError,
   type ErrorBody,
   type ErrorData,
@@ -63,18 +44,15 @@ export {
   type ValidationIssue,
 } from './errors.js'
 
-export {
-  HTTP_METHODS,
-  isHttpMethod,
-  type HttpMethod,
-  type IncomingHeaders,
-  type NormalizedRequest,
-  type NormalizedResponse,
-  type QueryValues,
-  type ResponseBody,
-  type ResponseHeaders,
-  type ResponseKind,
-  type UploadedFiles,
+export type {
+  HttpMethod,
+  IncomingHeaders,
+  NormalizedRequest,
+  NormalizedResponse,
+  QueryValues,
+  ResponseBody,
+  ResponseHeaders,
+  UploadedFiles,
 } from './http.js'
 
 export {
@@ -84,12 +62,6 @@ export {
   type LogLevel,
   type Logger,
 } from './logger.js'
-
-export {
-  createRouteMatcher,
-  type RouteMatch,
-  type RouteMatcher,
-} from './matcher.js'
 
 export type { EmptyObject, PathParams } from './path.js'
 
@@ -112,6 +84,13 @@ export {
   type ResponseHook,
 } from './plugins.js'
 
+export {
+  createMemoryRateLimitStore,
+  type MemoryRateLimitStoreOptions,
+  type RateLimitState,
+  type RateLimitStore,
+} from './rate-limit.js'
+
 export type { DotpressRequest } from './request.js'
 
 export type { DotpressResponse } from './response.js'
@@ -119,7 +98,6 @@ export type { DotpressResponse } from './response.js'
 export {
   empty,
   file,
-  isResponseResult,
   json,
   redirect,
   sse,
@@ -150,7 +128,6 @@ export {
   type RouteConfig,
   type RouteGroup,
   type RouteMeta,
-  type RouteRecord,
   type RouteResponse,
   type Router,
 } from './routes.js'
@@ -170,12 +147,3 @@ export type {
   SchemaInput,
   SchemaOutput,
 } from './schema.js'
-
-export {
-  fromWebHeaders,
-  fromWebRequest,
-  readRequestBody,
-  toWebResponse,
-  type RequestBody,
-  type WebRequestOptions,
-} from './web.js'

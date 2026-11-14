@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  createConsoleLogger,
-  parseCookieHeader,
-  serializeCookie,
-} from '../src/index.js'
+import { createConsoleLogger } from '../src/index.js'
+import { parseCookieHeader, serializeCookie } from '../src/cookies.js'
 
 describe('cookies', () => {
   it('serializes every attribute', () => {

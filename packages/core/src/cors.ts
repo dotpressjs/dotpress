@@ -275,7 +275,7 @@ export const createCorsPolicy = (
       }
       if (varies.length > 0) vary(headers, ...varies)
 
-      return { status: 204, headers, body: null, kind: 'empty' }
+      return { status: 204, headers, body: null }
     },
 
     apply: async (request, response) => {

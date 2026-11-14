@@ -35,7 +35,7 @@ describe('streaming', () => {
       const res = await inject({ url: '/array' })
 
       expect(res.status).toBe(200)
-      expect(res.kind).toBe('stream')
+      expect(res.response.body).toBeInstanceOf(ReadableStream)
       expect(res.headers['content-type']).toBe('application/octet-stream')
       expect(res.text).toBe('abc')
     })
@@ -375,7 +375,7 @@ describe('streaming', () => {
       const res = await inject({ url: '/events' })
 
       expect(res.status).toBe(200)
-      expect(res.kind).toBe('stream')
+      expect(res.response.body).toBeInstanceOf(ReadableStream)
       expect(res.headers).toMatchObject({
         'content-type': 'text/event-stream; charset=utf-8',
         'cache-control': 'no-cache',

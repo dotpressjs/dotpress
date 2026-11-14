@@ -6,6 +6,7 @@ import type {
   RouteHandler,
 } from './context.js'
 import { isHttpMethod, type HttpMethod } from './http.js'
+import { assertKnownOptions } from './options.js'
 import {
   joinPaths,
   normalizePath,
@@ -143,11 +144,53 @@ export interface RouteGroup<TParams = EmptyObject, TContext = unknown> {
 export interface Router extends RouteGroup {
   /** Registers a filter applied to the JSON results of this router's routes. */
   addResponseFilter(filter: ResponseFilter): void
-  getRoutes(): readonly RouteRecord[]
-  getResponseFilters(): readonly ResponseFilter[]
   /** Removes all routes and filters. */
   clear(): void
 }
+
+/** Routes and filters of a router: read by `createApp()`. */
+interface RouterState {
+  readonly routes: readonly RouteRecord[]
+  readonly filters: readonly ResponseFilter[]
+}
+
+const states = new WeakMap<Router, () => RouterState>()
+
+/**
+ * The routes and filters of a router made by `createRouter()`, or
+ * `undefined` for any other object.
+ */
+export const getRouterState = (router: Router): RouterState | undefined =>
+  states.get(router)?.()
+
+const ROUTE_OPTIONS: ReadonlySet<string> = new Set([
+  'method',
+  'path',
+  'schema',
+  'middlewares',
+  'rawBody',
+  'bodyLimit',
+  'handler',
+  'meta',
+  'status',
+] satisfies (keyof RouteConfig<string, RouteSchema>)[])
+
+const META_OPTIONS: ReadonlySet<string> = new Set([
+  'summary',
+  'description',
+  'tags',
+  'operationId',
+  'deprecated',
+  'security',
+  'hidden',
+  'responses',
+] satisfies (keyof RouteMeta)[])
+
+const RESPONSE_OPTIONS: ReadonlySet<string> = new Set([
+  'description',
+  'schema',
+  'contentType',
+] satisfies (keyof RouteResponse)[])
 
 const isStatus = (status: number) =>
   Number.isInteger(status) && status >= 100 && status <= 599
@@ -188,6 +231,27 @@ export const createRouter = (): Router => {
     groupMiddlewares: readonly Middleware[],
     route: RouteConfig<string, RouteSchema, unknown, boolean, unknown[]>
   ) => {
+    if (typeof route !== 'object' || route === null) {
+      throw new TypeError('defineRoute() requires a route object.')
+    }
+    const label = `Route "${joinPaths(prefix, String(route.path))}"`
+    assertKnownOptions(label, route, ROUTE_OPTIONS)
+    if (route.meta !== undefined) {
+      assertKnownOptions(label, route.meta, META_OPTIONS, 'meta.')
+      for (const [status, response] of Object.entries(
+        route.meta.responses ?? {}
+      )) {
+        if (typeof response === 'object' && response !== null) {
+          assertKnownOptions(
+            label,
+            response,
+            RESPONSE_OPTIONS,
+            `meta.responses.${status}.`
+          )
+        }
+      }
+    }
+
     const method = route.method ?? 'get'
 
     if (!isHttpMethod(method)) {
@@ -254,7 +318,7 @@ export const createRouter = (): Router => {
 
   const root = createGroup('', [])
 
-  return {
+  const router = {
     prefix: '',
     defineRoute: root.defineRoute,
     createGroup: (prefix: string, middlewares?: readonly Middleware[]) =>
@@ -262,14 +326,25 @@ export const createRouter = (): Router => {
     addResponseFilter: (filter) => {
       filters.push(filter)
     },
-    getRoutes: () => [...routes],
-    getResponseFilters: () => [...filters],
     clear: () => {
       routes = []
       filters = []
     },
   } as Router
+  states.set(router, () => ({ routes: [...routes], filters: [...filters] }))
+  return router
 }
+
+// The copies of this module loaded in the process, by URL: with two copies
+// of @dotpress/core, the routes declared with one are not mounted by the
+// other.
+const COPIES = Symbol.for('dotpress.core.copies')
+const copies = ((globalThis as { [COPIES]?: Set<string> })[COPIES] ??=
+  new Set<string>())
+copies.add(import.meta.url)
+
+/** The URLs of the copies of `@dotpress/core` loaded in the process. */
+export const loadedCopies = (): readonly string[] => [...copies]
 
 /**
  * Router used by `defineRoute()`, `createRouteGroup()` and

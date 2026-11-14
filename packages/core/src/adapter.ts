@@ -73,7 +73,8 @@ export interface DotpressRuntime {
  *
  * An adapter translates native requests into `NormalizedRequest`, calls
  * `CompiledRoute.execute()`, and writes the returned `NormalizedResponse`.
- * To behave like every other adapter, it must:
+ * The functions it relies on come from `@dotpress/core/adapter`. To behave
+ * like every other adapter, it must:
  *
  * - match routes with `createRouteMatcher()`, or follow its rules;
  * - parse the query with `parseQueryString()`, and the body with

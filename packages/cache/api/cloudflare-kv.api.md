@@ -5,7 +5,8 @@
 ## Exports
 
 ```ts
-import type { CacheStore, Duration } from '@dotpress/cache'
+import type { CacheStore } from '@dotpress/cache'
+import type { Duration } from '@dotpress/core'
 
 export interface CloudflareKvStoreOptions {
   kv: KvNamespace | (() => KvNamespace)

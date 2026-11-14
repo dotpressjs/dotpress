@@ -34,7 +34,7 @@ describe('responses', () => {
       const res = await inject({ method: 'delete', url: '/item' })
 
       expect(res.status).toBe(204)
-      expect(res.kind).toBe('empty')
+      expect(res.response.body).toBeNull()
       expect(res.text).toBeUndefined()
     })
 
@@ -185,7 +185,7 @@ describe('responses', () => {
       const res = await inject({ url: '/health' })
 
       expect(res.status).toBe(200)
-      expect(res.kind).toBe('text')
+      expect(typeof res.response.body).toBe('string')
       expect(res.headers['content-type']).toBe('text/plain; charset=utf-8')
       expect(res.text).toBe('OK')
     })
@@ -204,7 +204,7 @@ describe('responses', () => {
 
       expect(temporary.status).toBe(302)
       expect(temporary.headers.location).toBe('/new')
-      expect(temporary.kind).toBe('redirect')
+      expect(temporary.response.body).toBeNull()
       expect(permanent.status).toBe(301)
     })
 
@@ -219,7 +219,7 @@ describe('responses', () => {
 
       const res = await inject({ url: '/events' })
 
-      expect(res.kind).toBe('stream')
+      expect(res.response.body).toBeInstanceOf(ReadableStream)
       expect(res.headers['content-type']).toBe('text/plain')
       expect(res.text).toBe('ab')
     })
@@ -246,7 +246,6 @@ describe('responses', () => {
       const invoice = await inject({ url: '/invoice' })
       const blob = await inject({ url: '/blob' })
 
-      expect(invoice.kind).toBe('file')
       expect(invoice.headers).toMatchObject({
         'content-type': 'application/pdf',
         'content-length': '4',

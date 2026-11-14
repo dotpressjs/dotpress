@@ -1,4 +1,4 @@
-import { toMilliseconds, type Duration } from '../duration.js'
+import { parseDuration, type Duration } from '@dotpress/core'
 import type { CacheStore } from '../store.js'
 
 /** A Workers KV binding (the fields used here). */
@@ -80,7 +80,7 @@ export const createCloudflareKvStore = (
   }
   let cacheTtl: number | undefined
   if (options.cacheTtl !== undefined) {
-    const ms = toMilliseconds(`${label}: cacheTtl`, options.cacheTtl)
+    const ms = parseDuration(options.cacheTtl, `${label}: cacheTtl`)
     if (ms < 30_000) {
       throw new TypeError(`${label}: cacheTtl must be at least 30 seconds.`)
     }

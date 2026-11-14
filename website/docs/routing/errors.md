@@ -29,25 +29,28 @@ defineRoute({
 
 | Helper | Status | `error` |
 | --- | --- | --- |
-| `badRequestError(message?, data?)` | 400 | `BAD_REQUEST` |
-| `unauthorizedError(message?, data?)` | 401 | `UNAUTHORIZED` |
-| `forbiddenError(message?, data?)` | 403 | `FORBIDDEN` |
-| `notFoundError(message?, data?)` | 404 | `NOT_FOUND` |
-| `conflictError(message?, data?)` | 409 | `CONFLICT` |
-| `unprocessableError(message?, data?)` | 422 | `UNPROCESSABLE_ENTITY` |
-| `tooManyRequestsError(message?, data?)` | 429 | `TOO_MANY_REQUESTS` |
-| `internalError(message?, data?)` | 500 | `INTERNAL_ERROR` |
+| `badRequestError(message?, options?)` | 400 | `BAD_REQUEST` |
+| `unauthorizedError(message?, options?)` | 401 | `UNAUTHORIZED` |
+| `forbiddenError(message?, options?)` | 403 | `FORBIDDEN` |
+| `notFoundError(message?, options?)` | 404 | `NOT_FOUND` |
+| `conflictError(message?, options?)` | 409 | `CONFLICT` |
+| `unprocessableError(message?, options?)` | 422 | `UNPROCESSABLE_ENTITY` |
+| `tooManyRequestsError(message?, options?)` | 429 | `TOO_MANY_REQUESTS` |
+| `internalError(message?, options?)` | 500 | `INTERNAL_ERROR` |
 
-Without a message, each uses the standard reason phrase (`Not Found`).
+Without a message, each uses the standard reason phrase (`Not Found`). The options are `data`, details added to the body, and `cause`, the original error, kept for the logs and never sent:
+
+```ts
+return notFoundError('Member not found', { data: { id: req.params.id } })
+```
 
 ## Custom errors
 
-`errorResponse(status, code, message, data)` builds any other error. Use stable codes: clients test them.
+`errorResponse(status, code, message, options?)` builds any other error. Use stable codes: clients test them.
 
 ```ts
 return errorResponse(422, 'INVALID_STATE', 'Invalid state transition', {
-  state: 'archived',
-  previousState: 'pending',
+  data: { state: 'archived', previousState: 'pending' },
 })
 ```
 

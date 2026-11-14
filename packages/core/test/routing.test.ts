@@ -5,9 +5,10 @@ import {
   createRouter,
   defineRoute,
   globalRouter,
-  HTTP_METHODS,
   type Middleware,
 } from '../src/index.js'
+import { getRouterState } from '../src/routes.js'
+import { HTTP_METHODS } from '../src/http.js'
 import {
   createTestApp,
   memoryAdapter,
@@ -249,8 +250,7 @@ describe('routing', () => {
 
       router.clear()
 
-      expect(router.getRoutes()).toEqual([])
-      expect(router.getResponseFilters()).toEqual([])
+      expect(getRouterState(router)).toEqual({ routes: [], filters: [] })
     })
   })
 

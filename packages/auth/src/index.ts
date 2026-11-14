@@ -24,13 +24,6 @@ export {
   type AuthPluginOptions,
 } from './plugin.js'
 
-export {
-  memoryRateLimitStore,
-  type MemoryRateLimitStoreOptions,
-  type RateLimitState,
-  type RateLimitStore,
-} from './rate-limit.js'
-
 export type {
   AdditionalPublicKey,
   AuthInitOptions,

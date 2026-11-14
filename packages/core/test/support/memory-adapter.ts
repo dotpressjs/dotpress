@@ -1,18 +1,20 @@
 import {
   createApp,
-  createRouteMatcher,
   createRouter,
-  malformedBodyError,
-  parseQueryString,
-  parseRequestBody,
   type AppOptions,
-  type CompiledRoute,
-  type DotpressRuntime,
   type HttpAdapter,
   type NormalizedRequest,
   type NormalizedResponse,
   type Router,
 } from '../../src/index.js'
+import {
+  createRouteMatcher,
+  malformedBodyError,
+  parseQueryString,
+  parseRequestBody,
+  type CompiledRoute,
+  type DotpressRuntime,
+} from '../../src/adapter-api.js'
 
 export interface InjectOptions {
   method?: string
@@ -33,7 +35,6 @@ export interface InjectOptions {
 export interface InjectResponse {
   status: number
   headers: Record<string, string | string[]>
-  kind: NormalizedResponse['kind']
   /** Parsed JSON body, or the text body. */
   body: unknown
   text: string | undefined
@@ -145,7 +146,6 @@ export const memoryAdapter = (): MemoryAdapter => {
       return {
         status: response.status,
         headers: response.headers,
-        kind: response.kind,
         body:
           text !== undefined && contentType.startsWith('application/json')
             ? JSON.parse(text)

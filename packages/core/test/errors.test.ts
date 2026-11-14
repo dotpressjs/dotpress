@@ -29,10 +29,45 @@ describe('errors', () => {
 
     expect(error).toBeInstanceOf(HttpError)
     expect(error).toMatchObject({ status, code, message, data: undefined })
-    expect(create('Custom', { field: 'x' })).toMatchObject({
+    expect(create('Custom', { data: { field: 'x' } })).toMatchObject({
       message: 'Custom',
       data: { field: 'x' },
     })
+  })
+
+  it('takes the data and the cause in an options object', () => {
+    const cause = new Error('Connection refused')
+    const error = new HttpError(503, 'UNAVAILABLE', 'Try again later', {
+      data: { retryAfter: 30 },
+      cause,
+    })
+
+    expect(error).toMatchObject({
+      status: 503,
+      code: 'UNAVAILABLE',
+      message: 'Try again later',
+      data: { retryAfter: 30 },
+      cause,
+    })
+    expect(forbiddenError('No', { cause }).cause).toBe(cause)
+    // Without a cause, no `cause` property, like `new Error()`.
+    expect(Object.hasOwn(notFoundError(), 'cause')).toBe(false)
+    // The cause is never sent.
+    expect(JSON.parse(JSON.stringify(error))).toEqual({
+      status: 503,
+      error: 'UNAVAILABLE',
+      message: 'Try again later',
+      data: { retryAfter: 30 },
+    })
+  })
+
+  it('rejects unknown options, such as data passed directly', () => {
+    expect(() =>
+      notFoundError('Member not found', { id: '1' } as never)
+    ).toThrow(new TypeError('HttpError: unknown option "id".'))
+    expect(() => new HttpError(400, 'X', 'x', 'data' as never)).toThrow(
+      new TypeError('HttpError options must be an object.')
+    )
   })
 
   it('rejects statuses that are not errors', () => {
@@ -42,7 +77,7 @@ describe('errors', () => {
 
   it('serializes to the standard error body', () => {
     expect(
-      JSON.parse(JSON.stringify(conflictError('Taken', { id: 1 })))
+      JSON.parse(JSON.stringify(conflictError('Taken', { data: { id: 1 } })))
     ).toEqual({
       status: 409,
       error: 'CONFLICT',
@@ -66,12 +101,13 @@ describe('errors', () => {
       const { inject } = await createTestApp((router) => {
         router.defineRoute({
           path: '/returned',
-          handler: () => notFoundError('Member not found', { id: '1' }),
+          handler: () =>
+            notFoundError('Member not found', { data: { id: '1' } }),
         })
         router.defineRoute({
           path: '/thrown',
           handler: () => {
-            throw notFoundError('Member not found', { id: '1' })
+            throw notFoundError('Member not found', { data: { id: '1' } })
           },
         })
       })

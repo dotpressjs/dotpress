@@ -101,7 +101,7 @@ describe('cors option', () => {
       )
 
       expect(res.status).toBe(204)
-      expect(res.kind).toBe('empty')
+      expect(res.response.body).toBeNull()
       expect(res.text).toBeUndefined()
       expect(res.headers).toMatchObject({
         'access-control-allow-origin': APP,
@@ -285,7 +285,7 @@ describe('cors option', () => {
       const { dispatch } = await createCorsApp({ origin: APP })
 
       const res = await dispatch({ url: '/events', headers: { origin: APP } })
-      expect(res.kind).toBe('stream')
+      expect(res.body).toBeInstanceOf(ReadableStream)
       expect(res.headers['access-control-allow-origin']).toBe(APP)
       await (res.body as ReadableStream).cancel()
     })

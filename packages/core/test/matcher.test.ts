@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  createRouteMatcher,
-  type CompiledRoute,
-  type HttpMethod,
-} from '../src/index.js'
+import { type HttpMethod } from '../src/index.js'
+import { createRouteMatcher, type CompiledRoute } from '../src/adapter-api.js'
 
 const route = (method: HttpMethod, path: string) =>
   ({ method, path }) as unknown as CompiledRoute

@@ -51,6 +51,8 @@ Declares a route on the global router. `router.defineRoute()` and `group.defineR
 | `bodyLimit` | `number` | the adapter limit | Maximum body size, in bytes. |
 | `rawBody` | `boolean` | `false` | Keeps the raw bytes of the body in `req.rawBody`, typed `Uint8Array`. |
 
+Unknown options are rejected, in `schema` and `meta` too: `middleware` instead of `middlewares` throws a `TypeError`. See [Options and durations](/concepts/options).
+
 ### Paths
 
 | Path | `req.params` |
@@ -124,8 +126,6 @@ An isolated registry of routes, mounted with `createApp({ routers })`.
 | `defineRoute(config)` | Declares a route. |
 | `createGroup(prefix, middlewares?)` | Creates a group. |
 | `addResponseFilter(filter)` | A filter applied to the JSON results of the routes of this router. |
-| `getRoutes()` | The declared routes. |
-| `getResponseFilters()` | The registered filters. |
 | `clear()` | Removes every route and filter. |
 
 `globalRouter` is the router of `defineRoute()`, `createRouteGroup()` and `registerResponseFilter()`, mounted when `createApp()` has no `routers`.

@@ -1,5 +1,4 @@
 import {
-  DEFAULT_BODY_LIMIT,
   createRouter,
   file,
   json,
@@ -13,6 +12,7 @@ import {
   type Middleware,
   type Router,
 } from '@dotpress/core'
+import { DEFAULT_BODY_LIMIT } from '@dotpress/core/adapter'
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryLogger } from './logger.js'
 import { toRequest } from './request.js'
@@ -895,7 +895,8 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
           (router) => {
             router.defineRoute({
               path: '/returned',
-              handler: () => notFoundError('User not found', { id: '1' }),
+              handler: () =>
+                notFoundError('User not found', { data: { id: '1' } }),
             })
             router.defineRoute({
               path: '/thrown',

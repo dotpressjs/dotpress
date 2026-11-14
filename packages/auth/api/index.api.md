@@ -12,6 +12,7 @@ import type {
   Middleware,
   PluginAPI,
   PluginCors,
+  RateLimitStore,
 } from '@dotpress/core'
 import type { JWK } from 'jose'
 
@@ -227,23 +228,9 @@ export type LogoutScope = 'current' | 'all'
 
 export declare const MAX_PASSWORD_BYTES = 72
 
-export interface MemoryRateLimitStoreOptions {
-  maxKeys?: number
-}
-
 export interface RateLimit {
   max: number
   window: number
-}
-
-export interface RateLimitState {
-  count: number
-  resetAt: Date
-}
-
-export interface RateLimitStore {
-  increment(key: string, windowSeconds: number): Promise<RateLimitState>
-  reset(key: string): Promise<void>
 }
 
 export interface RefreshTokenData {
@@ -370,10 +357,6 @@ export declare const generatePasswordHash: (
 ) => Promise<string>
 
 export declare const isPasswordTooLong: (password: string) => boolean
-
-export declare const memoryRateLimitStore: (
-  options?: MemoryRateLimitStoreOptions
-) => RateLimitStore
 
 export declare const requireAuth: _dotpress_core.Middleware<AuthenticatedContext>
 

@@ -5,6 +5,8 @@
 ## Exports
 
 ```ts
+import type { Duration } from '@dotpress/core'
+
 export interface BatchMemoOptions<K, R> extends BaseMemoOptions {
   batch: (keys: readonly K[]) => R | Promise<R>
   key?: ((key: K) => unknown) | undefined
@@ -158,8 +160,6 @@ export declare class CacheTimeoutError extends CacheError {
 
 export type CacheValue<T> = T extends Untyped ? unknown : T
 
-export type Duration = number | `${number}${DurationUnit}`
-
 export interface LoadMemoOptions<
   A extends readonly unknown[],
   T,
@@ -256,8 +256,6 @@ Declarations that the exports refer to, without exporting them.
 interface BaseMemoOptions {
   name: string
 }
-
-type DurationUnit = 'ms' | 's' | 'm' | 'h' | 'd'
 
 declare const entryTypes: unique symbol
 

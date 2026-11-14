@@ -157,7 +157,7 @@ defineRoute({
 
 - **`getOrSet`** returns the cached value, or calls the loader and caches its result. Concurrent requests for a missing value share one load. A failed load, or a load returning `undefined` (not found), is not cached.
 - **`get`**, **`set`** and **`delete`** are the usual operations.
-- **Durations** are seconds, or strings: `'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'`. The `ttl` of an entry overrides the `ttl` of the cache, 1 hour by default.
+- **Durations** are seconds, or strings: `'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'` (see [Durations](/concepts/options#durations)). The `ttl` of an entry overrides the `ttl` of the cache, 1 hour by default.
 - **The `schema`** types the value, and checks it when read: a value written by an older version of the app that no longer matches is a miss, not a crash. Values are stored as JSON: use `z.coerce.date()` for dates.
 - **Keys** are `prefix:name:v1:key`; longer keys than the store accepts are hashed. Increase the `version` of an entry when the shape of its values changes: the old values are ignored.
 - **Values** are serialized as JSON (or with a `serializer`, such as superjson). `null` is cached; `undefined` is not.

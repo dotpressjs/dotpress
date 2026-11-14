@@ -58,11 +58,11 @@ Clients handle every error of the API with one piece of code.
 | `tooManyRequestsError()` | 429 | `TOO_MANY_REQUESTS` |
 | `internalError()` | 500 | `INTERNAL_ERROR` |
 
-Each takes an optional message and optional data. For any other case, `errorResponse()` takes a status, a code, a message and data:
+Each takes an optional message, and options: `data`, details added to the body, and `cause`, the original error. For any other case, `errorResponse()` takes a status, a code, a message and the same options:
 
 ```ts
 return errorResponse(422, 'INVALID_TRANSITION', 'A paid invoice cannot be cancelled', {
-  status: 'paid',
+  data: { status: 'paid' },
 })
 ```
 

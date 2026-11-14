@@ -4,15 +4,16 @@
 import { readFile } from 'node:fs/promises'
 
 const PACKAGES = {
-  core: { imports: new Set(['zod']) },
+  // Both entries: the adapter one is used by every adapter.
+  core: { imports: new Set(['zod']), entries: ['index', 'adapter'] },
   openapi: { imports: new Set(['zod', '@dotpress/core']) },
   // Main entry only: the `node` entry is the Node.js server.
   'adapter-hono': {
-    imports: new Set(['hono', '@dotpress/core']),
+    imports: new Set(['hono', '@dotpress/core', '@dotpress/core/adapter']),
     entryOnly: true,
   },
   // Main entry only: the stores of Node.js clients have their own entries.
-  cache: { imports: new Set(), entryOnly: true },
+  cache: { imports: new Set(['@dotpress/core']), entryOnly: true },
 }
 const FORBIDDEN_DEPENDENCIES =
   /^(express|hono|fastify|@hono\/|@fastify\/|@types\/(express|node)$)/
@@ -45,9 +46,10 @@ const importsOf = async (root, file, seen = new Set()) => {
   return imports
 }
 
-for (const [name, { imports: allowedImports, entryOnly }] of Object.entries(
-  PACKAGES
-)) {
+for (const [
+  name,
+  { imports: allowedImports, entryOnly, entries = ['index'] },
+] of Object.entries(PACKAGES)) {
   const root = new URL(`../packages/${name}/`, import.meta.url)
   const errors = []
 
@@ -81,7 +83,10 @@ for (const [name, { imports: allowedImports, entryOnly }] of Object.entries(
     }
   }
 
-  for (const entry of ['dist/index.js', 'dist/index.d.ts']) {
+  for (const entry of entries.flatMap((entry) => [
+    `dist/${entry}.js`,
+    `dist/${entry}.d.ts`,
+  ])) {
     const found = new Set()
     for (const { file, specifier } of await importsOf(root, entry)) {
       const key = `${file} imports "${specifier}"`

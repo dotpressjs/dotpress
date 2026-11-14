@@ -1,5 +1,5 @@
 import type { DotpressRequest, HttpError, PluginCors } from '@dotpress/core'
-import type { RateLimitStore } from './rate-limit.js'
+import type { RateLimitStore } from '@dotpress/core'
 
 /**
  * Authenticated user, as returned by `DataProvider.findUserById()`.

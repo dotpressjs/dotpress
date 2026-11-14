@@ -56,7 +56,7 @@ defineCacheEntry({
 | `ttl` | the `ttl` of the cache | How long a value is fresh. |
 | `grace`, `graceBackoff`, `staleWhileRevalidate`, `timeout`, `hardTimeout`, `lock` | the policy of the cache | See [Resilience](#resilience). |
 
-Keys are `prefix:name:vVersion:key`, like `app:user:v1:42`. Keys longer than the store accepts are hashed (SHA-256). Durations are a number of seconds, or a string: `'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'`.
+Keys are `prefix:name:vVersion:key`, like `app:user:v1:42`. Keys longer than the store accepts are hashed (SHA-256). Durations are a number of seconds, or a string: `'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'` (the `Duration` type of `@dotpress/core`, see [Options and durations](/concepts/options#durations)).
 
 Without a `schema`, `getOrSet` returns the type of the loader, and `get` returns `unknown`: `defineCacheEntry<[id: string], User>({ … })` declares the type.
 

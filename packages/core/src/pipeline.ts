@@ -32,6 +32,7 @@ import {
   type ResponseEvent,
   type ResponseHook,
 } from './plugins.js'
+import { assertKnownOptions } from './options.js'
 import { getPathParamNames } from './path.js'
 import { createRequest, type MutableRequest } from './request.js'
 import {
@@ -195,6 +196,14 @@ const isNeverSchema = (schema: Schema | undefined) =>
 const toPath = (path: readonly PropertyKey[]): (string | number)[] =>
   path.map((key) => (typeof key === 'symbol' ? key.toString() : key))
 
+const SCHEMA_KEYS = new Set([
+  'params',
+  'query',
+  'body',
+  'files',
+  'response',
+] as const satisfies (keyof RouteSchema)[])
+
 export const resolveSchema = (route: RouteRecord): RouteSchema => {
   const resolved =
     typeof route.schema === 'function' ? route.schema(z) : route.schema
@@ -207,7 +216,8 @@ export const resolveSchema = (route: RouteRecord): RouteSchema => {
     throw new TypeError(`Invalid schema for route "${route.path}".`)
   }
 
-  for (const key of ['params', 'query', 'body', 'files', 'response'] as const) {
+  assertKnownOptions(`Route "${route.path}"`, resolved, SCHEMA_KEYS, 'schema.')
+  for (const key of SCHEMA_KEYS) {
     const schema = resolved[key]
     if (schema !== undefined && !(schema instanceof z.core.$ZodType)) {
       throw new TypeError(
@@ -232,7 +242,6 @@ const jsonResponse = (
       status: 204,
       headers: mergeHeaders(headers),
       body: null,
-      kind: 'empty',
     }
   }
 
@@ -240,7 +249,6 @@ const jsonResponse = (
     status,
     headers: mergeHeaders(headers, { 'content-type': JSON_CONTENT_TYPE }),
     body,
-    kind: 'json',
   }
 }
 
@@ -276,7 +284,7 @@ export const createErrorHandler = (config: PipelineConfig) => {
     }
 
     return errorToResponse(
-      new HttpError(500, 'INTERNAL_ERROR', 'Internal Server Error', data)
+      new HttpError(500, 'INTERNAL_ERROR', 'Internal Server Error', { data })
     )
   }
 
@@ -503,7 +511,6 @@ export const compileRoute = (
           status: status ?? route.status ?? 200,
           headers: mergeHeaders({ 'content-type': TEXT_CONTENT_TYPE }, headers),
           body: result.body,
-          kind: 'text',
         }
       case 'stream':
       case 'sse':
@@ -511,28 +518,24 @@ export const compileRoute = (
           status: status ?? route.status ?? 200,
           headers,
           body: toStreamBody(ctx, result),
-          kind: 'stream',
         }
       case 'file':
         return {
           status: status ?? route.status ?? 200,
           headers,
           body: result.body,
-          kind: result.kind,
         }
       case 'redirect':
         return {
           status: result.init.status ?? 302,
           headers: mergeHeaders(headers, { location: result.location }),
           body: null,
-          kind: 'redirect',
         }
       case 'empty':
         return {
           status: status ?? 204,
           headers,
           body: null,
-          kind: 'empty',
         }
     }
   }
@@ -557,7 +560,6 @@ export const compileRoute = (
         status: state.statusCode ?? route.status ?? 204,
         headers: state.toHeaders(),
         body: null,
-        kind: 'empty',
       }
     }
 

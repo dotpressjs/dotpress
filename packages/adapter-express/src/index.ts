@@ -7,10 +7,16 @@ import {
 } from 'node:http'
 import type { Socket } from 'node:net'
 import {
-  DEFAULT_BODY_LIMIT,
   HttpError,
-  createRouteMatcher,
   isHttpError,
+  type HttpAdapter,
+  type NormalizedRequest,
+  type NormalizedResponse,
+  type UploadedFiles,
+} from '@dotpress/core'
+import {
+  DEFAULT_BODY_LIMIT,
+  createRouteMatcher,
   malformedBodyError,
   parseQueryString,
   parseRequestBody,
@@ -18,12 +24,8 @@ import {
   unsupportedMediaTypeError,
   type CompiledRoute,
   type DotpressRuntime,
-  type HttpAdapter,
-  type NormalizedRequest,
-  type NormalizedResponse,
   type RouteMatch,
-  type UploadedFiles,
-} from '@dotpress/core'
+} from '@dotpress/core/adapter'
 import express, { type Express } from 'express'
 
 /**
@@ -285,7 +287,6 @@ const fromNativeError = (error: unknown): unknown => {
     expose === true && typeof message === 'string' && message
       ? message
       : 'Bad Request',
-    undefined,
     { cause: error }
   )
 }

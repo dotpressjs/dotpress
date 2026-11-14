@@ -122,7 +122,7 @@ See [Paths](/routing/routes#paths).
 | --- | --- |
 | `$clearRoutes()`, `$clearResponseFilters()` | `globalRouter.clear()`, or better, an explicit router per test |
 | `getAllRoutes()` | `app.routes` |
-| `getResponseFilters()` | `router.getResponseFilters()` |
+| `getResponseFilters()` | — (the filters are passed to `createApp()`, a router or a plugin) |
 | Response filters, global | `createApp({ responseFilters })`, `router.addResponseFilter()`, or `registerResponseFilter()` |
 
 `defineRoute()` and `createRouteGroup()` still register on a global router, mounted when `createApp()` has no `routers`. `createRouter()` creates explicit routers: see [Routers](/routing/routes#routers).
@@ -207,7 +207,7 @@ Every error, `404` and `500` included, has the same body. Clients that read the 
 | Body too large | beyond 100 KB | `413 PAYLOAD_TOO_LARGE`, beyond 1 MiB |
 | Compressed body | — | `415 UNSUPPORTED_MEDIA_TYPE` |
 
-See [Responses and errors](./responses#errors-produced-by-dotpress).
+The error helpers and `new HttpError()` take the details of the body in an options object, with the original error: `notFoundError('Task not found', { data: { id }, cause })`. See [Responses and errors](./responses#errors-produced-by-dotpress).
 
 ### Validation errors
 

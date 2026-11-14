@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { type NormalizedResponse } from '../src/index.js'
 import {
-  fromWebHeaders,
   fromWebRequest,
   readRequestBody,
   toWebResponse,
-  type NormalizedResponse,
-} from '../src/index.js'
+} from '../src/adapter-api.js'
+import { fromWebHeaders } from '../src/web.js'
 
 const encoder = new TextEncoder()
 
@@ -180,7 +180,6 @@ describe('toWebResponse()', () => {
     status: 200,
     headers: {},
     body: null,
-    kind: 'empty',
     ...init,
   })
 
@@ -193,7 +192,6 @@ describe('toWebResponse()', () => {
           'set-cookie': ['a=1', 'b=2'],
         },
         body: 'created',
-        kind: 'text',
       }),
       'POST'
     )
@@ -206,7 +204,7 @@ describe('toWebResponse()', () => {
 
   it('sends binary and streamed bodies', async () => {
     const binary = await toWebResponse(
-      response({ body: new Uint8Array([1, 2, 3]), kind: 'file' }),
+      response({ body: new Uint8Array([1, 2, 3]) }),
       'GET'
     )
     expect(new Uint8Array(await binary.arrayBuffer())).toEqual(
@@ -214,10 +212,7 @@ describe('toWebResponse()', () => {
     )
 
     const { body } = chunked(['a', 'b'])
-    const streamed = await toWebResponse(
-      response({ body, kind: 'stream' }),
-      'GET'
-    )
+    const streamed = await toWebResponse(response({ body }), 'GET')
     expect(await streamed.text()).toBe('ab')
   })
 
@@ -230,10 +225,7 @@ describe('toWebResponse()', () => {
       [304, 'GET'],
     ] as const) {
       const { body, state } = chunked(['data'])
-      const res = await toWebResponse(
-        response({ status, body, kind: 'stream' }),
-        method
-      )
+      const res = await toWebResponse(response({ status, body }), method)
 
       expect(res.body).toBeNull()
       expect(state.cancelled).toBe(true)

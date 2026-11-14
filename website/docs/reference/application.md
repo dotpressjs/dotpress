@@ -14,6 +14,8 @@ function createApp(options: AppOptions): Promise<App>
 
 ### Options
 
+Unknown options are rejected, like those of every Dotpress function: see [Options and durations](/concepts/options).
+
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `adapter` | `HttpAdapter` | required | The HTTP adapter: [Express, Fastify, Hono, AWS Lambda](/adapters/). |
@@ -123,4 +125,24 @@ See [Logging](/routing/logging).
 
 ## For adapter authors
 
-`@dotpress/core` also exports what an adapter needs: the `HttpAdapter` contract, `CompiledRoute` and `DotpressRuntime`, `createRouteMatcher()`, `parseQueryString()`, `parseRequestBody()`, `DEFAULT_BODY_LIMIT`, and for adapters built on the Web `Request` and `Response`, `fromWebRequest()`, `readRequestBody()` and `toWebResponse()`. The rules every adapter follows are documented on the `HttpAdapter` interface, and checked by the [conformance suite](/services/testing#writing-an-adapter).
+An adapter implements the `HttpAdapter` contract of `@dotpress/core`, with the `NormalizedRequest` and `NormalizedResponse` types. The rest of what it needs comes from `@dotpress/core/adapter`, which applications do not need:
+
+```ts
+import {
+  createRouteMatcher,
+  parseQueryString,
+  parseRequestBody,
+  type CompiledRoute,
+  type DotpressRuntime,
+} from '@dotpress/core/adapter'
+```
+
+| Export | Description |
+| --- | --- |
+| `CompiledRoute`, `DotpressRuntime` | The routes to mount, and the responses for requests that match none. |
+| `createRouteMatcher()` | Matches a request to a route, with the rules of every adapter. |
+| `parseQueryString()`, `parseRequestBody()`, `DEFAULT_BODY_LIMIT` | The query and the body, limited to 1 MiB by default. |
+| `malformedBodyError()`, `payloadTooLargeError()`, `unsupportedMediaTypeError()` | The errors of an unreadable body. |
+| `fromWebRequest()`, `readRequestBody()`, `toWebResponse()` | For adapters built on the Web `Request` and `Response`. |
+
+The rules every adapter follows are documented on the `HttpAdapter` interface, and checked by the [conformance suite](/services/testing#writing-an-adapter).

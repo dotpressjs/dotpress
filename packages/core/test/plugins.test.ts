@@ -795,7 +795,6 @@ describe('plugins', () => {
                         'access-control-allow-origin': '*',
                       },
                       body: null,
-                      kind: 'empty',
                     }
                   }
                   return {

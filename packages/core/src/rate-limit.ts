@@ -1,3 +1,5 @@
+import { assertKnownOptions } from './options.js'
+
 /** State of a rate limit counter. */
 export interface RateLimitState {
   /** Number of hits in the current window, including the last one. */
@@ -7,8 +9,9 @@ export interface RateLimitState {
 }
 
 /**
- * Storage of rate limit counters (fixed windows). Use a shared store
- * (Redis, database) when the app runs on several instances.
+ * Storage of rate limit counters (fixed windows), shared by the packages
+ * that limit requests, like the login throttling of `@dotpress/auth`. Use a
+ * shared store (Redis, database) when the app runs on several instances.
  */
 export interface RateLimitStore {
   /**
@@ -28,16 +31,23 @@ export interface MemoryRateLimitStoreOptions {
   maxKeys?: number
 }
 
+const OPTIONS: ReadonlySet<string> = new Set([
+  'maxKeys',
+] satisfies (keyof MemoryRateLimitStoreOptions)[])
+
 /**
  * In-memory rate limit store, for a single instance. With several
  * instances, each one counts on its own: use a shared store.
  */
-export const memoryRateLimitStore = (
+export const createMemoryRateLimitStore = (
   options: MemoryRateLimitStoreOptions = {}
 ): RateLimitStore => {
+  assertKnownOptions('createMemoryRateLimitStore()', options, OPTIONS)
   const maxKeys = options.maxKeys ?? 10_000
   if (!Number.isInteger(maxKeys) || maxKeys < 1) {
-    throw new RangeError('Invalid maxKeys: expected a positive integer.')
+    throw new RangeError(
+      'createMemoryRateLimitStore(): maxKeys must be a positive integer.'
+    )
   }
   const counters = new Map<string, RateLimitState>()
 

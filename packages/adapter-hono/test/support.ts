@@ -1,12 +1,14 @@
 import type { AddressInfo } from 'node:net'
 import { createApp, type AppOptions } from '@dotpress/core'
 import {
+  createLambdaTarget,
+  type LambdaEventFormat,
+  type TestTarget,
+} from '@dotpress/testing'
+import {
   createFetchTarget,
   createHttpTarget,
-  createLambdaTarget,
-  type ConformanceTarget,
-  type LambdaEventFormat,
-} from '@dotpress/testing'
+} from '@dotpress/testing/conformance'
 import { honoAdapter, type HonoAdapter } from '../src/index.js'
 import type { HonoApplication } from '../src/index.js'
 import { createLambdaHandler } from '../src/lambda.js'
@@ -20,24 +22,25 @@ type AppSetup = Omit<AppOptions, 'adapter'>
 export const startNode = async <TApp extends HonoApplication>(
   adapter: NodeHonoAdapter<TApp>,
   options: AppSetup
-): Promise<ConformanceTarget> => {
+): Promise<TestTarget> => {
   const app = await createApp({ ...options, adapter })
   await app.listen(0, '127.0.0.1')
 
   const { port } = adapter.server()!.address() as AddressInfo
-  return createHttpTarget(`http://127.0.0.1:${port}`, () => app.close())
+  return createHttpTarget(`http://127.0.0.1:${port}`, {
+    close: () => app.close(),
+  })
 }
 
 /** Creates an app and returns a target calling `adapter.fetch()`. */
 export const startFetch = async <TApp extends HonoApplication>(
   adapter: HonoAdapter<TApp>,
   options: AppSetup
-): Promise<ConformanceTarget> => {
+): Promise<TestTarget> => {
   const app = await createApp({ ...options, adapter })
-  return createFetchTarget(
-    (request) => adapter.fetch(request),
-    () => app.close()
-  )
+  return createFetchTarget((request) => adapter.fetch(request), {
+    close: () => app.close(),
+  })
 }
 
 /** In-memory adapter, with the loopback address of the conformance suite. */
@@ -54,7 +57,7 @@ export const memoryHono = <TApp extends HonoApplication>(app?: TApp) =>
 export const startLambda = (
   format: LambdaEventFormat,
   options: AppSetup
-): ConformanceTarget => {
+): TestTarget => {
   let app: { close(): Promise<void> } | undefined
   const handler = createLambdaHandler(async () => {
     const created = await createApp({ ...options, adapter: honoAdapter() })

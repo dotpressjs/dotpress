@@ -134,6 +134,15 @@ The module exports the app, or a function creating it; `--export` chooses the ex
 - Without `--out`, the document is printed on the standard output. Warnings and errors go to the standard error, with a non-zero exit code on failure.
 - TypeScript modules are loaded with the type stripping of Node.js 22.18 or later. Otherwise, point to the compiled module, or run the command with `NODE_OPTIONS="--import tsx"`.
 
+In code, the plugin returns the document with `getDocument()`, once the app is created:
+
+```ts
+const docs = openapiPlugin({ info: { title: 'Tasks API', version: '1.0.0' } })
+const app = await createApp({ adapter: honoAdapter(), plugins: [docs] })
+
+const document = docs.getDocument()
+```
+
 `generateOpenApi(app, options)` returns the document in code, with the options of the plugin except `path`, `ui` and `middlewares`, plus `onWarning` (`console.warn` by default):
 
 ```ts

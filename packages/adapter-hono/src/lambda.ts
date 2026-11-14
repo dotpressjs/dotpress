@@ -5,23 +5,42 @@ import {
   type App,
   type Logger,
 } from '@dotpress/core'
-import {
-  handle,
-  type APIGatewayProxyResult,
-  type LambdaContext,
-  type LambdaEvent,
-} from '@hono/aws-lambda'
+import { handle } from '@hono/aws-lambda'
 import { Hono } from 'hono'
 import type { HonoApplication } from './index.js'
+import { assertKnownOptions } from './options.js'
 
-export type { APIGatewayProxyResult, LambdaContext, LambdaEvent }
+// The Lambda types are the same in @dotpress/adapter-hono/lambda and
+// @dotpress/adapter-fastify/lambda: keep them in sync.
+/**
+ * Event of API Gateway REST APIs (payload v1), HTTP APIs and Function URLs
+ * (payload v2), or Application Load Balancers. Read by the handler only:
+ * the types of `@types/aws-lambda` fit.
+ */
+export type LambdaEvent = object
+
+/** Context of the invocation, given by the Lambda runtime. */
+export type LambdaContext = object
+
+/** Result of the handler, in the format of the event. */
+export interface LambdaResult {
+  statusCode: number
+  /** Application Load Balancers only. */
+  statusDescription?: string
+  headers?: Record<string, string>
+  multiValueHeaders?: Record<string, string[]>
+  /** Payload v2 only. */
+  cookies?: string[]
+  body: string
+  isBase64Encoded?: boolean
+}
 
 export interface LambdaHandlerOptions {
   /** Logs the failures to create the app. Defaults to a console logger. */
   logger?: Logger
   /**
    * Whether a response content type is binary (sent in base64). Defaults to
-   * the rule of `@hono/aws-lambda`: everything except text, JSON and XML.
+   * everything except text, JSON and XML.
    */
   isContentTypeBinary?: (contentType: string) => boolean
 }
@@ -33,7 +52,7 @@ export interface LambdaHandlerOptions {
 export type LambdaHandler = (
   event: LambdaEvent,
   context?: LambdaContext
-) => Promise<APIGatewayProxyResult>
+) => Promise<LambdaResult>
 
 /** App of the factory, created with `honoAdapter()`. */
 export type LambdaApp = Pick<App<HonoApplication>, 'native'>
@@ -70,11 +89,15 @@ export const createLambdaHandler = (
   factory: () => LambdaApp | Promise<LambdaApp>,
   options: LambdaHandlerOptions = {}
 ): LambdaHandler => {
+  assertKnownOptions('createLambdaHandler()', options, [
+    'logger',
+    'isContentTypeBinary',
+  ] satisfies (keyof LambdaHandlerOptions)[])
   const logger = options.logger ?? createConsoleLogger()
   const toHandler = (app: HonoApplication) =>
     handle(app as unknown as Hono, {
       isContentTypeBinary: options.isContentTypeBinary,
-    }) as LambdaHandler
+    }) as unknown as LambdaHandler
 
   let ready: Promise<LambdaHandler> | undefined
   let failure: LambdaHandler | undefined

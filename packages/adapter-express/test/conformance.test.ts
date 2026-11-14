@@ -1,4 +1,4 @@
-import { runConformanceSuite } from '@dotpress/testing'
+import { runConformanceSuite } from '@dotpress/testing/conformance'
 import express4 from 'express-4'
 import { expressAdapter, startApp } from './support.js'
 

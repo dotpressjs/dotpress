@@ -1,4 +1,4 @@
-import { runConformanceSuite } from '@dotpress/testing'
+import { runConformanceSuite } from '@dotpress/testing/conformance'
 import { Hono as Hono5 } from 'hono-5'
 import { honoAdapter } from '../src/node.js'
 import { memoryHono, startFetch, startLambda, startNode } from './support.js'

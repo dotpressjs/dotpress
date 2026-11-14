@@ -2,6 +2,7 @@ import { definePlugin, text, type Middleware } from '@dotpress/core'
 import { generateOpenApi, type OpenApiOptions } from './generate.js'
 import type { OpenApiDocument } from './types.js'
 import { renderScalarPage, type ScalarOptions } from './ui.js'
+import { assertKnownOptions } from './options.js'
 
 export interface OpenApiPluginOptions extends Omit<
   OpenApiOptions,
@@ -37,6 +38,30 @@ const JSON_TYPE = { 'content-type': 'application/json; charset=utf-8' }
  * // GET /openapi.json, GET /docs
  */
 export const openapiPlugin = (options: OpenApiPluginOptions) => {
+  assertKnownOptions('openapiPlugin()', options, [
+    'info',
+    'servers',
+    'tags',
+    'externalDocs',
+    'securitySchemes',
+    'path',
+    'ui',
+    'middlewares',
+  ] satisfies (keyof OpenApiPluginOptions)[])
+  if (options.ui !== undefined && options.ui !== false) {
+    assertKnownOptions(
+      'openapiPlugin()',
+      options.ui,
+      [
+        'path',
+        'title',
+        'cdnUrl',
+        'integrity',
+        'configuration',
+      ] satisfies (keyof ScalarOptions)[],
+      'ui.'
+    )
+  }
   if (!options?.info?.title || !options.info.version) {
     throw new TypeError('openapiPlugin() requires info.title and info.version.')
   }

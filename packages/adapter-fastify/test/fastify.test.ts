@@ -442,6 +442,12 @@ describe('fastifyAdapter()', () => {
         'Invalid bodyLimit'
       )
     })
+
+    it('rejects unknown options', () => {
+      expect(() => fastifyAdapter({ beforeRoute: () => {} } as never)).toThrow(
+        new TypeError('fastifyAdapter(): unknown option "beforeRoute".')
+      )
+    })
   })
 
   describe('lifecycle', () => {

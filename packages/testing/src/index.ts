@@ -1,13 +1,6 @@
 export { ExpectationError } from './assertions.js'
 
-export {
-  createFetchTarget,
-  createHttpTarget,
-  runConformanceSuite,
-  type ConformanceAppOptions,
-  type ConformanceSuiteOptions,
-  type ConformanceTarget,
-} from './conformance.js'
+export type { TestTarget } from './target.js'
 
 export {
   createLambdaTarget,

@@ -7,18 +7,28 @@ import {
 } from '@dotpress/core'
 import awsLambdaFastify from '@fastify/aws-lambda'
 import Fastify, { type FastifyInstance } from 'fastify'
+import { assertKnownOptions } from './options.js'
 
+// The Lambda types are the same in @dotpress/adapter-hono/lambda and
+// @dotpress/adapter-fastify/lambda: keep them in sync.
 /**
  * Event of API Gateway REST APIs (payload v1), HTTP APIs and Function URLs
- * (payload v2), or Application Load Balancers.
+ * (payload v2), or Application Load Balancers. Read by the handler only:
+ * the types of `@types/aws-lambda` fit.
  */
 export type LambdaEvent = object
+
+/** Context of the invocation, given by the Lambda runtime. */
+export type LambdaContext = object
 
 /** Result of the handler, in the format of the event. */
 export interface LambdaResult {
   statusCode: number
+  /** Application Load Balancers only. */
+  statusDescription?: string
   headers?: Record<string, string>
   multiValueHeaders?: Record<string, string[]>
+  /** Payload v2 only. */
   cookies?: string[]
   body: string
   isBase64Encoded?: boolean
@@ -34,10 +44,13 @@ export interface LambdaHandlerOptions {
   isContentTypeBinary?: (contentType: string) => boolean
 }
 
-/** AWS Lambda handler. */
+/**
+ * AWS Lambda handler: API Gateway REST (payload v1) and HTTP APIs (payload
+ * v2), Function URLs, Application Load Balancer.
+ */
 export type LambdaHandler = (
   event: LambdaEvent,
-  context?: object
+  context?: LambdaContext
 ) => Promise<LambdaResult>
 
 /** App of the factory, created with `fastifyAdapter()`. */
@@ -146,6 +159,10 @@ export const createLambdaHandler = (
   factory: () => LambdaApp | Promise<LambdaApp>,
   options: LambdaHandlerOptions = {}
 ): LambdaHandler => {
+  assertKnownOptions('createLambdaHandler()', options, [
+    'logger',
+    'isContentTypeBinary',
+  ] satisfies (keyof LambdaHandlerOptions)[])
   const logger = options.logger ?? createConsoleLogger()
   const isBinary = options.isContentTypeBinary ?? ((type) => !isTextType(type))
 

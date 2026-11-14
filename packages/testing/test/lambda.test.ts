@@ -180,6 +180,17 @@ describe('fromLambdaResult()', () => {
 })
 
 describe('createLambdaTarget()', () => {
+  it('rejects unknown options, and closes nothing by default', async () => {
+    const handler = vi.fn().mockResolvedValue({ statusCode: 204, body: '' })
+    expect(() =>
+      createLambdaTarget(handler, { format: 'v2', sourceIP: '1' } as never)
+    ).toThrow(new TypeError('createLambdaTarget(): unknown option "sourceIP".'))
+
+    const target = createLambdaTarget(handler, { format: 'v2' })
+    expect((await target.fetch('/')).status).toBe(204)
+    await expect(target.close()).resolves.toBeUndefined()
+  })
+
   it('sends events to the handler, and answers 502 when it fails', async () => {
     const handler = vi
       .fn()

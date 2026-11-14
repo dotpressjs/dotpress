@@ -6,11 +6,7 @@ export {
 
 export { openapiPlugin, type OpenApiPluginOptions } from './plugin.js'
 
-export {
-  SCALAR_CDN_URL,
-  SCALAR_NEUTRAL_CONFIGURATION,
-  type ScalarOptions,
-} from './ui.js'
+export { SCALAR_NEUTRAL_CONFIGURATION, type ScalarOptions } from './ui.js'
 
 export type {
   ComponentsObject,

@@ -6,6 +6,7 @@
 
 ```sh
 npm install @dotpress/core @dotpress/adapter-express express zod
+npm install --save-dev @types/express
 ```
 
 ```ts

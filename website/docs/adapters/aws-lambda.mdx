@@ -41,7 +41,7 @@ The handler of Fastify sends the events to `inject()` of the instance, through [
 - **Query strings**, with Fastify, are read as sent when the event has them (payload v2, load balancers): plus signs and commas keep their meaning, as on the other adapters.
 - **`ctx.req.ip`** is the source IP of API Gateway, or the last `X-Forwarded-For` entry behind a load balancer (`127.0.0.1` with Fastify when the event has no address). Behind CloudFront or another proxy, read the right header with the `getIp(c)` option of `honoAdapter()`, or the `trustProxy` option of Fastify.
 - **Load balancers**: enable the multi-value headers of the target group, to receive repeated query keys and send several cookies.
-- **The Lambda event and context** are not given to the routes.
+- **The Lambda event and context**, with Hono, are in the Hono context: `ctx.raw.env.event` and `ctx.raw.env.lambdaContext`. With Fastify, they are not given to the routes.
 
 | Option of `createLambdaHandler()` | Description |
 | --- | --- |

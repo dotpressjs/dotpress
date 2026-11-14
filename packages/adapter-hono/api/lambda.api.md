@@ -7,22 +7,31 @@
 ```ts
 import type { HonoApplication } from '@dotpress/adapter-hono'
 import type { App, Logger } from '@dotpress/core'
-export {
-  APIGatewayProxyResult,
-  LambdaContext,
-  LambdaEvent,
-} from '@hono/aws-lambda'
 
 export type LambdaApp = Pick<App<HonoApplication>, 'native'>
+
+export type LambdaContext = object
+
+export type LambdaEvent = object
 
 export type LambdaHandler = (
   event: LambdaEvent,
   context?: LambdaContext
-) => Promise<APIGatewayProxyResult>
+) => Promise<LambdaResult>
 
 export interface LambdaHandlerOptions {
   logger?: Logger
   isContentTypeBinary?: (contentType: string) => boolean
+}
+
+export interface LambdaResult {
+  statusCode: number
+  statusDescription?: string
+  headers?: Record<string, string>
+  multiValueHeaders?: Record<string, string[]>
+  cookies?: string[]
+  body: string
+  isBase64Encoded?: boolean
 }
 
 export declare const createLambdaHandler: (

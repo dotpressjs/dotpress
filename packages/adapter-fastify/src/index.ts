@@ -20,6 +20,7 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from 'fastify'
+import { assertKnownOptions } from './options.js'
 
 export interface FastifyAdapterOptions<TApp extends FastifyInstance> {
   /** Fastify instance to mount the routes on. Defaults to `Fastify()`. */
@@ -239,6 +240,12 @@ export function fastifyAdapter<TApp extends FastifyInstance>(
 export function fastifyAdapter<TApp extends FastifyInstance>(
   options: FastifyAdapterOptions<TApp> = {}
 ): FastifyAdapter<TApp> {
+  assertKnownOptions('fastifyAdapter()', options, [
+    'app',
+    'beforeRoutes',
+    'afterRoutes',
+    'bodyLimit',
+  ] satisfies (keyof FastifyAdapterOptions<TApp>)[])
   const bodyLimit = options.bodyLimit ?? DEFAULT_BODY_LIMIT
 
   if (!Number.isInteger(bodyLimit) || bodyLimit < 0) {

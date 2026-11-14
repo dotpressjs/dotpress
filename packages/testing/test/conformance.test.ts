@@ -1,8 +1,5 @@
-import {
-  createTestApp,
-  runConformanceSuite,
-  type TestAppOptions,
-} from '../src/index.js'
+import { runConformanceSuite } from '../src/conformance.js'
+import { createTestApp, type TestAppOptions } from '../src/index.js'
 
 // The memory adapter is the reference adapter: it must pass the suite too.
 runConformanceSuite({

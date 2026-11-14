@@ -436,6 +436,12 @@ describe('honoAdapter()', () => {
       expect(() => honoAdapter({ bodyLimit: 1.5 })).toThrow('Invalid bodyLimit')
     })
 
+    it('rejects unknown options', () => {
+      expect(() => honoAdapter({ getIP: () => '1' } as never)).toThrow(
+        new TypeError('honoAdapter(): unknown option "getIP".')
+      )
+    })
+
     it('mounts the routes on the given application', async () => {
       const app = new Hono()
       app.get('/before', (c) => c.text('before'))

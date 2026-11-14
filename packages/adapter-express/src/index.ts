@@ -27,6 +27,7 @@ import {
   type RouteMatch,
 } from '@dotpress/core/adapter'
 import express, { type Express } from 'express'
+import { assertKnownOptions } from './options.js'
 
 /**
  * Lets `close()` complete as soon as the pending requests are served, and
@@ -93,8 +94,10 @@ export interface ExpressAdapter<
   /** Starts an HTTP server. */
   listen(port: number, host?: string): Promise<void>
   /**
-   * Stops the HTTP server: waits for pending requests, and closes the
-   * responses being streamed (their `req.signal` is aborted).
+   * Stops the HTTP server started by `listen()`: waits for pending
+   * requests. Closes the responses being streamed (their `req.signal` is
+   * aborted), also when the app serves the Express application with its own
+   * server.
    */
   close(): Promise<void>
   /** HTTP server started by `listen()`, if any. */
@@ -322,6 +325,12 @@ export function expressAdapter<TApp extends ExpressApplication>(
 export function expressAdapter<TApp extends ExpressApplication>(
   options: ExpressAdapterOptions<TApp> = {}
 ): ExpressAdapter<TApp> {
+  assertKnownOptions('expressAdapter()', options, [
+    'app',
+    'beforeRoutes',
+    'afterRoutes',
+    'bodyLimit',
+  ] satisfies (keyof ExpressAdapterOptions<TApp>)[])
   const bodyLimit = options.bodyLimit ?? DEFAULT_BODY_LIMIT
 
   if (!Number.isInteger(bodyLimit) || bodyLimit < 0) {
@@ -571,14 +580,21 @@ export function expressAdapter<TApp extends ExpressApplication>(
 
     close: async () => {
       const current = server
-      if (!current) return
       server = undefined
+      // Streams never end by themselves: abort them, also when the app
+      // serves the Express application with its own server (HTTPS…).
+      const stopStreams = () => {
+        for (const stop of activeStreams) stop()
+      }
+      if (!current) {
+        stopStreams()
+        return
+      }
 
       await new Promise<void>((resolve, reject) => {
         current.close((error) => (error ? reject(error) : resolve()))
         closeConnections()
-        // Streams never end by themselves: abort them.
-        for (const stop of activeStreams) stop()
+        stopStreams()
       })
     },
 

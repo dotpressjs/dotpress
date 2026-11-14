@@ -15,17 +15,14 @@ import {
 import { DEFAULT_BODY_LIMIT } from '@dotpress/core/adapter'
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryLogger } from './logger.js'
-import { toRequest } from './request.js'
+import type { TestTarget } from './target.js'
 
-/**
- * Running application under test.
- */
-export interface ConformanceTarget {
-  /** Sends a request to the application. `path` includes the query. */
-  fetch(path: string, init?: RequestInit): Promise<Response>
-  /** Stops the application. */
-  close(): Promise<void>
-}
+export {
+  createFetchTarget,
+  createHttpTarget,
+  type TargetOptions,
+  type TestTarget,
+} from './target.js'
 
 export type ConformanceAppOptions = Omit<AppOptions, 'adapter'>
 
@@ -36,7 +33,7 @@ export interface ConformanceSuiteOptions {
    * Creates an app with the adapter under test and the given options, and
    * starts it. Called once per test.
    */
-  setup(options: ConformanceAppOptions): Promise<ConformanceTarget>
+  setup(options: ConformanceAppOptions): Promise<TestTarget>
   /**
    * The adapter sends responses once complete (AWS Lambda without response
    * streaming). The scenarios that need incremental streaming or client
@@ -44,29 +41,6 @@ export interface ConformanceSuiteOptions {
    */
   bufferedResponses?: boolean
 }
-
-/**
- * Target for adapters listening on an HTTP port.
- */
-export const createHttpTarget = (
-  baseUrl: string,
-  close: () => Promise<void>
-): ConformanceTarget => ({
-  fetch: (path, init) => fetch(new URL(path, baseUrl), init),
-  close,
-})
-
-/**
- * Target for adapters handling Web requests in memory (`fetch()` of the
- * adapter, serverless handlers). `path` is relative to `http://localhost`.
- */
-export const createFetchTarget = (
-  handle: (request: Request) => Promise<Response>,
-  close: () => Promise<void>
-): ConformanceTarget => ({
-  fetch: async (path, init) => handle(await toRequest(path, init)),
-  close,
-})
 
 const TIMEOUT = 2000
 
@@ -120,7 +94,7 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
 
   const withApp = async (
     define: (router: Router) => void,
-    run: (target: ConformanceTarget) => Promise<void>,
+    run: (target: TestTarget) => Promise<void>,
     appOptions?: Omit<ConformanceAppOptions, 'routers'>
   ) => {
     const target = await serve(define, appOptions)

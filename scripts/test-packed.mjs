@@ -247,7 +247,6 @@ const tools = [
   `typescript@${rootPkg.devDependencies.typescript}`,
   `typescript-oldest@npm:typescript@${OLDEST_TYPESCRIPT}`,
   `@types/node@${rootPkg.devDependencies['@types/node']}`,
-  '@types/express@^5.0.0',
   'esbuild@^0.28.0',
 ]
 npmInstall([...peers(true), ...tools])

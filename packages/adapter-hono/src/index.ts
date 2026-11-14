@@ -18,6 +18,7 @@ import {
   type RouteMatch,
 } from '@dotpress/core/adapter'
 import { Hono, type Context } from 'hono'
+import { assertKnownOptions } from './options.js'
 
 /**
  * Minimal shape of a Hono application (Hono 4 or 5). The types of Hono 5
@@ -300,6 +301,13 @@ export function honoAdapter<TApp extends HonoApplication>(
 export function honoAdapter<TApp extends HonoApplication>(
   options: HonoAdapterOptions<TApp> = {}
 ): HonoAdapter<TApp> {
+  assertKnownOptions('honoAdapter()', options, [
+    'app',
+    'beforeRoutes',
+    'afterRoutes',
+    'bodyLimit',
+    'getIp',
+  ] satisfies (keyof HonoAdapterOptions<TApp>)[])
   const bodyLimit = options.bodyLimit ?? DEFAULT_BODY_LIMIT
 
   if (!Number.isInteger(bodyLimit) || bodyLimit < 0) {

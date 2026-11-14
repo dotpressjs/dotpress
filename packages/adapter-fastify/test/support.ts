@@ -1,11 +1,11 @@
 import type { AddressInfo } from 'node:net'
 import { createApp, type AppOptions } from '@dotpress/core'
 import {
-  createHttpTarget,
   createLambdaTarget,
-  type ConformanceTarget,
   type LambdaEventFormat,
+  type TestTarget,
 } from '@dotpress/testing'
+import { createHttpTarget } from '@dotpress/testing/conformance'
 import type { FastifyInstance } from 'fastify'
 import { fastifyAdapter, type FastifyAdapter } from '../src/index.js'
 import { createLambdaHandler } from '../src/lambda.js'
@@ -18,13 +18,15 @@ type AppSetup = Omit<AppOptions, 'adapter'>
 export const startApp = async <TApp extends FastifyInstance>(
   adapter: FastifyAdapter<TApp>,
   options: AppSetup
-): Promise<ConformanceTarget & { adapter: FastifyAdapter<TApp> }> => {
+): Promise<TestTarget & { adapter: FastifyAdapter<TApp> }> => {
   const app = await createApp({ ...options, adapter })
   await app.listen(0, '127.0.0.1')
 
   const { port } = adapter.server()!.address() as AddressInfo
   return {
-    ...createHttpTarget(`http://127.0.0.1:${port}`, () => app.close()),
+    ...createHttpTarget(`http://127.0.0.1:${port}`, {
+      close: () => app.close(),
+    }),
     adapter,
   }
 }
@@ -36,7 +38,7 @@ export const startApp = async <TApp extends FastifyInstance>(
 export const startLambda = (
   format: LambdaEventFormat,
   options: AppSetup
-): ConformanceTarget => {
+): TestTarget => {
   let app: { close(): Promise<void> } | undefined
   const handler = createLambdaHandler(async () => {
     const created = await createApp({ ...options, adapter: fastifyAdapter() })

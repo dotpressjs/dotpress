@@ -10,11 +10,13 @@ import type { FastifyInstance } from 'fastify'
 
 export type LambdaApp = Pick<App<FastifyInstance>, 'native'>
 
+export type LambdaContext = object
+
 export type LambdaEvent = object
 
 export type LambdaHandler = (
   event: LambdaEvent,
-  context?: object
+  context?: LambdaContext
 ) => Promise<LambdaResult>
 
 export interface LambdaHandlerOptions {
@@ -24,6 +26,7 @@ export interface LambdaHandlerOptions {
 
 export interface LambdaResult {
   statusCode: number
+  statusDescription?: string
   headers?: Record<string, string>
   multiValueHeaders?: Record<string, string[]>
   cookies?: string[]

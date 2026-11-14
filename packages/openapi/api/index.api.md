@@ -124,9 +124,6 @@ export interface ResponseObject {
   content?: Record<string, MediaTypeObject>
 }
 
-export declare const SCALAR_CDN_URL =
-  'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.76.4/dist/browser/standalone.js'
-
 export declare const SCALAR_NEUTRAL_CONFIGURATION: Readonly<
   Record<string, unknown>
 >

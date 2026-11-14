@@ -38,7 +38,13 @@
   },
   "peerDependencies": {
     "@dotpress/core": "workspace:^",
+    "@types/express": "^4.17.0 || ^5.0.0",
     "express": "^4.21.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/express": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@dotpress/core": "workspace:*",

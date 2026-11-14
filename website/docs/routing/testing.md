@@ -6,7 +6,7 @@ A Dotpress app is tested in memory: the memory adapter of `@dotpress/testing` ru
 npm install -D @dotpress/testing vitest
 ```
 
-The examples use [Vitest](https://vitest.dev); any test runner works.
+`@dotpress/testing` needs [Vitest](https://vitest.dev): its assertions (`expectMailSent()`, `expectEventEmitted()`…) and the conformance suite of the adapters are built on it.
 
 ## Test routes
 

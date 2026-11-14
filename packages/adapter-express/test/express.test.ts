@@ -350,6 +350,12 @@ describe('expressAdapter()', () => {
       expect(() => expressAdapter({ bodyLimit: 1.5 })).toThrow(RangeError)
     })
 
+    it('rejects unknown options', () => {
+      expect(() => expressAdapter({ bodylimit: 1 } as never)).toThrow(
+        new TypeError('expressAdapter(): unknown option "bodylimit".')
+      )
+    })
+
     it('works when mounted in a parent Express application', async () => {
       const adapter = expressAdapter()
       const app = await createApp({
@@ -415,6 +421,48 @@ describe('expressAdapter()', () => {
 
       expect(released).toHaveBeenCalledOnce()
       expect(await reader.read()).toMatchObject({ done: true })
+    })
+
+    it('closes open streams on close(), with a server of the app', async () => {
+      const released = vi.fn()
+      const app = await createApp({
+        adapter: expressAdapter(),
+        logger: createMemoryLogger(),
+        routers: [
+          routerWith((router) => {
+            router.defineRoute({
+              path: '/events',
+              handler: () =>
+                sse(async function* ({ signal }) {
+                  try {
+                    yield 'ready'
+                    await new Promise((resolve) =>
+                      signal.addEventListener('abort', resolve)
+                    )
+                  } finally {
+                    released()
+                  }
+                }),
+            })
+          }),
+        ],
+      })
+      // Like an HTTPS server created by the app.
+      const server = createServer(app.native())
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve)
+      )
+      const { port } = server.address() as AddressInfo
+
+      const res = await fetch(`http://127.0.0.1:${port}/events`)
+      const reader = res.body!.getReader()
+      await reader.read()
+
+      await app.close()
+
+      expect(released).toHaveBeenCalledOnce()
+      expect(await reader.read()).toMatchObject({ done: true })
+      await new Promise((resolve) => server.close(resolve))
     })
 
     it('keeps the connections alive between requests', async () => {

@@ -1,5 +1,11 @@
 # @dotpress/core
 
+## 2.0.0-alpha.3
+
+### Patch Changes
+
+- [#7](https://github.com/dotpressjs/dotpress/pull/7) [`9432ce3`](https://github.com/dotpressjs/dotpress/commit/9432ce318a55287ce2431837075162743dd2389b) Thanks [@renoguyon](https://github.com/renoguyon)! - READMEs: each package describes itself with an example, and links to its pages on the documentation site, dotpress.dev, which holds the guides and the reference.
+
 ## 2.0.0-alpha.2
 
 No changes in this release.

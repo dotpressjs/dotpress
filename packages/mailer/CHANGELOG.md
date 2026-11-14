@@ -1,5 +1,15 @@
 # @dotpress/mailer
 
+## 2.0.0-alpha.3
+
+### Patch Changes
+
+- [#12](https://github.com/dotpressjs/dotpress/pull/12) [`a45d0fd`](https://github.com/dotpressjs/dotpress/commit/a45d0fd5c12d4a6b197ba19bfb8a5c66861ca979) Thanks [@renoguyon](https://github.com/renoguyon)! - Faster attachments: base64 encoding uses `Uint8Array#toBase64` when the runtime has it, and encodes by chunks otherwise. A 20 MB attachment took about a second of CPU, blocking the event loop.
+
+- [#7](https://github.com/dotpressjs/dotpress/pull/7) [`9432ce3`](https://github.com/dotpressjs/dotpress/commit/9432ce318a55287ce2431837075162743dd2389b) Thanks [@renoguyon](https://github.com/renoguyon)! - READMEs: each package describes itself with an example, and links to its pages on the documentation site, dotpress.dev, which holds the guides and the reference.
+- Updated dependencies [[`9432ce3`](https://github.com/dotpressjs/dotpress/commit/9432ce318a55287ce2431837075162743dd2389b)]:
+  - @dotpress/core@2.0.0-alpha.3
+
 ## 2.0.0-alpha.2
 
 ### Patch Changes

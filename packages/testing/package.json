@@ -1,6 +1,6 @@
 {
   "name": "@dotpress/testing",
-  "version": "2.0.0-alpha.2",
+  "version": "2.0.0-alpha.3",
   "description": "Testing helpers for Dotpress: test app, conformance suite, event and mail assertions",
   "author": "Renaud Guyon",
   "license": "MIT",

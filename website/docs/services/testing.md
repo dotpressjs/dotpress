@@ -3,7 +3,7 @@
 `@dotpress/testing` runs your app in memory, and checks what it does besides answering: the events it emits, the emails it sends, its Lambda handler. For the basics (the memory adapter, `createTestApp()`), see [Testing](/routing/testing).
 
 ```sh
-npm install -D @dotpress/testing
+npm install -D @dotpress/testing vitest
 ```
 
 ## Events
@@ -93,3 +93,5 @@ runConformanceSuite({
 ```
 
 The suite has its own entry, `@dotpress/testing/conformance`. A target sends the requests of the suite (`fetch(path, init)`) and stops the app (`close()`, the option of the same name, which does nothing by default). An adapter that does not listen on a port returns `createFetchTarget(handle, { close })`, where `handle` takes a Web `Request` and returns a `Response`.
+
+Every helper and option: see the [Testing reference](/reference/testing).

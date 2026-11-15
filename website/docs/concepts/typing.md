@@ -126,6 +126,30 @@ defineRoute({
 
 See [Protecting routes](/auth/protecting-routes).
 
+## Handlers outside the route
+
+Declare the handler inside the route: TypeScript infers everything. A handler written apart, in its own file for instance, takes its type from `RouteHandler`, with the schema and the path parameters:
+
+```ts twoslash
+import { defineRoute, type RouteHandler } from '@dotpress/core'
+import * as z from 'zod'
+
+const updateTaskSchema = {
+  params: z.object({ id: z.uuid() }),
+  body: z.object({ title: z.string().min(1) }),
+  response: z.object({ id: z.string(), title: z.string() }),
+}
+
+const updateTask: RouteHandler<typeof updateTaskSchema, { id: string }> = ({ req }) => ({
+  id: req.params.id,
+  title: req.body.title,
+})
+
+defineRoute({ method: 'put', path: '/tasks/:id', schema: updateTaskSchema, handler: updateTask })
+```
+
+`HandlerContext<typeof schema, { id: string }>` is the type of its context alone, for a function that receives it. Two more parameters exist, with defaults: `rawBody` (`true` for a route declared with `rawBody: true`), and the context provided by the middlewares (`ProvidedContext<[typeof requireAuth]>`). More often, keep the handler in the route, and move the business logic to a service that takes plain values.
+
 ## Context keys and services
 
 The keys added by plugins (`ctx.mailer`, `ctx.events`, `ctx.cache`) and by your app (`ctx.services`) are typed in every handler: your editor completes their methods and checks their arguments. A mail template, for instance, checks the data it receives. See [Request context](./context).

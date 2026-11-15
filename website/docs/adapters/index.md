@@ -62,3 +62,5 @@ The app also gives access to the server:
 ## In tests
 
 The memory adapter of `@dotpress/testing` is an adapter too: it runs the requests in memory, without a port. See [Testing](/routing/testing).
+
+Every option and member of the adapters, and of their Lambda handlers: see the [Adapters reference](/reference/adapters).

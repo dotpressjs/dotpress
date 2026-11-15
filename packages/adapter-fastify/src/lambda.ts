@@ -208,7 +208,7 @@ export const createLambdaHandler = (
     const native: unknown = app?.native?.()
     if (typeof (native as Partial<FastifyInstance>)?.inject !== 'function') {
       throw new TypeError(
-        'createLambdaHandler() expects an app created with fastifyAdapter() of @dotpress/adapter-fastify.'
+        'createLambdaHandler(): expected an app created with fastifyAdapter() of @dotpress/adapter-fastify.'
       )
     }
     return toHandler(native as FastifyInstance)

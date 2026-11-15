@@ -28,12 +28,17 @@ export interface RouteSchema {
 /**
  * Route schemas, as an object or as a factory receiving `z`.
  */
-export type SchemaDefinition<S extends RouteSchema> = S | ((zod: typeof z) => S)
+export type RouteSchemaDefinition<S extends RouteSchema> =
+  S | ((zod: typeof z) => S)
 
 /**
  * Output type of a schema property, or a fallback when it is not defined.
  */
-export type SchemaOutput<S, K extends keyof RouteSchema, Fallback> = S extends {
+export type RouteSchemaOutput<
+  S,
+  K extends keyof RouteSchema,
+  Fallback,
+> = S extends {
   [P in K]: infer T extends Schema
 }
   ? z.output<T>
@@ -42,7 +47,11 @@ export type SchemaOutput<S, K extends keyof RouteSchema, Fallback> = S extends {
 /**
  * Input type of a schema property, or a fallback when it is not defined.
  */
-export type SchemaInput<S, K extends keyof RouteSchema, Fallback> = S extends {
+export type RouteSchemaInput<
+  S,
+  K extends keyof RouteSchema,
+  Fallback,
+> = S extends {
   [P in K]: infer T extends Schema
 }
   ? z.input<T>

@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import { fastifyAdapter } from '@dotpress/adapter-fastify'
 import { createMemoryStore } from '@dotpress/cache'
 import { createFakeEventBus } from '@dotpress/events'
@@ -28,9 +27,7 @@ beforeAll(async () => {
     events: createFakeEventBus(),
     logger: createMemoryLogger(),
   })
-  await app.listen(0, '127.0.0.1')
-
-  const { port } = app.native().server.address() as AddressInfo
+  const { port } = await app.listen(0, '127.0.0.1')
   baseUrl = `http://127.0.0.1:${port}`
   close = async () => {
     await app.close()

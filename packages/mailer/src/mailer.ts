@@ -166,7 +166,7 @@ const freeze = (message: MailMessage): MailMessage => {
  * ```
  */
 export const createMailer = (options: MailerOptions): Mailer => {
-  const values = checkKeys('Invalid mailer options', options, MAILER_OPTIONS)
+  const values = checkKeys('createMailer()', options, MAILER_OPTIONS)
   const { provider, defaultLocale, logger } = values as Partial<MailerOptions>
   if (
     typeof provider?.name !== 'string' ||
@@ -174,7 +174,7 @@ export const createMailer = (options: MailerOptions): Mailer => {
     typeof provider.send !== 'function'
   ) {
     throw new TypeError(
-      'Invalid mailer options: provider must have a name and a send() method.'
+      'createMailer(): provider must have a name and a send() method.'
     )
   }
   if (
@@ -182,12 +182,12 @@ export const createMailer = (options: MailerOptions): Mailer => {
     (typeof defaultLocale !== 'string' || defaultLocale === '')
   ) {
     throw new TypeError(
-      'Invalid mailer options: defaultLocale must be a non-empty string.'
+      'createMailer(): defaultLocale must be a non-empty string.'
     )
   }
   if (logger !== undefined) checkLogger('createMailer()', logger)
   if (values.from === undefined) {
-    throw new TypeError('Invalid mailer options: from is required.')
+    throw new TypeError('createMailer(): from is required.')
   }
 
   const defaults = {

@@ -202,9 +202,9 @@ describe('bodyLimit route option', () => {
 
     expect(() =>
       router.defineRoute({ path: '/a', bodyLimit: -1, handler: () => null })
-    ).toThrow('Invalid bodyLimit')
+    ).toThrow('bodyLimit must be a non-negative integer')
     expect(() =>
       router.defineRoute({ path: '/b', bodyLimit: 1.5, handler: () => null })
-    ).toThrow('Invalid bodyLimit')
+    ).toThrow('bodyLimit must be a non-negative integer')
   })
 })

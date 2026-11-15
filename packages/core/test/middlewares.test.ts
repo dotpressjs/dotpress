@@ -108,7 +108,7 @@ describe('middlewares', () => {
       })
       router.defineRoute({
         path: '/legacy',
-        middlewares: [() => redirect('/new', 308)],
+        middlewares: [() => redirect('/new', { status: 308 })],
         handler,
       })
     })

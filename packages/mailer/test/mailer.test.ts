@@ -37,36 +37,32 @@ const failing = (error: unknown): MailProvider => ({
 
 describe('createMailer()', () => {
   it.each([
-    [
-      'not an object',
-      null,
-      'Invalid mailer options: expected an object of options.',
-    ],
-    ['an array', [], 'Invalid mailer options: expected an object of options.'],
+    ['not an object', null, 'createMailer(): expected an object of options.'],
+    ['an array', [], 'createMailer(): expected an object of options.'],
     [
       'an unknown option',
       { defaultSender: 'a@example.com' },
-      'Invalid mailer options: unknown option "defaultSender".',
+      'createMailer(): unknown option "defaultSender".',
     ],
     [
       'no provider',
       { from: 'a@example.com' },
-      'Invalid mailer options: provider must have a name and a send() method.',
+      'createMailer(): provider must have a name and a send() method.',
     ],
     [
       'a provider without name',
       { from: 'a@example.com', provider: { name: '', send: () => {} } },
-      'Invalid mailer options: provider must have a name and a send() method.',
+      'createMailer(): provider must have a name and a send() method.',
     ],
     [
       'a provider without send()',
       { from: 'a@example.com', provider: { name: 'x', sendMail: () => {} } },
-      'Invalid mailer options: provider must have a name and a send() method.',
+      'createMailer(): provider must have a name and a send() method.',
     ],
     [
       'no sender',
       { provider: createMemoryProvider() },
-      'Invalid mailer options: from is required.',
+      'createMailer(): from is required.',
     ],
     [
       'an empty default locale',
@@ -75,7 +71,7 @@ describe('createMailer()', () => {
         provider: createMemoryProvider(),
         defaultLocale: '',
       },
-      'Invalid mailer options: defaultLocale must be a non-empty string.',
+      'createMailer(): defaultLocale must be a non-empty string.',
     ],
     [
       'a default locale that is not a string',
@@ -84,7 +80,7 @@ describe('createMailer()', () => {
         provider: createMemoryProvider(),
         defaultLocale: 1,
       },
-      'Invalid mailer options: defaultLocale must be a non-empty string.',
+      'createMailer(): defaultLocale must be a non-empty string.',
     ],
     [
       'an incomplete logger',

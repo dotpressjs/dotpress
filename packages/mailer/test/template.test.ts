@@ -72,7 +72,7 @@ describe('defineLayout()', () => {
     ],
   ])('rejects %s', (_, options, message) => {
     expect(() => defineLayout(options as never)).toThrow(
-      new TypeError(`Invalid mail layout: ${message}`)
+      new TypeError(`defineLayout(): ${message}`)
     )
   })
 })
@@ -163,92 +163,92 @@ describe('defineTemplate()', () => {
   })
 
   it.each([
-    ['not an object', null, 'Invalid mail template: expected an object.'],
-    ['an array', [], 'Invalid mail template: expected an object.'],
+    ['not an object', null, 'defineTemplate(): expected an object.'],
+    ['an array', [], 'defineTemplate(): expected an object.'],
     [
       'no name',
       { subject: 'Hi', html: '' },
-      'Invalid mail template: name must be a non-empty string.',
+      'defineTemplate(): name must be a non-empty string.',
     ],
     [
       'an empty name',
       { name: '', subject: 'Hi', html: '' },
-      'Invalid mail template: name must be a non-empty string.',
+      'defineTemplate(): name must be a non-empty string.',
     ],
     [
       'a name that is not a string',
       { name: 1, subject: 'Hi', html: '' },
-      'Invalid mail template: name must be a non-empty string.',
+      'defineTemplate(): name must be a non-empty string.',
     ],
     [
       'an unknown option',
       { name: 'x', subject: 'Hi', html: '', variables: [] },
-      'Invalid mail template "x": unknown option "variables".',
+      'defineTemplate("x"): unknown option "variables".',
     ],
     [
       'no source',
       { name: 'x', subject: 'Hi' },
-      'Invalid mail template "x": set exactly one of mjml and html.',
+      'defineTemplate("x"): set exactly one of mjml and html.',
     ],
     [
       'both sources',
       { name: 'x', subject: 'Hi', html: '', mjml: '' },
-      'Invalid mail template "x": set exactly one of mjml and html.',
+      'defineTemplate("x"): set exactly one of mjml and html.',
     ],
     [
       'an invalid source',
       { name: 'x', subject: 'Hi', mjml: 1 },
-      'Invalid mail template "x": mjml must be a string or a function.',
+      'defineTemplate("x"): mjml must be a string or a function.',
     ],
     [
       'a layout that is not from defineLayout()',
       { name: 'x', subject: 'Hi', html: '', layout: { format: 'html' } },
-      'Invalid mail template "x": layout must be created by defineLayout().',
+      'defineTemplate("x"): layout must be created by defineLayout().',
     ],
     [
       'a null layout',
       { name: 'x', subject: 'Hi', html: '', layout: null },
-      'Invalid mail template "x": layout must be created by defineLayout().',
+      'defineTemplate("x"): layout must be created by defineLayout().',
     ],
     [
       'a layout in another format',
       { name: 'x', subject: 'Hi', mjml: '', layout },
-      'Invalid mail template "x": the template is in mjml, but its layout is in html.',
+      'defineTemplate("x"): the template is in mjml, but its layout is in html.',
     ],
     [
       'a schema that is not a Zod schema',
       { name: 'x', subject: 'Hi', html: '', schema: { parse: () => ({}) } },
-      'Invalid mail template "x": schema must be a Zod schema.',
+      'defineTemplate("x"): schema must be a Zod schema.',
     ],
     [
       'a null schema',
       { name: 'x', subject: 'Hi', html: '', schema: null },
-      'Invalid mail template "x": schema must be a Zod schema.',
+      'defineTemplate("x"): schema must be a Zod schema.',
     ],
     [
       'no subject',
       { name: 'x', html: '' },
-      'Invalid mail template "x": subject must be a string or an object of texts by locale.',
+      'defineTemplate("x"): subject must be a string or an object of texts by locale.',
     ],
     [
       'a null subject',
       { name: 'x', subject: null, html: '' },
-      'Invalid mail template "x": subject must be an object of texts by locale.',
+      'defineTemplate("x"): subject must be an object of texts by locale.',
     ],
     [
       'a subject without locale',
       { name: 'x', subject: {}, html: '' },
-      'Invalid mail template "x": subject has no locale.',
+      'defineTemplate("x"): subject has no locale.',
     ],
     [
       'a text that is not a string or a function',
       { name: 'x', subject: 'Hi', html: '', text: 1 },
-      'Invalid mail template "x": text must be a string or a function.',
+      'defineTemplate("x"): text must be a string or a function.',
     ],
     [
       'invalid translations',
       { name: 'x', subject: 'Hi', html: '', translations: 'a' },
-      'Invalid mail template "x": translations must be an object.',
+      'defineTemplate("x"): translations must be an object.',
     ],
     [
       'a subject in other locales than the translations',
@@ -258,7 +258,7 @@ describe('defineTemplate()', () => {
         html: '',
         translations: { a: { en: 'A' } },
       },
-      'Invalid mail template "x": translations.a has the locales en, but subject has en, fr. Every text needs the same locales.',
+      'defineTemplate("x"): translations.a has the locales en, but subject has en, fr. Every text needs the same locales.',
     ],
     [
       'locales missing in the layout',
@@ -268,7 +268,7 @@ describe('defineTemplate()', () => {
         html: '',
         layout,
       },
-      'Invalid mail template "x": its layout has no translations in es, it.',
+      'defineTemplate("x"): its layout has no translations in es, it.',
     ],
   ])('rejects %s', (_, options, message) => {
     expect(() => defineTemplate(options as never)).toThrow(

@@ -66,7 +66,7 @@ describe('errors', () => {
       notFoundError('Member not found', { id: '1' } as never)
     ).toThrow(new TypeError('HttpError: unknown option "id".'))
     expect(() => new HttpError(400, 'X', 'x', 'data' as never)).toThrow(
-      new TypeError('HttpError options must be an object.')
+      new TypeError('HttpError: options must be an object.')
     )
   })
 

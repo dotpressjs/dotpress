@@ -68,6 +68,13 @@ export interface DotpressRuntime {
   ): Promise<NormalizedResponse>
 }
 
+/** Address of a started server. */
+export interface ListenAddress {
+  readonly port: number
+  /** The IP address the server is bound to, like `::` or `127.0.0.1`. */
+  readonly host: string
+}
+
 /**
  * Contract implemented by HTTP adapters (Express, Hono, Fastify…).
  *
@@ -103,8 +110,11 @@ export interface HttpAdapter<TNative = unknown> {
     routes: readonly CompiledRoute[],
     runtime: DotpressRuntime
   ): void | Promise<void>
-  /** Starts a long-running server. */
-  listen?(port: number, host?: string): Promise<void>
+  /**
+   * Starts a long-running server, and returns the address it listens on:
+   * the actual port when `port` is 0.
+   */
+  listen?(port: number, host?: string): Promise<ListenAddress>
   /** Stops the server. */
   close?(): Promise<void>
   /** Native server instance (escape hatch). */

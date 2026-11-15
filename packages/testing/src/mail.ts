@@ -1,17 +1,18 @@
 import { assertCount, checkTimes, matches, show } from './assertions.js'
 
-interface Address {
+/** An address of a sent mail. */
+export interface SentMailAddress {
   readonly name?: string
   readonly address: string
 }
 
 /** The fields of a message read here (`SentMail` of `@dotpress/mailer`). */
 export interface SentMail {
-  readonly from: Address
-  readonly to: readonly Address[]
-  readonly cc: readonly Address[]
-  readonly bcc: readonly Address[]
-  readonly replyTo: readonly Address[]
+  readonly from: SentMailAddress
+  readonly to: readonly SentMailAddress[]
+  readonly cc: readonly SentMailAddress[]
+  readonly bcc: readonly SentMailAddress[]
+  readonly replyTo: readonly SentMailAddress[]
   readonly subject: string
   readonly template: string | undefined
 }
@@ -22,7 +23,8 @@ export interface MailOutbox<M extends SentMail = SentMail> {
 }
 
 /** Recipients: every expected address must be among them (any case). */
-type ExpectedAddresses = string | readonly string[]
+/** Expected addresses: one, or several. */
+export type ExpectedAddresses = string | readonly string[]
 
 /**
  * Expected properties of a message. Recipients and `from` are compared by
@@ -123,8 +125,8 @@ const predicateOf = (label: string, criteria: unknown) => {
 
   return (message: SentMail) =>
     addresses.every(({ key, expected }) => {
-      const actual = (message[key] as readonly Address[]).map(({ address }) =>
-        lower(address)
+      const actual = (message[key] as readonly SentMailAddress[]).map(
+        ({ address }) => lower(address)
       )
       return expected.every((address) => actual.includes(address))
     }) &&
@@ -146,7 +148,7 @@ const outboxOf = (label: string, outbox: unknown): readonly SentMail[] => {
   return sent as readonly SentMail[]
 }
 
-const recipients = (addresses: readonly Address[]) =>
+const recipients = (addresses: readonly SentMailAddress[]) =>
   addresses.map(({ address }) => address).join(', ')
 
 const recordedOf = (messages: readonly SentMail[]) =>

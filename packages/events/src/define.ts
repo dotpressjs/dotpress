@@ -174,7 +174,7 @@ export const defineEvent = <S extends z.ZodType>(
 ): EventDefinition<S> => {
   const name = (options as { name?: unknown } | null)?.name
   const prefix =
-    typeof name === 'string' ? `Invalid event "${name}"` : 'Invalid event'
+    typeof name === 'string' ? `defineEvent("${name}")` : 'defineEvent()'
   const values = checkKeys(
     prefix,
     options,
@@ -215,7 +215,7 @@ export const defineListener = <S extends z.ZodType>(
 ): ListenerDefinition<S> => {
   const name = (options as { name?: unknown } | null)?.name
   const prefix =
-    typeof name === 'string' ? `Invalid listener "${name}"` : 'Invalid listener'
+    typeof name === 'string' ? `defineListener("${name}")` : 'defineListener()'
   if (!isEvent(event)) {
     throw new TypeError(
       `${prefix}: expected an event created by defineEvent().`

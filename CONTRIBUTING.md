@@ -145,7 +145,18 @@ Until 2.0.0 (alpha, beta and release candidates), every release is a prerelease 
 - **English** everywhere: code, comments, error messages, documentation, commits.
 - **ES modules only**, without top-level `await` in published code, so that CommonJS projects can `require()` the packages.
 - **Runtime-agnostic packages**: `core`, `auth`, `openapi`, `mailer`, `events` and `cache` use Web-standard APIs only, apart from their Node.js entries (servers, clients, commands). ESLint and `pnpm check:core` enforce it. Node.js built-in modules are imported with the `node:` prefix.
-- **Options are checked** when they are given, with explicit errors naming the function: `createCloudflareKvStore(): cacheTtl must be at least 30 seconds.` Unknown options are refused.
+- **Options are checked** when they are given, and unknown options are refused, nested ones included: a misspelled option must not be ignored.
+- **Error messages** of the configuration name the function, then say what is expected, in a sentence ending with a period: `fn(): option must be …`. Nested options use their path, and unknown ones `fn(): unknown option "name".`
+
+  ```ts
+  'createCloudflareKvStore(): cacheTtl must be at least 30 seconds.'
+  'createAuth(): unknown option "session.idleTimout".'
+  ```
+
+  Errors about a named subject start with it instead: `Route "/users": unknown option "middleware".`, `Path "/a/*": unsupported segment "*", …`, `Plugin "auth": …`, `defineEvent("user.created"): …`. Errors about data at runtime (a reply of Redis, a chunk of a stream) describe the data.
+- **Durations** are `Duration` values: a number of seconds, fractions allowed, or a string with a unit (`'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'`). Option names have no unit (`closeTimeout`, not `closeTimeoutMs`). Values reported to the app, like `ResponseEvent.duration`, may use milliseconds, as metrics expect.
+- **Names**: factories start with `create` (`create<Provider>{Transport,Source,Handler}` for the transports), option types end with `Options`, and a service bound to a request is made by `withContext({ logger, … })`. The loggers of the packages have `info`, `warn` and `error`, and optionally `debug`.
+- **Compatibility**: adding an optional option, or a member to a union that apps may test in a `switch` (`DeadReason`, `AuthErrorCode`…), is a minor change. Changing or removing an exported declaration is a major one: the API reports show both.
 - **Generic examples**: tests, READMEs and examples use neutral names (`user.created`, `example.com`), never real companies or projects.
 - **No new dependency** without discussing it first: prefer the APIs of the platform, and optional peer dependencies for integrations.
 

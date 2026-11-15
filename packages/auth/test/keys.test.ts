@@ -190,7 +190,7 @@ describe('key validation', () => {
     })
 
     await expect(initAuth(auth)).rejects.toThrow(
-      'publicKey does not match privateKey'
+      'keys.publicKey does not match keys.privateKey'
     )
   })
 
@@ -206,7 +206,7 @@ describe('key validation', () => {
     ).rejects.toThrow('additionalPublicKeys[0]: PKCS#1 keys')
     await expect(
       initAuth(authWith({ ...oldKeys, additionalPublicKeys: ['garbage'] }))
-    ).rejects.toThrow('Invalid auth additionalPublicKeys[0]')
+    ).rejects.toThrow('keys.additionalPublicKeys[0] must be an RSA PEM key')
   })
 
   it('rejects a kid shared by different keys', async () => {

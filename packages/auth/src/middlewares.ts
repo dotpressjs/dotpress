@@ -30,7 +30,7 @@ export const requireAuth = defineMiddleware<AuthenticatedContext>(
  */
 export const requireRole = (...roles: [string, ...string[]]) => {
   if (roles.length === 0) {
-    throw new TypeError('requireRole() expects at least one role.')
+    throw new TypeError('requireRole(): expected at least one role.')
   }
 
   return defineMiddleware<AuthenticatedContext>((ctx) => {
@@ -51,7 +51,7 @@ export const requireRole = (...roles: [string, ...string[]]) => {
  */
 export const requireClient = (...clientIds: [string, ...string[]]) => {
   if (clientIds.length === 0) {
-    throw new TypeError('requireClient() expects at least one client.')
+    throw new TypeError('requireClient(): expected at least one client.')
   }
 
   return defineMiddleware<AuthenticatedContext>((ctx) => {

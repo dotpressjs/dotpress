@@ -21,7 +21,7 @@ All of them are exported by `@dotpress/core`. `init` accepts `status` and `heade
 | --- | --- |
 | `json(data, init?)` | JSON. |
 | `text(body, init?)` | Plain text, `text/plain; charset=utf-8` unless a `content-type` header is given. |
-| `redirect(location, status?)` | A redirect, `302` by default: `301`, `302`, `303`, `307` or `308`. |
+| `redirect(location, { status?, headers? })` | A redirect, `302` by default: `301`, `302`, `303`, `307` or `308`. |
 | `stream(source, init?)` | A streamed body. `init.contentType` defaults to `application/octet-stream`. |
 | `sse(source, init?)` | Server-Sent Events. `init.heartbeat` in milliseconds, `15000` by default, or `false`. |
 | `file(body, init?)` | A download: `filename`, `contentType`, `disposition` (`attachment` by default, or `inline`). |

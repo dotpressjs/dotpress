@@ -28,7 +28,7 @@ Unknown options are rejected, like those of every Dotpress function: see [Option
 | `cors` | `CorsOptions` | disabled | Answers cross-origin requests. See [CORS options](#cors-options). |
 | `logger` | `Logger` | console logger | Any logger with the [`Logger`](#logger) interface, Pino included. |
 | `exposeErrors` | `boolean` | `false` | Adds the name, message and stack of unexpected errors to `500` responses. Never in production. |
-| `generateRequestId` | `(request: NormalizedRequest) => string` | `crypto.randomUUID()` | The ID of each request, sent as `X-Request-ID`. |
+| `generateRequestId` | `(req: DotpressRequest) => string` | `crypto.randomUUID()` | The ID of each request, sent as `X-Request-ID`: `(req) => req.header('x-request-id') ?? crypto.randomUUID()` keeps the one of a proxy. |
 | `onError` | `(error: unknown, ctx: RequestContext \| undefined) => void \| Promise<void>` | — | Called with every unexpected error (anything but an `HttpError`). `ctx` is undefined outside a route. |
 
 The body size limit is an option of the adapter (`bodyLimit`, 1 MiB by default), or of a route. See [Common options](/adapters/#common-options).
@@ -51,7 +51,7 @@ Route definitions are checked when they are declared: a path with unsupported sy
 
 | Member | Description |
 | --- | --- |
-| `listen(port, host?)` | Starts the server. Not available on serverless adapters. |
+| `listen(port, host?)` | Starts the server, and returns `{ port, host }`: the actual port with `listen(0)`. Not available on serverless adapters. |
 | `close()` | Stops the server, waits for the pending requests and closes the streamed responses, then runs the `onClose` hooks of the plugins, last plugin first. Rejects with the first failing hook, after running them all. |
 | `routes` | The mounted routes (`RouteInfo[]`), with the base path: method, path, path parameters, schemas, metadata, security, status. |
 | `plugins` | The installed plugins, in setup order. |
@@ -87,7 +87,7 @@ cors: {
 | `exposedHeaders` | `string[]` | none | Response headers readable by the browser, besides the safelisted ones. |
 | `maxAge` | `number` | — | How long browsers cache preflight responses, in seconds. |
 
-`origin` accepts `'*'` (any origin, without credentials), an origin (`'https://app.example.com'`), a regular expression, a list of origins and regular expressions, or a function `(origin, request) => boolean | Promise<boolean>`.
+`origin` accepts `'*'` (any origin, without credentials), an origin (`'https://app.example.com'`), a regular expression, a list of origins and regular expressions, or a function `(origin, req) => boolean | Promise<boolean>`, where `req` is the request (`req.header()`, `req.path`…).
 
 See [CORS](/routing/http-options#cors) for preflight requests and error responses.
 

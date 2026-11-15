@@ -1,4 +1,4 @@
-import type { Plugin, RouteInfo, RouteResponse } from '@dotpress/core'
+import type { Plugin, RouteInfo, DocumentedResponse } from '@dotpress/core'
 import type * as z from 'zod'
 import { createSchemaCollector, type SchemaSide } from './schemas.js'
 import type {
@@ -125,7 +125,7 @@ export const generateOpenApi = (
   ] satisfies (keyof OpenApiOptions)[])
   if (!options?.info?.title || !options.info.version) {
     throw new TypeError(
-      'generateOpenApi() requires info.title and info.version.'
+      'generateOpenApi(): info.title and info.version are required.'
     )
   }
 
@@ -246,7 +246,7 @@ export const generateOpenApi = (
     }
 
     for (const [key, value] of Object.entries(route.meta.responses ?? {})) {
-      const response: RouteResponse =
+      const response: DocumentedResponse =
         typeof value === 'string' ? { description: value } : value
       responses[key] = {
         description: response.description,

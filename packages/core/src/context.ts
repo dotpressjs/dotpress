@@ -5,7 +5,7 @@ import type { EmptyObject } from './path.js'
 import type { DotpressRequest } from './request.js'
 import type { DotpressResponse } from './response.js'
 import type { JsonResult, RawResult, ResponseResult } from './results.js'
-import type { SchemaInput, SchemaOutput } from './schema.js'
+import type { RouteSchemaInput, RouteSchemaOutput } from './schema.js'
 
 /**
  * Context received by middlewares and handlers.
@@ -163,10 +163,10 @@ export type ResponseFilter = (
  * always defined.
  */
 export type RouteRequest<S, TPathParams, TRawBody = false> = DotpressRequest<
-  SchemaOutput<S, 'params', TPathParams>,
-  SchemaOutput<S, 'query', QueryValues>,
-  SchemaOutput<S, 'body', unknown>,
-  SchemaOutput<S, 'files', UploadedFiles>
+  RouteSchemaOutput<S, 'params', TPathParams>,
+  RouteSchemaOutput<S, 'query', QueryValues>,
+  RouteSchemaOutput<S, 'body', unknown>,
+  RouteSchemaOutput<S, 'files', UploadedFiles>
 > &
   (TRawBody extends true ? { readonly rawBody: Uint8Array } : EmptyObject)
 
@@ -188,8 +188,8 @@ export type HandlerContext<
  * `json()` data must match the schema input type.
  */
 export type HandlerResult<S> = S extends { response: unknown }
-  ? | SchemaInput<S, 'response', unknown>
-    | JsonResult<SchemaInput<S, 'response', unknown>>
+  ? | RouteSchemaInput<S, 'response', unknown>
+    | JsonResult<RouteSchemaInput<S, 'response', unknown>>
     | RawResult
     | HttpError
     | undefined

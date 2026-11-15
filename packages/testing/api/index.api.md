@@ -30,6 +30,14 @@ export type EmissionSource<E extends Emission = Emission> =
       readonly sent: readonly EnvelopeLike[]
     }
 
+export interface EnvelopeLike {
+  readonly emissionId: string
+  readonly event: string
+  readonly payload: unknown
+  readonly metadata: Readonly<Record<string, string>>
+  readonly emittedAt: string
+}
+
 export interface ExpectEventOptions {
   times?: number | undefined
   metadata?: Readonly<Record<string, unknown>> | undefined
@@ -43,6 +51,8 @@ export interface ExpectMailOptions {
 export declare class ExpectationError extends Error {
   name: string
 }
+
+export type ExpectedAddresses = string | readonly string[]
 
 export type LambdaEventFormat = 'v1' | 'v2' | 'alb'
 
@@ -104,13 +114,18 @@ export interface MemoryLogger extends Logger {
 }
 
 export interface SentMail {
-  readonly from: Address
-  readonly to: readonly Address[]
-  readonly cc: readonly Address[]
-  readonly bcc: readonly Address[]
-  readonly replyTo: readonly Address[]
+  readonly from: SentMailAddress
+  readonly to: readonly SentMailAddress[]
+  readonly cc: readonly SentMailAddress[]
+  readonly bcc: readonly SentMailAddress[]
+  readonly replyTo: readonly SentMailAddress[]
   readonly subject: string
   readonly template: string | undefined
+}
+
+export interface SentMailAddress {
+  readonly name?: string
+  readonly address: string
 }
 
 export interface TestApp {
@@ -186,25 +201,4 @@ export declare const toLambdaEvent: (
   format: LambdaEventFormat,
   sourceIp?: string
 ) => Promise<Record<string, unknown>>
-```
-
-## Not exported
-
-Declarations that the exports refer to, without exporting them.
-
-```ts
-interface Address {
-  readonly name?: string
-  readonly address: string
-}
-
-interface EnvelopeLike {
-  readonly emissionId: string
-  readonly event: string
-  readonly payload: unknown
-  readonly metadata: Readonly<Record<string, string>>
-  readonly emittedAt: string
-}
-
-type ExpectedAddresses = string | readonly string[]
 ```

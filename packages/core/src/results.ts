@@ -90,14 +90,50 @@ export const text = (body: string, init: ResultInit = {}): TextResult =>
 
 export type RedirectStatus = 301 | 302 | 303 | 307 | 308
 
+/** Options of `redirect()`. */
+export interface RedirectInit {
+  /** Defaults to `302 Found`. */
+  status?: RedirectStatus | undefined
+  headers?: ResponseHeaders | undefined
+}
+
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([
+  301, 302, 303, 307, 308,
+])
+
 /**
  * Redirect response. Defaults to `302 Found`.
+ *
+ * @example
+ * return redirect('/login')
+ * return redirect('/new', { status: 301 })
  */
 export const redirect = (
   location: string,
-  status: RedirectStatus = 302
-): RedirectResult =>
-  brand({ kind: 'redirect' as const, location, init: { status } })
+  init: RedirectInit = {}
+): RedirectResult => {
+  if (typeof init !== 'object' || init === null) {
+    throw new TypeError(
+      'redirect(): expected an options object, like { status: 301 }.'
+    )
+  }
+  for (const key of Object.keys(init)) {
+    if (key !== 'status' && key !== 'headers') {
+      throw new TypeError(`redirect(): unknown option "${key}".`)
+    }
+  }
+  const { status = 302, headers } = init
+  if (!REDIRECT_STATUSES.has(status)) {
+    throw new RangeError(
+      `redirect(): status must be 301, 302, 303, 307 or 308, received ${status}.`
+    )
+  }
+  return brand({
+    kind: 'redirect' as const,
+    location,
+    init: { status, ...(headers === undefined ? {} : { headers }) },
+  })
+}
 
 export interface StreamInit extends ResultInit {
   /** Defaults to `application/octet-stream`. */

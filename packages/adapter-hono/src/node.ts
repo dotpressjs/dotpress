@@ -1,6 +1,7 @@
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
-import type { Socket } from 'node:net'
+import type { AddressInfo, Socket } from 'node:net'
 import { createAdaptorServer } from '@hono/node-server'
+import type { ListenAddress } from '@dotpress/core'
 import type { Hono } from 'hono'
 import {
   honoAdapter as createHonoAdapter,
@@ -15,7 +16,7 @@ export interface NodeHonoAdapter<
   TApp extends HonoApplication = Hono,
 > extends HonoAdapter<TApp> {
   /** Starts an HTTP server (`@hono/node-server`). */
-  listen(port: number, host?: string): Promise<void>
+  listen(port: number, host?: string): Promise<ListenAddress>
   /**
    * Stops the HTTP server: waits for pending requests, and closes the
    * responses being streamed (their `req.signal` is aborted).
@@ -23,6 +24,12 @@ export interface NodeHonoAdapter<
   close(): Promise<void>
   /** HTTP server started by `listen()`, if any. */
   server(): Server | undefined
+}
+
+/** Address of a listening Node.js server. */
+const addressOf = (server: Server): ListenAddress => {
+  const address = server.address() as AddressInfo
+  return { port: address.port, host: address.address }
 }
 
 /**
@@ -93,6 +100,7 @@ export function honoAdapter<TApp extends HonoApplication>(
       })
       server = created
       closeConnections = trackConnections(created)
+      return addressOf(created)
     },
 
     close: async () => {

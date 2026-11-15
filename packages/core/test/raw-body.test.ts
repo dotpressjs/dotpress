@@ -115,6 +115,6 @@ describe('rawBody', () => {
         rawBody: 'yes',
         handler: () => null,
       })
-    ).toThrow('Invalid rawBody option')
+    ).toThrow('rawBody must be a boolean')
   })
 })

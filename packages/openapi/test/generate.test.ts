@@ -15,7 +15,7 @@ describe('generateOpenApi()', () => {
       for (const info of [undefined, { title: 'API' }, { version: '1' }]) {
         // @ts-expect-error invalid info
         expect(() => generateOpenApi([], { info })).toThrow(
-          'generateOpenApi() requires info.title and info.version.'
+          'generateOpenApi(): info.title and info.version are required.'
         )
       }
     })

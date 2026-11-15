@@ -40,7 +40,7 @@ describe('openapiPlugin()', () => {
   it('requires info.title and info.version', () => {
     // @ts-expect-error missing info
     expect(() => openapiPlugin({})).toThrow(
-      'openapiPlugin() requires info.title and info.version.'
+      'openapiPlugin(): info.title and info.version are required.'
     )
   })
 

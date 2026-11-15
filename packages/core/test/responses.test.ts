@@ -195,7 +195,7 @@ describe('responses', () => {
         router.defineRoute({ path: '/old', handler: () => redirect('/new') })
         router.defineRoute({
           path: '/moved',
-          handler: () => redirect('/new', 301),
+          handler: () => redirect('/new', { status: 301 }),
         })
       })
 
@@ -206,6 +206,39 @@ describe('responses', () => {
       expect(temporary.headers.location).toBe('/new')
       expect(temporary.response.body).toBeNull()
       expect(permanent.status).toBe(301)
+    })
+
+    it('redirect() takes headers, and checks its options', async () => {
+      const { inject } = await createTestApp((router) => {
+        router.defineRoute({
+          path: '/old',
+          handler: () =>
+            redirect('/new', {
+              status: 308,
+              headers: { 'cache-control': 'no-store' },
+            }),
+        })
+      })
+
+      const res = await inject({ url: '/old' })
+      expect(res.status).toBe(308)
+      expect(res.headers).toMatchObject({
+        location: '/new',
+        'cache-control': 'no-store',
+      })
+      expect(() => redirect('/new', 301 as never)).toThrow(
+        new TypeError(
+          'redirect(): expected an options object, like { status: 301 }.'
+        )
+      )
+      expect(() => redirect('/new', { code: 301 } as never)).toThrow(
+        new TypeError('redirect(): unknown option "code".')
+      )
+      expect(() => redirect('/new', { status: 200 as never })).toThrow(
+        new RangeError(
+          'redirect(): status must be 301, 302, 303, 307 or 308, received 200.'
+        )
+      )
     })
 
     it('stream() returns a stream', async () => {
@@ -349,8 +382,8 @@ describe('responses', () => {
           })
         },
         {
-          generateRequestId: (req) =>
-            String(req.headers['x-request-id'] ?? 'generated'),
+          // A DotpressRequest: header() ignores the letter case.
+          generateRequestId: (req) => req.header('X-Request-ID') ?? 'generated',
         }
       )
 

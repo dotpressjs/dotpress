@@ -77,7 +77,6 @@ expect(logger.entries).toContainEqual({
 Every adapter of Dotpress passes the conformance suite, `runConformanceSuite()`: routing, parsing, validation, errors, middlewares and responses, streams and Server-Sent Events included. An adapter for another server runs it too:
 
 ```ts
-import type { AddressInfo } from 'node:net'
 import { createApp } from '@dotpress/core'
 import { createHttpTarget, runConformanceSuite } from '@dotpress/testing/conformance'
 import { myAdapter } from '../src/index.ts'
@@ -87,9 +86,7 @@ runConformanceSuite({
   async setup(options) {
     const adapter = myAdapter()
     const app = await createApp({ ...options, adapter })
-    await app.listen(0, '127.0.0.1')
-
-    const { port } = adapter.server().address() as AddressInfo
+    const { port } = await app.listen(0, '127.0.0.1')
     return createHttpTarget(`http://127.0.0.1:${port}`, { close: () => app.close() })
   },
 })

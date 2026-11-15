@@ -559,7 +559,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
   const internal = internalsOf(auth)
   if (!internal) {
     throw new TypeError(
-      'authPlugin() expects an auth service created with createAuth().'
+      'authPlugin(): expected an auth service created with createAuth().'
     )
   }
   if (typeof options !== 'object' || options === null) {
@@ -653,7 +653,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       })
 
       if (options.jwks) {
-        api.addRoute({
+        api.defineRoute({
           path: '/.well-known/jwks.json',
           meta: { tags: ['auth'], summary: 'Public keys of the access tokens' },
           handler: async ({ res }) => {
@@ -665,7 +665,7 @@ export const authPlugin = (auth: Auth, options: AuthPluginOptions = {}) => {
       }
 
       if (options.routes !== false) {
-        registerRoutes(api.addRouteGroup(prefix), auth, settings)
+        registerRoutes(api.createGroup(prefix), auth, settings)
       }
     },
   })

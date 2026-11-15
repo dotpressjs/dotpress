@@ -19,7 +19,7 @@ export interface HonoAdapter<
   close(): Promise<void>
 }
 
-export interface HonoAdapterOptions<TApp extends HonoApplication> {
+export interface HonoAdapterOptions<TApp extends HonoApplication = Hono> {
   app?: TApp
   beforeRoutes?: (app: TApp) => void | Promise<void>
   afterRoutes?: (app: TApp) => void | Promise<void>

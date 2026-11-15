@@ -5,7 +5,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http'
-import type { Socket } from 'node:net'
+import type { AddressInfo, Socket } from 'node:net'
 import {
   HttpError,
   isHttpError,
@@ -13,6 +13,7 @@ import {
   type NormalizedRequest,
   type NormalizedResponse,
   type UploadedFiles,
+  type ListenAddress,
 } from '@dotpress/core'
 import {
   DEFAULT_BODY_LIMIT,
@@ -28,6 +29,12 @@ import {
 } from '@dotpress/core/adapter'
 import express, { type Express } from 'express'
 import { assertKnownOptions } from './options.js'
+
+/** Address of a listening Node.js server. */
+const addressOf = (server: Server): ListenAddress => {
+  const address = server.address() as AddressInfo
+  return { port: address.port, host: address.address }
+}
 
 /**
  * Lets `close()` complete as soon as the pending requests are served, and
@@ -68,7 +75,9 @@ export interface ExpressApplication {
   use(...handlers: unknown[]): unknown
 }
 
-export interface ExpressAdapterOptions<TApp extends ExpressApplication> {
+export interface ExpressAdapterOptions<
+  TApp extends ExpressApplication = Express,
+> {
   /**
    * Express application (Express 4 or 5) to mount the routes on. Defaults to
    * a new application, created with `express()`.
@@ -91,8 +100,8 @@ export interface ExpressAdapterOptions<TApp extends ExpressApplication> {
 export interface ExpressAdapter<
   TApp extends ExpressApplication = Express,
 > extends HttpAdapter<TApp> {
-  /** Starts an HTTP server. */
-  listen(port: number, host?: string): Promise<void>
+  /** Starts an HTTP server, and returns its address. */
+  listen(port: number, host?: string): Promise<ListenAddress>
   /**
    * Stops the HTTP server started by `listen()`: waits for pending
    * requests. Closes the responses being streamed (their `req.signal` is
@@ -335,7 +344,7 @@ export function expressAdapter<TApp extends ExpressApplication>(
 
   if (!Number.isInteger(bodyLimit) || bodyLimit < 0) {
     throw new RangeError(
-      'Invalid bodyLimit: expected a non-negative integer (bytes).'
+      'expressAdapter(): bodyLimit must be a non-negative integer (bytes).'
     )
   }
 
@@ -576,6 +585,7 @@ export function expressAdapter<TApp extends ExpressApplication>(
       })
       server = created
       closeConnections = trackConnections(created)
+      return addressOf(created)
     },
 
     close: async () => {

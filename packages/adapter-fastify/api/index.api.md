@@ -5,18 +5,20 @@
 ## Exports
 
 ```ts
-import type { HttpAdapter } from '@dotpress/core'
+import type { HttpAdapter, ListenAddress } from '@dotpress/core'
 import type { FastifyInstance } from 'fastify'
 
 export interface FastifyAdapter<
   TApp extends FastifyInstance = FastifyInstance,
 > extends HttpAdapter<TApp> {
-  listen(port: number, host?: string): Promise<void>
+  listen(port: number, host?: string): Promise<ListenAddress>
   close(): Promise<void>
   server(): Server | undefined
 }
 
-export interface FastifyAdapterOptions<TApp extends FastifyInstance> {
+export interface FastifyAdapterOptions<
+  TApp extends FastifyInstance = FastifyInstance,
+> {
   app?: TApp
   beforeRoutes?: (app: TApp) => void | Promise<void>
   afterRoutes?: (app: FastifyInstance) => void | Promise<void>

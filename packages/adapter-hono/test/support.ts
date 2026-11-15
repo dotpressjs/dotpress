@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import { createApp, type AppOptions } from '@dotpress/core'
 import {
   createLambdaTarget,
@@ -24,9 +23,7 @@ export const startNode = async <TApp extends HonoApplication>(
   options: AppSetup
 ): Promise<TestTarget> => {
   const app = await createApp({ ...options, adapter })
-  await app.listen(0, '127.0.0.1')
-
-  const { port } = adapter.server()!.address() as AddressInfo
+  const { port } = await app.listen(0, '127.0.0.1')
   return createHttpTarget(`http://127.0.0.1:${port}`, {
     close: () => app.close(),
   })

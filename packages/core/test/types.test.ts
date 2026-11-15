@@ -227,3 +227,10 @@ declare module '../src/index.js' {
     org?: { slug: string }
   }
 }
+
+// RouteMeta accepts readonly arrays (as const).
+createRouter().defineRoute({
+  path: '/tagged',
+  meta: { tags: ['admin', 'users'] as const, security: [] as const },
+  handler: () => null,
+})

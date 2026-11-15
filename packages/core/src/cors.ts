@@ -6,6 +6,7 @@ import type {
   ResponseHeaders,
 } from './http.js'
 import type { Logger } from './logger.js'
+import { requestView, type DotpressRequest } from './request.js'
 
 /**
  * Allowed origins: `'*'` (any origin, without credentials), an origin
@@ -16,7 +17,7 @@ export type CorsOrigin =
   | string
   | RegExp
   | readonly (string | RegExp)[]
-  | ((origin: string, request: NormalizedRequest) => boolean | Promise<boolean>)
+  | ((origin: string, req: DotpressRequest) => boolean | Promise<boolean>)
 
 /** `cors` option of `createApp()`. */
 export interface CorsOptions {
@@ -74,7 +75,7 @@ const OPTIONS = new Set([
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
 
 const fail = (message: string): never => {
-  throw new TypeError(`Invalid cors option: ${message}`)
+  throw new TypeError(`createApp(): cors: ${message}`)
 }
 
 const checkOrigin = (origin: string) => {
@@ -106,7 +107,13 @@ type OriginCheck = (
 ) => boolean | Promise<boolean>
 
 const toOriginCheck = (origin: unknown): OriginCheck => {
-  if (typeof origin === 'function') return origin as OriginCheck
+  if (typeof origin === 'function') {
+    const check = origin as (
+      origin: string,
+      req: DotpressRequest
+    ) => boolean | Promise<boolean>
+    return (value, request) => check(value, requestView(request))
+  }
 
   const list: unknown[] = Array.isArray(origin) ? origin : [origin]
   if (origin === undefined || list.length === 0) {

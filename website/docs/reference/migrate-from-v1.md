@@ -123,7 +123,7 @@ See [Paths](/routing/routes#paths).
 | `$clearRoutes()`, `$clearResponseFilters()` | `globalRouter.clear()`, or better, an explicit router per test |
 | `getAllRoutes()` | `app.routes` |
 | `getResponseFilters()` | — (the filters are passed to `createApp()`, a router or a plugin) |
-| Response filters, global | `createApp({ responseFilters })`, `router.addResponseFilter()`, or `registerResponseFilter()` |
+| Response filters, global | `createApp({ responseFilters })`, `router.addResponseFilter()`, or the global `addResponseFilter()` |
 
 `defineRoute()` and `createRouteGroup()` still register on a global router, mounted when `createApp()` has no `routers`. `createRouter()` creates explicit routers: see [Routers](/routing/routes#routers).
 
@@ -305,14 +305,15 @@ const myPlugin = definePlugin({
   name: 'my-plugin',
   dependsOn: ['auth'], // optional
   async setup(api) {
-    api.addRoute({ … })
+    api.defineRoute({ … })
   },
 })
 ```
 
 | v1 | v2 |
 | --- | --- |
-| `api.addGroup()` | `api.addRouteGroup()` |
+| `api.addRoute()` | `api.defineRoute()` |
+| `api.addGroup()` | `api.createGroup()` |
 | `api.useBeforeRoutes()`, `api.useAfterRoutes()` | Removed: a plugin does not depend on an adapter |
 | Registration at any time | During `setup()` only |
 | — | `decorateContext()`, `onError()`, `hooks` (`onInit`, `onReady`, `onRequest`, `wrapRequest`, `onResponse`, `onClose`), `getRoutes()`, `getPlugin()`, `logger` |

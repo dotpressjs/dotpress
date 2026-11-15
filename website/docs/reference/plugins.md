@@ -51,8 +51,8 @@ The registration methods work during `setup()` only: called later, they throw.
 
 | Member | Description |
 | --- | --- |
-| `addRoute(config)` | Declares a route, like `defineRoute()`. |
-| `addRouteGroup(prefix, middlewares?)` | Creates a group, like `createRouteGroup()`. |
+| `defineRoute(config)` | Declares a route, like `defineRoute()`. |
+| `createGroup(prefix, middlewares?)` | Creates a group, like `createRouteGroup()`. |
 | `addGlobalMiddleware(middleware)` | A middleware run on every route, before those of `createApp()`. |
 | `addResponseFilter(filter)` | A filter applied to every JSON success, after those of `createApp()`. |
 | `decorateContext(key, factory)` | Provides `ctx[key]`: see [Context keys](#context-keys). |
@@ -89,7 +89,7 @@ The registration methods work during `setup()` only: called later, they throw.
 | `requestId` | The ID of the request. |
 | `ctx` | The context, `undefined` when no route matched. |
 | `route` | The route (`RouteInfo`), `undefined` when no route matched. |
-| `duration` | Time spent producing the response, in milliseconds, without the streamed body. |
+| `duration` | Time spent producing the response, in milliseconds, without the streamed body. Unlike the options, which take seconds, it is in milliseconds, as most metrics and logs expect. |
 
 ### Order in a request
 

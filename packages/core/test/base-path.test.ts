@@ -17,7 +17,7 @@ const pluginRoutes = (onSetup?: (api: PluginAPI) => void) =>
     name: 'health',
     setup(api) {
       onSetup?.(api)
-      api.addRoute({ path: '/health', handler: () => ({ status: 'ok' }) })
+      api.defineRoute({ path: '/health', handler: () => ({ status: 'ok' }) })
     },
   })
 
@@ -91,7 +91,7 @@ describe('base path', () => {
       const plugin = definePlugin({
         name: 'users',
         setup(api) {
-          api.addRoute({ path: '/users', handler: () => [] })
+          api.defineRoute({ path: '/users', handler: () => [] })
         },
       })
 
@@ -125,11 +125,11 @@ describe('base path', () => {
     })
 
     it.each([
-      ['api', 'expected a path starting with "/"'],
-      ['', 'expected a path starting with "/"'],
+      ['api', 'must start with "/"'],
+      ['', 'must start with "/"'],
       ['/api/:tenant', 'cannot contain parameters'],
-      ['/api/*', 'Unsupported path syntax'],
-      ['/api?x=1', 'Unsupported path syntax'],
+      ['/api/*', 'unsupported segment'],
+      ['/api?x=1', 'unsupported segment'],
     ])('rejects %j', async (basePath, message) => {
       await expect(createTestApp(() => {}, { basePath })).rejects.toThrow(
         message
@@ -140,7 +140,7 @@ describe('base path', () => {
       await expect(
         // @ts-expect-error invalid type
         createTestApp(() => {}, { basePath: 42 })
-      ).rejects.toThrow('Invalid basePath')
+      ).rejects.toThrow('createApp(): basePath')
     })
   })
 
@@ -167,7 +167,7 @@ describe('base path', () => {
     it('is validated like basePath', async () => {
       await expect(
         createTestApp(() => {}, { publicBasePath: '/:app' })
-      ).rejects.toThrow('Invalid publicBasePath "/:app"')
+      ).rejects.toThrow('publicBasePath cannot contain parameters')
     })
 
     it('cannot be combined with basePath', async () => {
@@ -196,7 +196,7 @@ describe('base path', () => {
     it('rejects relative paths', async () => {
       const { app } = await createTestApp(() => {}, { basePath: '/api' })
       expect(() => app.publicPath('login')).toThrow(
-        'publicPath() expects a path starting with "/", received "login"'
+        'publicPath(): expected a path starting with "/", received "login"'
       )
     })
 

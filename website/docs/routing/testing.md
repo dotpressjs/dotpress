@@ -88,14 +88,11 @@ const res = await app.fetch('/profile', {
 A few tests can run the app on its real server, to check the integration with it (native middlewares, proxy settings). Listen on port `0` to get a free port:
 
 ```ts
-import type { AddressInfo } from 'node:net'
 import { expressAdapter } from '@dotpress/adapter-express'
 
 const adapter = expressAdapter()
 const app = await createTasksApp({ adapter })
-await app.listen(0, '127.0.0.1')
-
-const { port } = adapter.server()!.address() as AddressInfo
+const { port } = await app.listen(0, '127.0.0.1')
 const res = await fetch(`http://127.0.0.1:${port}/tasks`)
 
 await app.close()

@@ -161,13 +161,16 @@ describe('login throttle', () => {
   it.each([
     [
       { limits: { usernameAndIp: { max: 0, window: 60 } } },
-      'Invalid loginThrottle.limits.usernameAndIp',
+      'loginThrottle.limits.usernameAndIp.max must be a positive integer',
     ],
     [
       { limits: { username: { max: 5, window: -1 } } },
       'loginThrottle.limits.username.window must be a number of seconds',
     ],
-    [{ store: {} as RateLimitStore }, 'Invalid loginThrottle.store'],
+    [
+      { store: {} as RateLimitStore },
+      'loginThrottle.store must have increment() and reset() methods',
+    ],
   ])('rejects invalid settings (%o)', async (loginThrottle, message) => {
     await expect(setup({ loginThrottle })).rejects.toThrow(message)
   })

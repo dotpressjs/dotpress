@@ -50,7 +50,7 @@ interface MountableApp {
   ): Response | Promise<Response>
 }
 
-export interface HonoAdapterOptions<TApp extends HonoApplication> {
+export interface HonoAdapterOptions<TApp extends HonoApplication = Hono> {
   /** Hono application to mount the routes on. Defaults to `new Hono()`. */
   app?: TApp
   /** Registers native middlewares before the Dotpress routes. */
@@ -312,7 +312,7 @@ export function honoAdapter<TApp extends HonoApplication>(
 
   if (!Number.isInteger(bodyLimit) || bodyLimit < 0) {
     throw new RangeError(
-      'Invalid bodyLimit: expected a non-negative integer (bytes).'
+      'honoAdapter(): bodyLimit must be a non-negative integer (bytes).'
     )
   }
 

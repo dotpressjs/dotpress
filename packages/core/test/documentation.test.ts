@@ -178,14 +178,11 @@ describe('documentation metadata', () => {
     })
 
     it.each([
-      [
-        { 42: 'Too low' },
-        'Invalid status "42" in meta.responses of route "/r"',
-      ],
-      [{ 600: 'Too high' }, 'Invalid status "600"'],
-      [{ abc: 'Not a status' }, 'Invalid status "abc"'],
-      [{ 404: {} }, 'meta.responses[404] of route "/r" needs a description'],
-      [{ 404: null }, 'meta.responses[404] of route "/r" needs a description'],
+      [{ 42: 'Too low' }, 'Route "/r": invalid status "42" in meta.responses'],
+      [{ 600: 'Too high' }, 'invalid status "600"'],
+      [{ abc: 'Not a status' }, 'invalid status "abc"'],
+      [{ 404: {} }, 'Route "/r": meta.responses[404] needs a description'],
+      [{ 404: null }, 'Route "/r": meta.responses[404] needs a description'],
     ])('rejects %j', (responses, message) => {
       const router = createRouter()
       expect(() =>

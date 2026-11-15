@@ -55,7 +55,7 @@ describe('createTestApp()', () => {
         definePlugin({
           name: 'health',
           setup(api) {
-            api.addRoute({ path: '/health', handler: () => ({ ok: true }) })
+            api.defineRoute({ path: '/health', handler: () => ({ ok: true }) })
           },
         }),
       ],

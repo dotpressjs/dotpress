@@ -89,7 +89,7 @@ const { messageId } = await mailer.send(template, options)
 | `subject` | Replaces the subject of the template. |
 | `locale` | The requested locale. |
 | `data` | The data, typed by the schema. |
-| `attachments` | `{ filename, content, contentType?, contentId? }`: `content` is a `Uint8Array` (a Node.js `Buffer` works) or a string; `contentId` makes it inline (`<img src="cid:logo">`). |
+| `attachments` | `{ filename, content, contentType?, contentId? }`: `content` is a `Uint8Array` (a Node.js `Buffer` works) or a string; `contentId` makes it inline (`<img src="cid:logo">`). Typed `MailAttachmentInput`; providers receive the validated `MailAttachment`. |
 | `headers` | Additional headers. `From`, `To`, `Subject`, `Content-Type` and the other headers set by the mailer are rejected. |
 | `tags`, `metadata` | See [Tags and metadata](#tags-and-metadata). |
 
@@ -128,7 +128,7 @@ Every provider sends the sender, the reply-to addresses, several `to`, `cc` and 
 | `createMemoryProvider()` | `@dotpress/mailer` | — |
 | `createConsoleProvider()` | `@dotpress/mailer` | `body` (prints the text version, off by default: messages contain secrets), `write` |
 | `createSmtpProvider()` | `@dotpress/mailer/smtp` | the [nodemailer](https://nodemailer.com/smtp/) options, or a URL (`smtps://user:password@smtp.example.com`); `pool: true` reuses connections, `close()` on shutdown |
-| `createNodemailerProvider(transporter, name?)` | `@dotpress/mailer/smtp` | any nodemailer transporter (sendmail, stream…) |
+| `createNodemailerProvider(transporter, { name? })` | `@dotpress/mailer/smtp` | any nodemailer transporter (sendmail, stream…) |
 | `createSesProvider()` | `@dotpress/mailer/aws-ses` | `clientConfig` (region…), or `client`; `configurationSetName` |
 | `createResendProvider()` | `@dotpress/mailer/resend` | `apiKey` (else `RESEND_API_KEY`), or `client` |
 | `createSendgridProvider()` | `@dotpress/mailer/sendgrid` | `apiKey`; `baseUrl: 'https://api.eu.sendgrid.com'` for EU subusers |
@@ -179,11 +179,11 @@ import { mailerPlugin } from '@dotpress/mailer/plugin'
 await createApp({ adapter, plugins: [mailerPlugin(mailer)] })
 ```
 
-The plugin, named `mailer`, provides `ctx.mailer`: the mailer, logging with the request logger. Using `ctx.mailer` without the plugin throws an explicit error. It has its own entry point: the main one does not depend on `@dotpress/core`.
+The plugin, named `mailer`, provides `ctx.mailer`: the mailer, logging with the request logger (`mailer.withContext({ logger })`). Using `ctx.mailer` without the plugin throws an explicit error. It has its own entry point: the main one does not depend on `@dotpress/core`.
 
 ## Logs
 
-With a `logger` (a Dotpress or Pino logger, or any object with an `info(data, message)` method), each sent message is logged at the `info` level as `Mail sent`, with the provider, the template, the message ID and the number of recipients. Addresses are not logged. Failures are thrown, not logged.
+With a `logger` (a Dotpress or Pino logger, or any object with `info`, `warn` and `error` methods, and optionally `debug`, taking `(data, message)`), each sent message is logged at the `info` level as `Mail sent`, with the provider, the template, the message ID and the number of recipients. Addresses are not logged. Failures are thrown, not logged.
 
 ## Performance
 

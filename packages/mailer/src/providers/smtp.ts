@@ -65,18 +65,35 @@ const toNodemailerMessage = (message: MailMessage): SendMailOptions => ({
   headers: { ...message.headers },
 })
 
+/** Options of `createNodemailerProvider()`. */
+export interface NodemailerProviderOptions {
+  /** Name of the provider, in the logs. Defaults to `nodemailer`. */
+  name?: string | undefined
+}
+
 /**
  * Creates a provider from a nodemailer transporter: SMTP, sendmail,
  * Amazon SES through nodemailer, or a stream transport for tests.
  */
 export const createNodemailerProvider = (
   transporter: NodemailerTransporter,
-  name = 'nodemailer'
+  options: NodemailerProviderOptions = {}
 ): NodemailerProvider => {
+  const label = 'createNodemailerProvider()'
   if (typeof transporter?.sendMail !== 'function') {
-    throw new TypeError(
-      'createNodemailerProvider(): expected a nodemailer transporter.'
-    )
+    throw new TypeError(`${label}: expected a nodemailer transporter.`)
+  }
+  if (typeof options !== 'object' || options === null) {
+    throw new TypeError(`${label}: options must be an object.`)
+  }
+  for (const key of Object.keys(options)) {
+    if (key !== 'name') {
+      throw new TypeError(`${label}: unknown option "${key}".`)
+    }
+  }
+  const { name = 'nodemailer' } = options
+  if (typeof name !== 'string' || name === '') {
+    throw new TypeError(`${label}: name must be a non-empty string.`)
   }
   return {
     name,
@@ -119,5 +136,5 @@ export const createSmtpProvider = (
   const transporter: Transporter = nodemailer.createTransport(
     options as SMTPTransportOptions
   )
-  return createNodemailerProvider(transporter, 'smtp')
+  return createNodemailerProvider(transporter, { name: 'smtp' })
 }

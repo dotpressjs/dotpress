@@ -348,3 +348,11 @@ export const createMemo = (): Memo => {
   }
   return Object.freeze(memo)
 }
+
+/**
+ * Runs each request inside a scope for its memo, like `asyncLocalMemo` of
+ * `@dotpress/cache/als`.
+ */
+export interface MemoScope {
+  run<T>(memo: Memo, next: () => Promise<T>): Promise<T>
+}

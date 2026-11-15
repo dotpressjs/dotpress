@@ -17,7 +17,25 @@ export type MailAddress = string | Address
 /** One or more email addresses. */
 export type MailRecipients = MailAddress | readonly MailAddress[]
 
-/** A file attached to a message. */
+/** A file to attach to a message, given to `send()` and `sendMessage()`. */
+export interface MailAttachmentInput {
+  /** File name shown by email clients. */
+  readonly filename: string
+  /** Binary content, or text content (UTF-8). */
+  readonly content: Uint8Array | string
+  /** MIME type, like `application/pdf`. Guessed by the provider if missing. */
+  readonly contentType?: string | undefined
+  /**
+   * Makes the attachment inline: the HTML version references it with
+   * `cid:` (`<img src="cid:logo">`).
+   */
+  readonly contentId?: string | undefined
+}
+
+/**
+ * A file attached to a message, as given to providers: validated. Its
+ * input, `MailAttachmentInput`, may accept more forms later.
+ */
 export interface MailAttachment {
   /** File name shown by email clients. */
   readonly filename: string
@@ -67,7 +85,7 @@ export interface EnvelopeOptions {
   replyTo?: MailRecipients | undefined
   /** Defaults to the `from` option of the mailer. */
   from?: MailAddress | undefined
-  attachments?: readonly MailAttachment[] | undefined
+  attachments?: readonly MailAttachmentInput[] | undefined
   /** Additional headers, like `List-Unsubscribe`. */
   headers?: Readonly<Record<string, string>> | undefined
   /**

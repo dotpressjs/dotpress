@@ -24,9 +24,9 @@ export interface LayoutContext extends TranslateContext {
 }
 
 /** A source, or a function that produces it in the rendered locale. */
-export type Source = string | ((context: TranslateContext) => string)
+export type TemplateSource = string | ((context: TranslateContext) => string)
 
-type LayoutSource =
+type LayoutBody =
   | { mjml: (context: LayoutContext) => string; html?: never }
   | { html: (context: LayoutContext) => string; mjml?: never }
 
@@ -34,7 +34,7 @@ type LayoutSource =
 export type LayoutOptions<L extends string = string> = {
   /** Texts of the layout, read with `t()`. */
   translations?: Translations<L>
-} & LayoutSource
+} & LayoutBody
 
 /** Layout created by `defineLayout()`. */
 export interface MailLayout<L extends string = string> {
@@ -48,8 +48,9 @@ export interface MailLayout<L extends string = string> {
   readonly __locales?: (locale: L) => void
 }
 
-type TemplateSource =
-  { mjml: Source; html?: never } | { html: Source; mjml?: never }
+type TemplateBody =
+  | { mjml: TemplateSource; html?: never }
+  | { html: TemplateSource; mjml?: never }
 
 /** Options of `defineTemplate()`. */
 export type TemplateOptions<
@@ -76,8 +77,8 @@ export type TemplateOptions<
    * Text version, rendered by Mustache without HTML escaping. Defaults to a
    * conversion of the HTML version.
    */
-  text?: Source
-} & TemplateSource
+  text?: TemplateSource
+} & TemplateBody
 
 /** Data accepted by a template, given its schema. */
 export type DataOf<S> = S extends z.ZodType ? z.input<S> : undefined
@@ -110,12 +111,12 @@ export interface TemplateDefinition {
   readonly name: string
   readonly format: MailFormat
   readonly locales: readonly string[]
-  readonly source: Source
+  readonly source: TemplateSource
   readonly layout: LayoutDefinition | undefined
   readonly schema: z.ZodType | undefined
   readonly subject: string | Localized
   readonly translations: Translations
-  readonly text: Source | undefined
+  readonly text: TemplateSource | undefined
   /** Compiled HTML by locale, before Mustache (see `render.ts`). */
   readonly cache: Map<string, Promise<string>>
 }
@@ -312,12 +313,12 @@ export const defineTemplate = <
     name,
     format,
     locales,
-    source: values[format] as Source,
+    source: values[format] as TemplateSource,
     layout: layoutDefinition,
     schema: schema as z.ZodType | undefined,
     subject: subject as string | Localized,
     translations: (values.translations ?? {}) as Translations,
-    text: text as Source | undefined,
+    text: text as TemplateSource | undefined,
     cache: new Map(),
   })
   return template

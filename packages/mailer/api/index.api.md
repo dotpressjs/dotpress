@@ -17,23 +17,13 @@ export interface ConsoleProviderOptions {
   write?: ((output: string) => void) | undefined
 }
 
-export type DataOf<S> = S extends z.ZodType ? z.input<S> : undefined
-
-export type DataOption<TData> = [TData] extends [undefined]
-  ? {
-      data?: undefined
-    }
-  : {
-      data: TData
-    }
-
 export interface EnvelopeOptions {
   to: MailRecipients
   cc?: MailRecipients | undefined
   bcc?: MailRecipients | undefined
   replyTo?: MailRecipients | undefined
   from?: MailAddress | undefined
-  attachments?: readonly MailAttachment[] | undefined
+  attachments?: readonly MailAttachmentInput[] | undefined
   headers?: Readonly<Record<string, string>> | undefined
   tags?: readonly string[] | undefined
   metadata?: Readonly<Record<string, string>> | undefined
@@ -50,7 +40,7 @@ export interface LayoutContext extends TranslateContext {
 
 export type LayoutOptions<L extends string = string> = {
   translations?: Translations<L>
-} & LayoutSource
+} & LayoutBody
 
 export type Localized<L extends string = string> = Readonly<Record<L, string>>
 
@@ -61,6 +51,13 @@ export interface MailAttachment {
   readonly content: Uint8Array | string
   readonly contentType?: string
   readonly contentId?: string
+}
+
+export interface MailAttachmentInput {
+  readonly filename: string
+  readonly content: Uint8Array | string
+  readonly contentType?: string | undefined
+  readonly contentId?: string | undefined
 }
 
 export declare class MailDataError extends MailerError {
@@ -147,7 +144,11 @@ export interface Mailer {
     options: RenderMailOptions<NoInfer<TData>>
   ): Promise<RenderedMail>
   sendMessage(options: MessageOptions): Promise<SendResult>
-  withLogger(logger: MailerLogger): Mailer
+  withContext(context?: MailerContext): Mailer
+}
+
+export interface MailerContext {
+  logger?: MailerLogger | undefined
 }
 
 export declare class MailerError extends Error {
@@ -155,7 +156,10 @@ export declare class MailerError extends Error {
 }
 
 export interface MailerLogger {
+  debug?(data: object, message: string): void
   info(data: object, message: string): void
+  warn(data: object, message: string): void
+  error(data: object, message: string): void
 }
 
 export interface MailerOptions {
@@ -204,8 +208,6 @@ export interface SendResult {
   readonly messageId: string | undefined
 }
 
-export type Source = string | ((context: TranslateContext) => string)
-
 export type TemplateData<T> = T extends MailTemplate<infer D> ? D : never
 
 export type TemplateOptions<
@@ -217,8 +219,10 @@ export type TemplateOptions<
   schema?: S
   subject: string | Localized<L>
   translations?: Translations<L>
-  text?: Source
-} & TemplateSource
+  text?: TemplateSource
+} & TemplateBody
+
+export type TemplateSource = string | ((context: TranslateContext) => string)
 
 export interface TranslateContext {
   readonly locale: string | undefined
@@ -261,7 +265,17 @@ export declare const renderMail: <TData>(
 Declarations that the exports refer to, without exporting them.
 
 ```ts
-type LayoutSource =
+type DataOf<S> = S extends z.ZodType ? z.input<S> : undefined
+
+type DataOption<TData> = [TData] extends [undefined]
+  ? {
+      data?: undefined
+    }
+  : {
+      data: TData
+    }
+
+type LayoutBody =
   | {
       mjml: (context: LayoutContext) => string
       html?: never
@@ -271,13 +285,13 @@ type LayoutSource =
       mjml?: never
     }
 
-type TemplateSource =
+type TemplateBody =
   | {
-      mjml: Source
+      mjml: TemplateSource
       html?: never
     }
   | {
-      html: Source
+      html: TemplateSource
       mjml?: never
     }
 ```

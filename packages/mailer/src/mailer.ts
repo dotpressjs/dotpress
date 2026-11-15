@@ -42,7 +42,15 @@ export interface MailProvider {
  * the logger of the request.
  */
 export interface MailerLogger {
+  debug?(data: object, message: string): void
   info(data: object, message: string): void
+  warn(data: object, message: string): void
+  error(data: object, message: string): void
+}
+
+/** Context of a mailer: the logger of a request, for instance. */
+export interface MailerContext {
+  logger?: MailerLogger | undefined
 }
 
 /** Options of `createMailer()`. */
@@ -98,8 +106,8 @@ export interface Mailer {
   ): Promise<RenderedMail>
   /** Sends a message rendered elsewhere. */
   sendMessage(options: MessageOptions): Promise<SendResult>
-  /** The same mailer, with another logger. */
-  withLogger(logger: MailerLogger): Mailer
+  /** The same mailer, with another logger (`ctx.mailer` is one). */
+  withContext(context?: MailerContext): Mailer
 }
 
 const MAILER_OPTIONS = new Set([
@@ -124,9 +132,15 @@ const ENVELOPE_OPTIONS = [
 const SEND_OPTIONS = new Set([...ENVELOPE_OPTIONS, 'locale', 'data'])
 const MESSAGE_OPTIONS = new Set([...ENVELOPE_OPTIONS, 'html', 'text'])
 
-const checkLogger = (logger: unknown) => {
-  if (typeof (logger as MailerLogger | null)?.info !== 'function') {
-    throw new TypeError('Invalid mailer logger: expected an info() method.')
+const checkLogger = (label: string, logger: unknown) => {
+  for (const level of ['info', 'warn', 'error'] as const) {
+    if (
+      typeof (logger as Record<string, unknown> | null)?.[level] !== 'function'
+    ) {
+      throw new TypeError(
+        `${label}: logger must have info(), warn() and error() methods.`
+      )
+    }
   }
 }
 
@@ -171,7 +185,7 @@ export const createMailer = (options: MailerOptions): Mailer => {
       'Invalid mailer options: defaultLocale must be a non-empty string.'
     )
   }
-  if (logger !== undefined) checkLogger(logger)
+  if (logger !== undefined) checkLogger('createMailer()', logger)
   if (values.from === undefined) {
     throw new TypeError('Invalid mailer options: from is required.')
   }
@@ -282,9 +296,18 @@ export const createMailer = (options: MailerOptions): Mailer => {
         })
       },
 
-      withLogger: (other) => {
-        checkLogger(other)
-        return create(other)
+      withContext: (context: MailerContext = {}) => {
+        if (typeof context !== 'object' || context === null) {
+          throw new TypeError('withContext(): expected an object.')
+        }
+        for (const key of Object.keys(context)) {
+          if (key !== 'logger') {
+            throw new TypeError(`withContext(): unknown option "${key}".`)
+          }
+        }
+        if (context.logger === undefined) return create(logger)
+        checkLogger('withContext()', context.logger)
+        return create(context.logger)
       },
     }
     return Object.freeze(mailer)

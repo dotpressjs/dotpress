@@ -87,9 +87,9 @@ describe('createMailer()', () => {
       'Invalid mailer options: defaultLocale must be a non-empty string.',
     ],
     [
-      'a logger without info()',
+      'an incomplete logger',
       { from: 'a@example.com', provider: createMemoryProvider(), logger: {} },
-      'Invalid mailer logger: expected an info() method.',
+      'createMailer(): logger must have info(), warn() and error() methods.',
     ],
   ])('rejects %s', (_, options, message) => {
     expect(() => createMailer(options as never)).toThrow(new TypeError(message))
@@ -395,7 +395,7 @@ describe('provider results and errors', () => {
 
 describe('logs', () => {
   it('logs sent messages without addresses', async () => {
-    const logger = { info: vi.fn() }
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     const { mailer } = setup({ logger })
     await mailer.send(welcome, {
       to: ['a@example.com', 'b@example.com'],
@@ -415,7 +415,7 @@ describe('logs', () => {
   })
 
   it('does not log failures (they are thrown)', async () => {
-    const logger = { info: vi.fn() }
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     const mailer = createMailer({
       provider: failing(new Error('down')),
       from: 'a@example.com',
@@ -427,11 +427,11 @@ describe('logs', () => {
     expect(logger.info).not.toHaveBeenCalled()
   })
 
-  it('withLogger() returns the same mailer with another logger', async () => {
-    const first = { info: vi.fn() }
-    const second = { info: vi.fn() }
+  it('withContext() returns the same mailer with another logger', async () => {
+    const first = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const second = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     const { mailer, outbox } = setup({ logger: first })
-    const other = mailer.withLogger(second)
+    const other = mailer.withContext({ logger: second })
 
     expect(other).not.toBe(mailer)
     expect(Object.isFrozen(other)).toBe(true)
@@ -444,8 +444,11 @@ describe('logs', () => {
       from: { address: 'noreply@example.com' },
       locale: 'en',
     })
-    expect(() => mailer.withLogger({} as never)).toThrow(
-      'Invalid mailer logger: expected an info() method.'
+    expect(() => mailer.withContext({ logger: {} as never })).toThrow(
+      'withContext(): logger must have info(), warn() and error() methods.'
+    )
+    expect(() => mailer.withContext({ metadata: {} } as never)).toThrow(
+      'withContext(): unknown option "metadata".'
     )
   })
 

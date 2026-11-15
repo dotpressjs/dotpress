@@ -5,8 +5,7 @@
 ## Exports
 
 ```ts
-import type { Memo, MemoDefinition } from '@dotpress/cache'
-import type { MemoScope } from '@dotpress/cache/plugin'
+import type { Memo, MemoDefinition, MemoScope } from '@dotpress/cache'
 
 export declare const asyncLocalMemo: MemoScope
 

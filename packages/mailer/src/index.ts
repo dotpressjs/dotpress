@@ -10,6 +10,7 @@ export type { Localized, Translations } from './locales.js'
 export { createMailer } from './mailer.js'
 export type {
   Mailer,
+  MailerContext,
   MailerLogger,
   MailerOptions,
   MailProvider,
@@ -24,6 +25,7 @@ export type {
   EnvelopeOptions,
   MailAddress,
   MailAttachment,
+  MailAttachmentInput,
   MailMessage,
   MailRecipients,
 } from './message.js'
@@ -33,17 +35,16 @@ export { createMemoryProvider } from './providers/memory.js'
 export type { HttpProviderOptions } from './providers/http.js'
 export type { MemoryProvider } from './providers/memory.js'
 export { renderMail } from './render.js'
-export type { DataOption, RenderedMail, RenderMailOptions } from './render.js'
+export type { RenderedMail, RenderMailOptions } from './render.js'
 export { defineLayout, defineTemplate } from './template.js'
 export type {
-  DataOf,
   LayoutContext,
   LayoutOptions,
   MailFormat,
   MailLayout,
   MailTemplate,
-  Source,
   TemplateData,
   TemplateOptions,
+  TemplateSource,
   TranslateContext,
 } from './template.js'

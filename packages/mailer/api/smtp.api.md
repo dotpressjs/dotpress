@@ -16,6 +16,10 @@ export interface NodemailerProvider extends MailProvider {
   close(): void
 }
 
+export interface NodemailerProviderOptions {
+  name?: string | undefined
+}
+
 export interface NodemailerTransporter {
   sendMail(options: SendMailOptions): Promise<{
     messageId?: unknown
@@ -28,7 +32,7 @@ export type SmtpProviderOptions =
 
 export declare const createNodemailerProvider: (
   transporter: NodemailerTransporter,
-  name?: string
+  options?: NodemailerProviderOptions
 ) => NodemailerProvider
 
 export declare const createSmtpProvider: (

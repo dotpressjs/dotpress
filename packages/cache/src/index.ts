@@ -3,8 +3,9 @@ export type {
   Cache,
   CacheEntry,
   CacheEntryOptions,
+  CacheAccess,
+  CacheContext,
   CacheErrorInfo,
-  CacheEvent,
   CacheOptions,
   CachePolicy,
   CacheSchema,
@@ -26,6 +27,7 @@ export type {
   LoadMemoOptions,
   Memo,
   MemoDefinition,
+  MemoScope,
 } from './memo.js'
 export { createMemoryStore } from './store.js'
 export type { CacheStore, MemoryStore, MemoryStoreOptions } from './store.js'

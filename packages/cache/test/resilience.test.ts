@@ -5,7 +5,7 @@ import {
   createCache,
   createMemoryStore,
   defineCacheEntry,
-  type CacheEvent,
+  type CacheAccess,
 } from '../src/index.js'
 import { createLogger, createSpyStore } from './support.js'
 
@@ -32,11 +32,11 @@ const deferred = <T>() => {
 const setup = (options: Record<string, unknown> = {}) => {
   const store = createSpyStore()
   const logger = createLogger()
-  const events: CacheEvent[] = []
+  const events: CacheAccess[] = []
   const cache = createCache({
     store,
     logger,
-    onEvent: (event) => void events.push(event),
+    onAccess: (event) => void events.push(event),
     ...options,
   })
   return { store, logger, events, cache }
@@ -716,7 +716,7 @@ describe('events', () => {
     const cache = createCache({
       store: createMemoryStore(),
       logger,
-      onEvent: () => {
+      onAccess: () => {
         throw new Error('metrics down')
       },
     })
@@ -730,7 +730,7 @@ describe('events', () => {
       },
       {
         level: 'error',
-        message: 'Cache onEvent hook failed',
+        message: 'Cache onAccess hook failed',
         data: { error: 'metrics down' },
       },
       {
@@ -740,7 +740,7 @@ describe('events', () => {
       },
       {
         level: 'error',
-        message: 'Cache onEvent hook failed',
+        message: 'Cache onAccess hook failed',
         data: { error: 'metrics down' },
       },
     ])
@@ -774,7 +774,7 @@ describe('options', () => {
       'defineCacheEntry("x"): tags must be a function.'
     )
     expect(() =>
-      createCache({ store: createMemoryStore(), onEvent: 'log' } as never)
-    ).toThrow('createCache(): onEvent must be a function.')
+      createCache({ store: createMemoryStore(), onAccess: 'log' } as never)
+    ).toThrow('createCache(): onAccess must be a function.')
   })
 })

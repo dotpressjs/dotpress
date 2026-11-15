@@ -1,6 +1,8 @@
 import { declareContextKey, definePlugin } from '@dotpress/core'
 import type { Cache } from './cache.js'
-import { createMemo, type Memo } from './memo.js'
+import { createMemo, type Memo, type MemoScope } from './memo.js'
+
+export type { MemoScope } from './memo.js'
 
 declare module '@dotpress/core' {
   interface RequestContext {
@@ -15,14 +17,6 @@ declare module '@dotpress/core' {
 // error.
 declareContextKey('cache', 'cachePlugin')
 declareContextKey('memo', 'cachePlugin')
-
-/**
- * Runs each request inside a scope for its memo, like `asyncLocalMemo` of
- * `@dotpress/cache/als`.
- */
-export interface MemoScope {
-  run<T>(memo: Memo, next: () => Promise<T>): Promise<T>
-}
 
 /** Options of `cachePlugin()`. */
 export interface CachePluginOptions {
@@ -60,7 +54,7 @@ export const cachePlugin = (options: CachePluginOptions = {}) => {
     }
   }
   const { cache, memoScope } = options
-  if (cache !== undefined && typeof cache?.withLogger !== 'function') {
+  if (cache !== undefined && typeof cache?.withContext !== 'function') {
     throw new TypeError(`${label}: cache must be created by createCache().`)
   }
   if (memoScope !== undefined && typeof memoScope?.run !== 'function') {
@@ -79,7 +73,7 @@ export const cachePlugin = (options: CachePluginOptions = {}) => {
             '"ctx.cache" is used, but cachePlugin() has no cache: pass cachePlugin({ cache }).'
           )
         }
-        return cache.withLogger(ctx.logger)
+        return cache.withContext({ logger: ctx.logger })
       })
       if (memoScope) {
         api.hooks.wrapRequest((ctx, next) => memoScope.run(ctx.memo, next))

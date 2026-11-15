@@ -58,7 +58,7 @@ defineCacheEntry({
 
 Keys are `prefix:name:vVersion:key`, like `app:user:v1:42`. Keys longer than the store accepts are hashed (SHA-256). Durations are a number of seconds, or a string: `'500ms'`, `'30s'`, `'10m'`, `'1h'`, `'7d'` (the `Duration` type of `@dotpress/core`, see [Options and durations](/concepts/options#durations)).
 
-Without a `schema`, `getOrSet` returns the type of the loader, and `get` returns `unknown`: `defineCacheEntry<[id: string], User>({ … })` declares the type.
+Without a `schema`, `getOrSet` returns the type of the loader, and `get` returns `unknown` (the `Untyped` value type of the entry): `defineCacheEntry<[id: string], User>({ … })` declares the type.
 
 ## createCache()
 
@@ -72,8 +72,8 @@ Without a `schema`, `getOrSet` returns the type of the loader, and `get` returns
 | `logger` | — | Logs store failures, stale values and events. |
 | `storeTimeout` | — | A slower store operation counts as a failure. Set it: a reconnecting client makes commands wait. |
 | `failOpen` | `true` | `false` throws a `CacheStoreError` when the store fails. |
-| `onError(error, { operation, key, entry })` | — | Every store failure; `operation` is `get`, `set`, `delete` or `invalidate`. Its own errors are logged and ignored. |
-| `onEvent(event)` | — | Each result of `get` and `getOrSet`, for metrics. See [Events](#events). |
+| `onError(error, { operation, key, entry })` | — | Every store failure; `operation` (`StoreOperation`) is `get`, `set`, `delete`, `invalidate`, `lock` or `unlock`. Its own errors are logged and ignored. |
+| `onAccess(access)` | — | Each result of `get` and `getOrSet`, for metrics. See [Accesses](#accesses). |
 
 | Method | Description |
 | --- | --- |
@@ -82,7 +82,7 @@ Without a `schema`, `getOrSet` returns the type of the loader, and `get` returns
 | `set(entry, ...args, value)` | Writes a value. |
 | `delete(entry, ...args)` | Removes a value for good. |
 | `invalidateTags(tags)` | Expires every value of these tags. |
-| `withLogger(logger)` | The same cache, with another logger: the logger of a request. |
+| `withContext({ logger })` | The same cache, with another logger: the logger of a request. `ctx.cache` is one. |
 
 ### Values
 
@@ -108,9 +108,9 @@ Each tag has a random token in the store (`prefix:_tag:name`, kept 30 days or lo
 - A value whose token changed or vanished is expired: `get` returns `undefined`, and `getOrSet` reloads it. With a `grace` period, it can still be served when the loader fails, never by `staleWhileRevalidate`: the data changed.
 - When the tokens cannot be read, values with tags count as invalidated, and new values are not cached.
 
-### Events
+### Accesses
 
-`onEvent(event)` receives `{ type, reason?, entry, key }`: `type` is `hit`, `miss` or `stale`, and `reason` (for a stale value) is `revalidate`, `error`, `timeout` or `backoff`. The same events are logged at the `debug` level.
+`onAccess(access)` receives a `CacheAccess`, `{ type, reason?, entry, key }`: `type` is `hit`, `miss` or `stale`, and `reason` (for a stale value) is `revalidate`, `error`, `timeout` or `backoff`. The same accesses are logged at the `debug` level.
 
 ### Store failures
 

@@ -1,6 +1,6 @@
 {
   "name": "@dotpress/cache",
-  "version": "2.0.0-alpha.4",
+  "version": "2.0.0-alpha.5",
   "description": "Request memoization with batching, and a resilient cache with interchangeable stores",
   "author": "Renaud Guyon",
   "license": "MIT",

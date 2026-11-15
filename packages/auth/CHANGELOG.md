@@ -1,5 +1,53 @@
 # @dotpress/auth
 
+## 2.0.0-alpha.5
+
+### Minor Changes
+
+- [#20](https://github.com/dotpressjs/dotpress/pull/20) [`4c9eac4`](https://github.com/dotpressjs/dotpress/commit/4c9eac4479b3c8e3af18b3b5812920aad205ab78) Thanks [@renoguyon](https://github.com/renoguyon)! - API review of the auth package, before the beta. Breaking changes:
+  
+  - `auth.settings` is no longer public (it exposed the private key), nor `auth.init()`, `AuthInitOptions`, the `Resolved*` types and `extractAccessToken()`. `authPlugin()` only accepts a service created with `createAuth()`.
+  - The data provider no longer receives the refresh token in clear: `storeRefreshToken()` gets its `tokenHash` only. `StoreRefreshTokenDto` is renamed `NewRefreshToken`.
+  - One name per concept in the contract of the data provider: `sessionId` instead of `familyId`, and `accessTokenId` instead of `jwtId` (and of `AuthSession.tokenId`). `revokeTokenFamily(familyId)` is renamed `revokeSessionTokens(sessionId)`, and `revokeTokens(userId)` `revokeUserTokens(userId)`.
+  - New `auth.revokeUserSessions(userId)`: revokes every session of a user, after a password change for instance.
+  - `keys.secretKey` is renamed `keys.privateKey`.
+  - The setting types are named `*Options`: `AuthOptions`, `AuthCookieOptions`, `ClientOptions`, `SessionOptions`, `LoginThrottleOptions`, `KeyPairOptions`.
+  - `createAuth()` (nested settings included) and `authPlugin()` reject unknown options.
+  - The durations accept a `Duration`, rounded to the second: `accessTokenTTL: '15m'`, `session: { idleTimeout: '14d' }`, `refreshTokenReuseInterval`, and the `window` of the login limits.
+  - `generateAccessToken()` and `generateRefreshToken()` are removed: every access token belongs to a session, and access tokens without session are rejected. `AuthSession.sessionId` is always a string.
+  - `hashPassword(password)` no longer takes a cost, `generatePasswordHash(password, { rounds })` takes it as an option, and `MAX_PASSWORD_BYTES` is no longer exported. `setAuthCookies()` no longer takes a third parameter.
+  - `clients.isUserRoleAllowed({ userId, role, clientId })` takes an object.
+  - The hooks (`onLoginFailed`, `onLoginSuccess`, `onRefreshTokenReuse`) may be synchronous. `LoginErrorType` names the `errorType` of `LoginFailedEvent`.
+
+- [#17](https://github.com/dotpressjs/dotpress/pull/17) [`7c669aa`](https://github.com/dotpressjs/dotpress/commit/7c669aa7398a66d01176819417eb41cb38110a48) Thanks [@renoguyon](https://github.com/renoguyon)! - API review of the core, before the beta. Breaking changes:
+  
+  - `new HttpError(status, code, message, { data, cause })`: the data and the cause are options. The error helpers take the same options: `notFoundError('Task not found', { data: { id } })`, and `errorResponse(status, code, message, options)`. Unknown options throw a `TypeError`.
+  - What adapters need moved to `@dotpress/core/adapter`: `CompiledRoute`, `DotpressRuntime`, `createRouteMatcher()`, `parseQueryString()`, `parseRequestBody()`, `DEFAULT_BODY_LIMIT`, `fromWebRequest()`, `readRequestBody()`, `toWebResponse()`, and the body errors (`malformedBodyError()`, `payloadTooLargeError()`, `unsupportedMediaTypeError()`). Helpers used only by the core tests are no longer exported: `fromWebHeaders()`, `parseCookieHeader()`, `serializeCookie()`, `HTTP_METHODS`, `isHttpMethod()`, `isResponseResult()`, `routeNotFoundError()`, `methodNotAllowedError()`.
+  - `NormalizedResponse` has no `kind` anymore: adapters read the type of the `body`.
+  - `Router` has no `getRoutes()` and `getResponseFilters()` anymore, and `RouteRecord` is no longer exported. `createApp()` only mounts routers made by `createRouter()`.
+  - `createApp()`, the routes (with their `schema` and `meta`) and `createConsoleLogger()` reject unknown options, and the logger an unknown `level`.
+  - `Duration` and `parseDuration()` are exported by `@dotpress/core`, no longer by `@dotpress/cache`.
+  - `RateLimitStore`, `RateLimitState` and `createMemoryRateLimitStore()` are exported by `@dotpress/core`, to be shared by every rate limit: `@dotpress/auth` no longer exports them, nor `memoryRateLimitStore()`.
+  
+  `createApp()` warns when several copies of `@dotpress/core` are loaded: the routes declared with one copy are not mounted by the other.
+
+### Patch Changes
+
+- [#23](https://github.com/dotpressjs/dotpress/pull/23) [`7a5edeb`](https://github.com/dotpressjs/dotpress/commit/7a5edeba1d104850a528ffd05909e766332694a4) Thanks [@renoguyon](https://github.com/renoguyon)! - Last lot of the API review, before the beta. Breaking changes:
+  
+  - One verb per operation: `api.addRoute()` becomes `api.defineRoute()`, `api.addRouteGroup()` becomes `api.createGroup()`, and the global `registerResponseFilter()` becomes `addResponseFilter()`, like the methods of routers and plugins.
+  - `RouteResponse` becomes `DocumentedResponse`, and `SchemaDefinition`, `SchemaInput` and `SchemaOutput` become `RouteSchemaDefinition`, `RouteSchemaInput` and `RouteSchemaOutput`.
+  - `app.listen()` and `HttpAdapter.listen()` return the address of the server, `{ port, host }`: the actual port with `listen(0)`.
+  - `redirect(location, { status, headers })` takes an options object, and checks the status.
+  - The `origin` function of the `cors` option and `generateRequestId` receive the request of the app (`DotpressRequest`, with `header()`), not the normalized request of the adapter.
+  - `RouteMeta.tags` and `security` accept readonly arrays (`as const`).
+  - The options of the adapters have a default type parameter (`HonoAdapterOptions` is `HonoAdapterOptions<Hono>`), and the Fastify adapter refuses to listen twice.
+  - `@dotpress/testing` exports the types of its signatures: `EnvelopeLike`, `SentMailAddress` and `ExpectedAddresses`.
+  
+  The error messages of the configuration follow one format, `fn(): message.`, or the subject they are about (`Route "/users": …`).
+- Updated dependencies [[`7a5edeb`](https://github.com/dotpressjs/dotpress/commit/7a5edeba1d104850a528ffd05909e766332694a4), [`7c669aa`](https://github.com/dotpressjs/dotpress/commit/7c669aa7398a66d01176819417eb41cb38110a48)]:
+  - @dotpress/core@2.0.0-alpha.5
+
 ## 2.0.0-alpha.4
 
 ### Patch Changes

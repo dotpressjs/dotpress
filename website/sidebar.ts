@@ -104,11 +104,20 @@ const reference: SidebarGroup[] = [
       { text: 'Events', link: '/reference/events' },
       { text: 'Mailer', link: '/reference/mailer' },
       { text: 'Cache', link: '/reference/cache' },
+      { text: 'OpenAPI', link: '/reference/openapi' },
+      { text: 'Testing', link: '/reference/testing' },
+      { text: 'Adapters', link: '/reference/adapters' },
     ],
   },
   {
     text: 'Upgrading',
-    items: [{ text: 'Migrate from v1', link: '/reference/migrate-from-v1' }],
+    items: [
+      { text: 'Migrate from v1', link: '/reference/migrate-from-v1' },
+      {
+        text: 'Versioning and compatibility',
+        link: '/reference/compatibility',
+      },
+    ],
   },
   {
     text: 'Design decisions',

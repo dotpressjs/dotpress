@@ -1,5 +1,38 @@
 # @dotpress/testing
 
+## 2.0.0-alpha.5
+
+### Minor Changes
+
+- [#18](https://github.com/dotpressjs/dotpress/pull/18) [`ca28c04`](https://github.com/dotpressjs/dotpress/commit/ca28c041d65a4472ed3e579c0a05bf532850040d) Thanks [@renoguyon](https://github.com/renoguyon)! - API review of the adapters, OpenAPI and the test helpers, before the beta. Breaking changes:
+  
+  - `@dotpress/adapter-hono/lambda` and `@dotpress/adapter-fastify/lambda` export the same types, owned by Dotpress: `LambdaEvent`, `LambdaContext`, `LambdaResult`, `LambdaHandler`, `LambdaHandlerOptions`, `LambdaApp`. The Hono entry no longer re-exports the types of `@hono/aws-lambda` (`APIGatewayProxyResult`).
+  - The conformance suite has its own entry, `@dotpress/testing/conformance`: `runConformanceSuite()`, `createHttpTarget()`, `createFetchTarget()`. `ConformanceTarget` is renamed `TestTarget`, exported by both entries.
+  - The test targets take `close` as an option, optional: `createHttpTarget(url, { close })`, `createFetchTarget(handle, { close })`, and `createLambdaTarget(handler, { format })` without `close`.
+  - `expressAdapter()`, `fastifyAdapter()`, `honoAdapter()`, `createLambdaHandler()`, `openapiPlugin()` (and its `ui`), `generateOpenApi()` and the test targets reject unknown options.
+  - `@dotpress/openapi` no longer exports `SCALAR_CDN_URL`. `getDocument()` of the plugin is documented.
+  - `@types/express` is an optional peer dependency of `@dotpress/adapter-express`: without it, the Express application is typed `any`.
+  
+  Fix: the `close()` of the Express adapter closes the responses being streamed when the app serves the Express application with its own server (HTTPS…), like the other adapters.
+
+- [#23](https://github.com/dotpressjs/dotpress/pull/23) [`7a5edeb`](https://github.com/dotpressjs/dotpress/commit/7a5edeba1d104850a528ffd05909e766332694a4) Thanks [@renoguyon](https://github.com/renoguyon)! - Last lot of the API review, before the beta. Breaking changes:
+  
+  - One verb per operation: `api.addRoute()` becomes `api.defineRoute()`, `api.addRouteGroup()` becomes `api.createGroup()`, and the global `registerResponseFilter()` becomes `addResponseFilter()`, like the methods of routers and plugins.
+  - `RouteResponse` becomes `DocumentedResponse`, and `SchemaDefinition`, `SchemaInput` and `SchemaOutput` become `RouteSchemaDefinition`, `RouteSchemaInput` and `RouteSchemaOutput`.
+  - `app.listen()` and `HttpAdapter.listen()` return the address of the server, `{ port, host }`: the actual port with `listen(0)`.
+  - `redirect(location, { status, headers })` takes an options object, and checks the status.
+  - The `origin` function of the `cors` option and `generateRequestId` receive the request of the app (`DotpressRequest`, with `header()`), not the normalized request of the adapter.
+  - `RouteMeta.tags` and `security` accept readonly arrays (`as const`).
+  - The options of the adapters have a default type parameter (`HonoAdapterOptions` is `HonoAdapterOptions<Hono>`), and the Fastify adapter refuses to listen twice.
+  - `@dotpress/testing` exports the types of its signatures: `EnvelopeLike`, `SentMailAddress` and `ExpectedAddresses`.
+  
+  The error messages of the configuration follow one format, `fn(): message.`, or the subject they are about (`Route "/users": …`).
+
+### Patch Changes
+
+- Updated dependencies [[`7a5edeb`](https://github.com/dotpressjs/dotpress/commit/7a5edeba1d104850a528ffd05909e766332694a4), [`7c669aa`](https://github.com/dotpressjs/dotpress/commit/7c669aa7398a66d01176819417eb41cb38110a48)]:
+  - @dotpress/core@2.0.0-alpha.5
+
 ## 2.0.0-alpha.4
 
 ### Patch Changes

@@ -49,7 +49,7 @@ export const createNotifications = ({
       }
       const project = await projects.findById(task.projectId)
       await once(id, () =>
-        mailer.withLogger(logger).send(taskAssignedMail, {
+        mailer.withContext({ logger }).send(taskAssignedMail, {
           to: { name: assignee.name, address: assignee.email },
           locale: assignee.locale,
           data: {
@@ -82,7 +82,7 @@ export const createNotifications = ({
       ])
       if (!creator || !actor) return
       await once(id, () =>
-        mailer.withLogger(logger).send(taskCompletedMail, {
+        mailer.withContext({ logger }).send(taskCompletedMail, {
           to: { name: creator.name, address: creator.email },
           locale: creator.locale,
           data: {

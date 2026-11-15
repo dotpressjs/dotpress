@@ -258,8 +258,8 @@ export interface CacheErrorInfo {
   readonly entry: string
 }
 
-/** Something that happened to a value, for `onEvent`. */
-export interface CacheEvent {
+/** An access to a value, for `onAccess`. */
+export interface CacheAccess {
   /**
    * `hit`: fresh value; `miss`: loaded; `stale`: a value past its `ttl`
    * served, for the `reason`.
@@ -270,6 +270,11 @@ export interface CacheEvent {
   readonly entry: string
   /** Key of the store. */
   readonly key: string
+}
+
+/** Context of a cache: the logger of a request, for instance. */
+export interface CacheContext {
+  logger?: CacheLogger | undefined
 }
 
 /** Options of `createCache()`: the policy is the default of the entries. */
@@ -299,7 +304,7 @@ export interface CacheOptions extends CachePolicy {
    * Called for each hit, miss and stale value served: metrics. Its errors
    * are logged and ignored.
    */
-  onEvent?: ((event: CacheEvent) => void) | undefined
+  onAccess?: ((event: CacheAccess) => void) | undefined
 }
 
 /** A cache, created by `createCache()`. */
@@ -343,8 +348,8 @@ export interface Cache {
    * the grace period when the loader fails).
    */
   invalidateTags(tags: readonly string[]): Promise<void>
-  /** The same cache, logging with another logger. */
-  withLogger(logger: CacheLogger): Cache
+  /** The same cache, logging with another logger (`ctx.cache` is one). */
+  withContext(context?: CacheContext): Cache
 }
 
 const CACHE_OPTIONS = new Set([
@@ -356,7 +361,7 @@ const CACHE_OPTIONS = new Set([
   'onError',
   'failOpen',
   'storeTimeout',
-  'onEvent',
+  'onAccess',
   ...POLICY,
 ])
 
@@ -436,7 +441,7 @@ export const createCache = (options: CacheOptions): Cache => {
     prefix,
     serializer = jsonSerializer,
     onError,
-    onEvent,
+    onAccess,
     failOpen = true,
   } = options
   if (!isStore(store)) {
@@ -462,8 +467,8 @@ export const createCache = (options: CacheOptions): Cache => {
   if (onError !== undefined && typeof onError !== 'function') {
     throw new TypeError(`${label}: onError must be a function.`)
   }
-  if (onEvent !== undefined && typeof onEvent !== 'function') {
-    throw new TypeError(`${label}: onEvent must be a function.`)
+  if (onAccess !== undefined && typeof onAccess !== 'function') {
+    throw new TypeError(`${label}: onAccess must be a function.`)
   }
   if (typeof failOpen !== 'boolean') {
     throw new TypeError(`${label}: failOpen must be a boolean.`)
@@ -619,8 +624,8 @@ export const createCache = (options: CacheOptions): Cache => {
       }
     }
 
-    /** Reports an event to the log (debug) and `onEvent`. */
-    const report = (event: CacheEvent) => {
+    /** Reports an event to the log (debug) and `onAccess`. */
+    const report = (event: CacheAccess) => {
       const { type, reason, entry, key } = event
       logger.debug?.(
         { entry, key, ...(reason ? { reason } : {}) },
@@ -630,11 +635,11 @@ export const createCache = (options: CacheOptions): Cache => {
             ? 'Cache miss'
             : 'Cache served a stale value'
       )
-      if (!onEvent) return
+      if (!onAccess) return
       try {
-        onEvent(event)
+        onAccess(event)
       } catch (error) {
-        logger.error({ error: describe(error) }, 'Cache onEvent hook failed')
+        logger.error({ error: describe(error) }, 'Cache onAccess hook failed')
       }
     }
 
@@ -1036,7 +1041,21 @@ export const createCache = (options: CacheOptions): Cache => {
         logger.debug?.({ tags }, 'Cache tags invalidated')
       },
 
-      withLogger: (other) => create(checkLogger('withLogger()', other)),
+      withContext: (context: CacheContext = {}) => {
+        if (typeof context !== 'object' || context === null) {
+          throw new TypeError('withContext(): expected an object.')
+        }
+        for (const key of Object.keys(context)) {
+          if (key !== 'logger') {
+            throw new TypeError(`withContext(): unknown option "${key}".`)
+          }
+        }
+        return create(
+          context.logger === undefined
+            ? logger
+            : checkLogger('withContext()', context.logger)
+        )
+      },
     }
     return Object.freeze(cache)
   }

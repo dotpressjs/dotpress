@@ -37,7 +37,18 @@ export interface Cache {
     ...argsAndLoader: [...A, () => R | Promise<R>]
   ): Promise<[R] extends [T] ? T : T | undefined>
   invalidateTags(tags: readonly string[]): Promise<void>
-  withLogger(logger: CacheLogger): Cache
+  withContext(context?: CacheContext): Cache
+}
+
+export interface CacheAccess {
+  readonly type: 'hit' | 'miss' | 'stale'
+  readonly reason?: 'revalidate' | 'error' | 'timeout' | 'backoff'
+  readonly entry: string
+  readonly key: string
+}
+
+export interface CacheContext {
+  logger?: CacheLogger | undefined
 }
 
 export interface CacheEntry<A extends readonly unknown[], T> {
@@ -70,13 +81,6 @@ export interface CacheErrorInfo {
   readonly entry: string
 }
 
-export interface CacheEvent {
-  readonly type: 'hit' | 'miss' | 'stale'
-  readonly reason?: 'revalidate' | 'error' | 'timeout' | 'backoff'
-  readonly entry: string
-  readonly key: string
-}
-
 export interface CacheLogger {
   debug?(data: object, message: string): void
   info(data: object, message: string): void
@@ -94,7 +98,7 @@ export interface CacheOptions extends CachePolicy {
     | undefined
   failOpen?: boolean | undefined
   storeTimeout?: Duration | undefined
-  onEvent?: ((event: CacheEvent) => void) | undefined
+  onAccess?: ((event: CacheAccess) => void) | undefined
 }
 
 export interface CachePolicy {
@@ -197,6 +201,10 @@ export interface MemoDefinition<A extends readonly unknown[], T> {
     args: A
     value: T
   }
+}
+
+export interface MemoScope {
+  run<T>(memo: Memo, next: () => Promise<T>): Promise<T>
 }
 
 export interface MemoryStore extends CacheStore {

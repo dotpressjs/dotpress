@@ -244,9 +244,9 @@ describe('nodemailer provider', () => {
     })
     const provider = createNodemailerProvider(transporter)
     expect(provider.name).toBe('nodemailer')
-    expect(createNodemailerProvider(transporter, 'sendmail').name).toBe(
-      'sendmail'
-    )
+    expect(
+      createNodemailerProvider(transporter, { name: 'sendmail' }).name
+    ).toBe('sendmail')
     const result = await createMailer({
       provider,
       from: 'noreply@example.com',

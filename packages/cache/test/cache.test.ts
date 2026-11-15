@@ -84,7 +84,9 @@ describe('cache.getOrSet()', () => {
     const calls = [
       cache.getOrSet(userCache, '42', load),
       cache.getOrSet(userCache, '42', load),
-      cache.withLogger(createLogger()).getOrSet(userCache, '42', load),
+      cache
+        .withContext({ logger: createLogger() })
+        .getOrSet(userCache, '42', load),
     ]
     await new Promise((resolve) => setTimeout(resolve, 5))
     pending.resolve(ada)
@@ -143,7 +145,7 @@ describe('cache.getOrSet()', () => {
     const load = vi.fn(async () => undefined)
     const logger = createLogger()
     expect(
-      await cache.withLogger(logger).getOrSet(settings, load)
+      await cache.withContext({ logger: logger }).getOrSet(settings, load)
     ).toBeUndefined()
     expect(logger.entries.filter(({ level }) => level !== 'debug')).toEqual([])
     expect(await cache.getOrSet(settings, load)).toBeUndefined()
@@ -724,8 +726,12 @@ describe('createCache()', () => {
     )
     const cache = createCache({ store })
     expect(Object.isFrozen(cache)).toBe(true)
-    expect(() => cache.withLogger({} as never)).toThrow(
-      'withLogger(): logger must have info(), warn() and error() methods.'
+    expect(() => cache.withContext({ logger: {} as never })).toThrow(
+      'withContext(): logger must have info(), warn() and error() methods.'
     )
+    expect(() => cache.withContext({ metadata: {} } as never)).toThrow(
+      'withContext(): unknown option "metadata".'
+    )
+    expect(Object.isFrozen(cache.withContext())).toBe(true)
   })
 })

@@ -2,8 +2,12 @@
 // nodejs_compat (or nodejs_als) compatibility flag.
 /// <reference types="node" />
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createMemo, type Memo, type MemoDefinition } from './memo.js'
-import type { MemoScope } from './plugin.js'
+import {
+  createMemo,
+  type Memo,
+  type MemoDefinition,
+  type MemoScope,
+} from './memo.js'
 
 const storage = new AsyncLocalStorage<Memo>()
 

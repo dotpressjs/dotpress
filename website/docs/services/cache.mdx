@@ -221,7 +221,7 @@ const cache = createCache({
 })
 ```
 
-Set `storeTimeout`: while a Redis client reconnects, its commands wait, and the requests would wait with them. `failOpen: false` throws a `CacheStoreError` instead. `onEvent` receives each hit, miss and stale value, for metrics.
+Set `storeTimeout`: while a Redis client reconnects, its commands wait, and the requests would wait with them. `failOpen: false` throws a `CacheStoreError` instead. `onAccess` receives each hit, miss and stale value, for metrics.
 
 ### Stores
 

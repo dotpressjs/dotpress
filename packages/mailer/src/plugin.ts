@@ -28,7 +28,7 @@ declareContextKey('mailer', 'mailerPlugin')
  * ```
  */
 export const mailerPlugin = (mailer: Mailer) => {
-  if (typeof mailer?.withLogger !== 'function') {
+  if (typeof mailer?.withContext !== 'function') {
     throw new TypeError(
       'mailerPlugin(): expected a mailer created by createMailer().'
     )
@@ -37,7 +37,9 @@ export const mailerPlugin = (mailer: Mailer) => {
     name: 'mailer',
     mailer,
     setup(api) {
-      api.decorateContext('mailer', (ctx) => mailer.withLogger(ctx.logger))
+      api.decorateContext('mailer', (ctx) =>
+        mailer.withContext({ logger: ctx.logger })
+      )
     },
   })
 }

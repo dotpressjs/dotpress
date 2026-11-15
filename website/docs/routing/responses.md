@@ -85,7 +85,8 @@ For anything other than plain JSON, return a helper from `@dotpress/core`:
 ```ts
 return json(data, { status: 201, headers: { location: '/members/1' } })
 return text('OK')
-return redirect('/login') // 302; or 301, 303, 307, 308
+return redirect('/login') // 302
+return redirect('/new', { status: 301 }) // or 303, 307, 308
 return file(bytes, { filename: 'invoice.pdf', contentType: 'application/pdf' })
 return stream(source, { contentType: 'text/csv' })
 return sse(source)
@@ -96,7 +97,7 @@ return empty({ status: 202 })
 | --- | --- |
 | `json(data, init)` | JSON with a status and headers. Still validated by the `response` schema and filtered. |
 | `text(body, init)` | `text/plain; charset=utf-8`, or the `content-type` of `init.headers` (HTML, CSV…) |
-| `redirect(location, status)` | A redirect, `302` by default |
+| `redirect(location, { status?, headers? })` | A redirect, `302` by default |
 | `file(body, init)` | A download: `Uint8Array`, `ArrayBuffer`, `Blob` or `ReadableStream`, with a `filename` and `disposition` (`attachment` or `inline`) |
 | `stream(source, init)` | A streamed body |
 | `sse(source, init)` | Server-Sent Events |

@@ -107,6 +107,22 @@ export const getRequestSource = (
   req: DotpressRequest
 ): NormalizedRequest | undefined => sources.get(req)
 
+const views = new WeakMap<NormalizedRequest, DotpressRequest>()
+
+/**
+ * A `DotpressRequest` of a normalized request, for the user functions
+ * called before the route runs (CORS `origin`, `generateRequestId`):
+ * created on first use, once per request.
+ */
+export const requestView = (input: NormalizedRequest): DotpressRequest => {
+  let view = views.get(input)
+  if (!view) {
+    view = createRequest(input)
+    views.set(input, view)
+  }
+  return view
+}
+
 export const createRequest = (
   input: NormalizedRequest,
   options: CreateRequestOptions = {}

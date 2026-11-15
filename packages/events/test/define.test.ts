@@ -28,51 +28,51 @@ describe('defineEvent()', () => {
   )
 
   it.each([
-    ['not an object', null, 'Invalid event: expected an object.'],
+    ['not an object', null, 'defineEvent(): expected an object.'],
     [
       'an unknown option',
       { name: 'a', schema: z.object({}), listeners: [] },
-      'Invalid event "a": unknown option "listeners".',
+      'defineEvent("a"): unknown option "listeners".',
     ],
     [
       'no name',
       { schema: z.object({}) },
-      'Invalid event: name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
+      'defineEvent(): name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
     ],
     [
       'a name with a space',
       { name: 'user created', schema: z.object({}) },
-      'Invalid event "user created": name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
+      'defineEvent("user created"): name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
     ],
     [
       'a name starting with a dot',
       { name: '.a', schema: z.object({}) },
-      'Invalid event ".a": name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
+      'defineEvent(".a"): name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
     ],
     [
       'a long name',
       { name: 'x'.repeat(129), schema: z.object({}) },
-      `Invalid event "${'x'.repeat(129)}": name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.`,
+      `defineEvent("${'x'.repeat(129)}"): name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.`,
     ],
     [
       'no schema',
       { name: 'a' },
-      'Invalid event "a": schema must be a Zod schema.',
+      'defineEvent("a"): schema must be a Zod schema.',
     ],
     [
       'a schema without safeParseAsync()',
       { name: 'a', schema: { parse: () => ({}) } },
-      'Invalid event "a": schema must be a Zod schema.',
+      'defineEvent("a"): schema must be a Zod schema.',
     ],
     [
       'an empty transport',
       { name: 'a', schema: z.object({}), transport: '' },
-      'Invalid event "a": transport must be a non-empty string.',
+      'defineEvent("a"): transport must be a non-empty string.',
     ],
     [
       'a transport that is not a string',
       { name: 'a', schema: z.object({}), transport: 1 },
-      'Invalid event "a": transport must be a non-empty string.',
+      'defineEvent("a"): transport must be a non-empty string.',
     ],
   ])('rejects %s', (_, options, message) => {
     expect(() => defineEvent(options as never)).toThrow(new TypeError(message))
@@ -105,55 +105,55 @@ describe('defineListener()', () => {
       'an event not created by defineEvent()',
       { name: 'a' },
       { name: 'a', handle },
-      'Invalid listener "a": expected an event created by defineEvent().',
+      'defineListener("a"): expected an event created by defineEvent().',
     ],
     [
       'options that are not an object',
       userCreated,
       'a',
-      'Invalid listener: expected an object.',
+      'defineListener(): expected an object.',
     ],
     [
       'an unknown option',
       userCreated,
       { name: 'a', handle, retries: 3 },
-      'Invalid listener "a": unknown option "retries".',
+      'defineListener("a"): unknown option "retries".',
     ],
     [
       'an invalid name',
       userCreated,
       { name: 'send mail', handle },
-      'Invalid listener "send mail": name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
+      'defineListener("send mail"): name must have 1 to 128 letters, digits, ".", "_", ":" or "-", starting with a letter or a digit.',
     ],
     [
       'no handler',
       userCreated,
       { name: 'a' },
-      'Invalid listener "a": set exactly one of handle and load.',
+      'defineListener("a"): set exactly one of handle and load.',
     ],
     [
       'handle and load',
       userCreated,
       { name: 'a', handle, load: handle },
-      'Invalid listener "a": set exactly one of handle and load.',
+      'defineListener("a"): set exactly one of handle and load.',
     ],
     [
       'a handle that is not a function',
       userCreated,
       { name: 'a', handle: 'x' },
-      'Invalid listener "a": handle must be a function.',
+      'defineListener("a"): handle must be a function.',
     ],
     [
       'a load that is not a function',
       userCreated,
       { name: 'a', load: {} },
-      'Invalid listener "a": load must be a function.',
+      'defineListener("a"): load must be a function.',
     ],
     [
       'an invalid transport',
       userCreated,
       { name: 'a', handle, transport: '' },
-      'Invalid listener "a": transport must be a non-empty string.',
+      'defineListener("a"): transport must be a non-empty string.',
     ],
   ])('rejects %s', (_, event, options, message) => {
     expect(() => defineListener(event as never, options as never)).toThrow(

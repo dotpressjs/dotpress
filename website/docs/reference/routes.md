@@ -42,7 +42,7 @@ Declares a route on the global router. `router.defineRoute()` and `group.defineR
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `path` | `string` | required | Starts with `/`. Static segments and `:param` segments only. |
-| `method` | `HttpMethod` | `'get'` | `get`, `post`, `put`, `patch`, `delete`, `head` or `options`. |
+| `method` | `HttpMethod` | `'get'` | `get`, `post`, `put`, `patch`, `delete`, `head` or `options`, in lowercase. `ctx.req.method` is in uppercase, as sent by the client (`'POST'`). |
 | `handler` | `(ctx) => result` | required | Receives the [context](./context), returns the response: a value, a [response helper](./responses#response-helpers) or an [`HttpError`](./responses#httperror). Can be `async`. |
 | `schema` | `RouteSchema \| (z) => RouteSchema` | — | Zod schemas: see [Schema](#schema). Declare it before `handler`, so the handler is typed from it. |
 | `middlewares` | `Middleware[]` | `[]` | Run after the global and group middlewares. |
@@ -128,7 +128,7 @@ An isolated registry of routes, mounted with `createApp({ routers })`.
 | `addResponseFilter(filter)` | A filter applied to the JSON results of the routes of this router. |
 | `clear()` | Removes every route and filter. |
 
-`globalRouter` is the router of `defineRoute()`, `createRouteGroup()` and `registerResponseFilter()`, mounted when `createApp()` has no `routers`.
+`globalRouter` is the router of `defineRoute()`, `createRouteGroup()` and `addResponseFilter()`, mounted when `createApp()` has no `routers`.
 
 ## defineMiddleware()
 
@@ -154,4 +154,4 @@ A plain function `(ctx) => …` is a middleware too, without guarantees. Middlew
 type ResponseFilter = (ctx: RequestContext, result: unknown) => unknown | Promise<unknown>
 ```
 
-A filter transforms the JSON result of a success, after the response validation. Filters run in this order: those of `createApp({ responseFilters })`, of the plugins, then of the router (`router.addResponseFilter()`, or `registerResponseFilter()` for the global router). Errors and other response helpers do not go through filters. See [Response filters](/routing/middlewares#response-filters).
+A filter transforms the JSON result of a success, after the response validation. Filters run in this order: those of `createApp({ responseFilters })`, of the plugins, then of the router (`router.addResponseFilter()`, or `addResponseFilter()` for the global router). Errors and other response helpers do not go through filters. See [Response filters](/routing/middlewares#response-filters).

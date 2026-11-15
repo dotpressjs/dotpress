@@ -554,6 +554,25 @@ describe('expressAdapter()', () => {
       expect(started.server()?.listening).toBe(true)
     })
 
+    it('returns the address it listens on', async () => {
+      const adapter = expressAdapter()
+      const app = await createApp({
+        adapter,
+        logger: createMemoryLogger(),
+        routers: [createRouter()],
+      })
+      const address = await app.listen(0, '127.0.0.1')
+      try {
+        expect(address).toEqual({
+          host: '127.0.0.1',
+          port: (adapter.server()!.address() as AddressInfo).port,
+        })
+        expect(address.port).toBeGreaterThan(0)
+      } finally {
+        await app.close()
+      }
+    })
+
     it('refuses to listen twice or to be mounted twice', async () => {
       const adapter = expressAdapter()
       const target = await start(adapter, {

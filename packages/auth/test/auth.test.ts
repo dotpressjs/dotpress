@@ -44,9 +44,9 @@ describe('createAuth()', () => {
   it('requires keys and a data provider', () => {
     expect(() =>
       createAuth({ dataProvider: createStore().provider } as AuthOptions)
-    ).toThrow('requires keys.privateKey and keys.publicKey')
+    ).toThrow('keys.privateKey and keys.publicKey are required')
     expect(() => createAuth({ keys } as AuthOptions)).toThrow(
-      'requires a dataProvider'
+      'dataProvider is required'
     )
   })
 
@@ -85,7 +85,9 @@ describe('createAuth()', () => {
     const { privateKey, publicKey } = keys
     expect(() =>
       authWith({ keys: { secretKey: privateKey, publicKey } } as never)
-    ).toThrow(new TypeError('keys.secretKey is renamed keys.privateKey.'))
+    ).toThrow(
+      new TypeError('createAuth(): keys.secretKey is renamed keys.privateKey.')
+    )
   })
 
   it('accepts durations with a unit, rounded to the second', () => {
@@ -103,26 +105,26 @@ describe('createAuth()', () => {
       loginThrottle: { limits: { username: { max: 10, window: HOUR } } },
     })
     expect(() => authWith({ accessTokenTTL: '0.2s' })).toThrow(
-      new RangeError(
-        'Invalid accessTokenTTL: expected at least 1 second duration.'
-      )
+      new RangeError('createAuth(): accessTokenTTL must be at least 1 second.')
     )
   })
 
-  it('requires an issuer', () => {
+  it('issuer is required', () => {
     for (const issuer of [undefined, '']) {
       expect(() => authWith({ issuer: issuer as unknown as string })).toThrow(
-        'requires an issuer'
+        'issuer is required'
       )
     }
   })
 
   it('rejects an empty audience and invalid client lists', () => {
-    expect(() => authWith({ audience: '' })).toThrow('Invalid audience')
+    expect(() => authWith({ audience: '' })).toThrow(
+      'audience must be a non-empty string'
+    )
     for (const allowed of [[], [''], 'app']) {
       expect(() =>
         authWith({ clients: { allowed: allowed as string[] } })
-      ).toThrow('Invalid clients.allowed')
+      ).toThrow('clients.allowed must be a non-empty list')
     }
   })
 
@@ -193,8 +195,11 @@ describe('createAuth()', () => {
       [{ refreshTokenName: '__host-rt' }, 'a __Host-'],
       [{ accessTokenName: '__Secure-at', secure: false }, 'a __Secure-'],
       [{ refreshTokenName: '__SECURE-rt', secure: false }, 'a __Secure-'],
-      [{ path: 'api' }, 'Invalid cookies.path'],
-      [{ refreshTokenPath: '' }, 'Invalid cookies.refreshTokenPath'],
+      [{ path: 'api' }, 'cookies.path must start with "/"'],
+      [
+        { refreshTokenPath: '' },
+        'cookies.refreshTokenPath must start with "/"',
+      ],
     ])('rejects invalid cookie settings (%o)', (cookies, message) => {
       expect(() => authWith({ cookies })).toThrow(message)
     })
@@ -229,8 +234,12 @@ describe('createAuth()', () => {
         keys: { privateKey: 'not a key', publicKey: keys.publicKey },
       })
 
-      await expect(initAuth(auth)).rejects.toThrow('Invalid auth privateKey')
-      await expect(initAuth(auth)).rejects.toThrow('Invalid auth privateKey')
+      await expect(initAuth(auth)).rejects.toThrow(
+        'keys.privateKey must be an RSA PEM key'
+      )
+      await expect(initAuth(auth)).rejects.toThrow(
+        'keys.privateKey must be an RSA PEM key'
+      )
     })
   })
 
@@ -959,7 +968,10 @@ describe('createAuth()', () => {
     })
 
     it.each([
-      [{ session: { idleTimeout: 0 } }, 'Invalid session.idleTimeout'],
+      [
+        { session: { idleTimeout: 0 } },
+        'session.idleTimeout must be at least 1 second',
+      ],
       [
         { session: { absoluteTimeout: -1 } },
         'session.absoluteTimeout must be a number of seconds',
@@ -1006,7 +1018,7 @@ describe('createAuth()', () => {
         userId: 'u2',
       })
       await expect(auth.revokeUserSessions('')).rejects.toThrow(
-        'revokeUserSessions() requires a userId.'
+        'revokeUserSessions(): userId must be a non-empty string.'
       )
     })
 
@@ -1353,7 +1365,7 @@ describe('createAuth()', () => {
       'rejects an invalid passwordHashRounds (%s)',
       (passwordHashRounds) => {
         expect(() => authWith({ passwordHashRounds })).toThrow(
-          'Invalid passwordHashRounds'
+          'passwordHashRounds must be an integer between 4 and 31'
         )
       }
     )

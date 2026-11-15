@@ -36,9 +36,12 @@ describe('plugins', () => {
       const health = definePlugin({
         name: 'health',
         setup(api) {
-          api.addRoute({ path: '/health', handler: () => ({ status: 'ok' }) })
+          api.defineRoute({
+            path: '/health',
+            handler: () => ({ status: 'ok' }),
+          })
           api
-            .addRouteGroup('/admin')
+            .createGroup('/admin')
             .defineRoute({ path: '/stats', handler: () => ({ stats: true }) })
         },
       })
@@ -121,9 +124,9 @@ describe('plugins', () => {
       })
 
       expect(() =>
-        saved!.addRoute({ path: '/late', handler: () => null })
+        saved!.defineRoute({ path: '/late', handler: () => null })
       ).toThrow(
-        'api.addRoute() of plugin "late" can only be called during setup()'
+        'api.defineRoute() of plugin "late" can only be called during setup()'
       )
       expect(() => saved!.hooks.onReady(() => {})).toThrow(
         'can only be called during setup()'
@@ -669,7 +672,9 @@ describe('plugins', () => {
           definePlugin({
             name: 'lifecycle',
             setup(api) {
-              expect(() => api.getRoutes()).toThrow('getRoutes() is available')
+              expect(() => api.getRoutes()).toThrow(
+                'api.getRoutes(): the routes are compiled after setup()'
+              )
               api.hooks.onInit(() => {
                 calls.push(
                   `init:${api

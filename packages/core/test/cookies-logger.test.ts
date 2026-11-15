@@ -23,13 +23,13 @@ describe('cookies', () => {
 
   it('rejects invalid names and attributes', () => {
     expect(() => serializeCookie('bad name', 'x')).toThrow(
-      'Invalid cookie name'
+      'invalid cookie name'
     )
     expect(() => serializeCookie('ok', 'x', { path: '/a;b' })).toThrow(
-      'Invalid cookie path'
+      'invalid path'
     )
     expect(() => serializeCookie('ok', 'x', { maxAge: Number.NaN })).toThrow(
-      'Invalid cookie maxAge'
+      'invalid maxAge'
     )
   })
 

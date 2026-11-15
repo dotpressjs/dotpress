@@ -21,7 +21,9 @@ const capitalize = (value: string) =>
 
 const assertAttribute = (name: string, value: string) => {
   if (!ATTRIBUTE_VALUE.test(value)) {
-    throw new TypeError(`Invalid cookie ${name}: ${value}`)
+    throw new TypeError(
+      `setCookie(): invalid ${name} ${JSON.stringify(value)}.`
+    )
   }
 }
 
@@ -34,21 +36,23 @@ export const serializeCookie = (
   options: CookieOptions = {}
 ): string => {
   if (!COOKIE_NAME.test(name)) {
-    throw new TypeError(`Invalid cookie name: ${name}`)
+    throw new TypeError(
+      `setCookie(): invalid cookie name ${JSON.stringify(name)}.`
+    )
   }
 
   const parts = [`${name}=${encodeURIComponent(value)}`]
 
   if (options.maxAge !== undefined) {
     if (!Number.isFinite(options.maxAge)) {
-      throw new TypeError(`Invalid cookie maxAge: ${options.maxAge}`)
+      throw new TypeError(`setCookie(): invalid maxAge ${options.maxAge}.`)
     }
     parts.push(`Max-Age=${Math.floor(options.maxAge)}`)
   }
 
   if (options.expires !== undefined) {
     if (Number.isNaN(options.expires.getTime())) {
-      throw new TypeError('Invalid cookie expires date')
+      throw new TypeError('setCookie(): invalid expires date.')
     }
     parts.push(`Expires=${options.expires.toUTCString()}`)
   }

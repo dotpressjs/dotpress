@@ -3,7 +3,7 @@ export type { CorsOptions, CorsOrigin } from './cors.js'
 
 export { arrayOf } from './array-of.js'
 
-export type { HttpAdapter, RouteInfo } from './adapter.js'
+export type { HttpAdapter, ListenAddress, RouteInfo } from './adapter.js'
 
 export {
   defineMiddleware,
@@ -108,6 +108,7 @@ export {
   type FileResult,
   type JsonResult,
   type RawResult,
+  type RedirectInit,
   type RedirectResult,
   type RedirectStatus,
   type ResponseResult,
@@ -124,11 +125,11 @@ export {
   createRouter,
   defineRoute,
   globalRouter,
-  registerResponseFilter,
+  addResponseFilter,
   type RouteConfig,
   type RouteGroup,
   type RouteMeta,
-  type RouteResponse,
+  type DocumentedResponse,
   type Router,
 } from './routes.js'
 
@@ -143,7 +144,7 @@ export type {
 export type {
   RouteSchema,
   Schema,
-  SchemaDefinition,
-  SchemaInput,
-  SchemaOutput,
+  RouteSchemaDefinition,
+  RouteSchemaInput,
+  RouteSchemaOutput,
 } from './schema.js'

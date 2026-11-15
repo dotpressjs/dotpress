@@ -198,7 +198,7 @@ const isSource = (source: unknown) =>
 export const defineLayout = <L extends string = string>(
   options: LayoutOptions<L>
 ): MailLayout<L> => {
-  const prefix = 'Invalid mail layout'
+  const prefix = 'defineLayout()'
   const values = checkOptions(prefix, options, LAYOUT_OPTIONS)
   const format = formatOf(
     prefix,
@@ -248,8 +248,8 @@ export const defineTemplate = <
   const name = (options as { name?: unknown } | null)?.name
   const prefix =
     typeof name === 'string' && name !== ''
-      ? `Invalid mail template "${name}"`
-      : 'Invalid mail template'
+      ? `defineTemplate("${name}")`
+      : 'defineTemplate()'
   const values = checkOptions(prefix, options, TEMPLATE_OPTIONS)
   if (typeof name !== 'string' || name === '') {
     throw new TypeError(`${prefix}: name must be a non-empty string.`)

@@ -32,7 +32,7 @@ export interface Plugin {
  *   definePlugin({
  *     name: 'health',
  *     setup(api) {
- *       api.addRoute({ path, handler: () => ({ status: 'ok' }) })
+ *       api.defineRoute({ path, handler: () => ({ status: 'ok' }) })
  *     },
  *   })
  */
@@ -154,8 +154,8 @@ export interface PluginAPI {
   publicPath(path: string): string
   /** CORS settings (`cors` option). Undefined when CORS is disabled. */
   readonly cors: PluginCors | undefined
-  addRoute: RouteGroup['defineRoute']
-  addRouteGroup: RouteGroup['createGroup']
+  defineRoute: RouteGroup['defineRoute']
+  createGroup: RouteGroup['createGroup']
   /**
    * Middleware run for every route, after the request hooks and before the
    * middlewares given to `createApp()`.

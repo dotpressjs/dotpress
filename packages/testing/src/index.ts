@@ -31,14 +31,17 @@ export {
   expectEventNotEmitted,
   type Emission,
   type EmissionSource,
+  type EnvelopeLike,
   type ExpectEventOptions,
 } from './events.js'
 
 export {
   expectMailSent,
   expectNoMailSent,
+  type ExpectedAddresses,
   type ExpectMailOptions,
   type MailCriteria,
   type MailOutbox,
   type SentMail,
+  type SentMailAddress,
 } from './mail.js'

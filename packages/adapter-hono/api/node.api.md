@@ -5,7 +5,7 @@
 ## Exports
 
 ```ts
-import type { HttpAdapter } from '@dotpress/core'
+import type { HttpAdapter, ListenAddress } from '@dotpress/core'
 import type { Context, Hono } from 'hono'
 
 export interface HonoAdapter<
@@ -19,7 +19,7 @@ export interface HonoAdapter<
   close(): Promise<void>
 }
 
-export interface HonoAdapterOptions<TApp extends HonoApplication> {
+export interface HonoAdapterOptions<TApp extends HonoApplication = Hono> {
   app?: TApp
   beforeRoutes?: (app: TApp) => void | Promise<void>
   afterRoutes?: (app: TApp) => void | Promise<void>
@@ -41,7 +41,7 @@ export interface HonoApplication {
 export interface NodeHonoAdapter<
   TApp extends HonoApplication = Hono,
 > extends HonoAdapter<TApp> {
-  listen(port: number, host?: string): Promise<void>
+  listen(port: number, host?: string): Promise<ListenAddress>
   close(): Promise<void>
   server(): Server | undefined
 }

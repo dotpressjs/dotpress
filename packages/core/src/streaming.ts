@@ -69,7 +69,7 @@ export const openStreamSource = <T>(
   }
 
   throw new TypeError(
-    'Invalid stream source: expected a ReadableStream, an iterable, an async iterable or a function returning one.'
+    'stream(): expected a ReadableStream, an iterable, an async iterable or a function returning one.'
   )
 }
 

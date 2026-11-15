@@ -436,10 +436,10 @@ describe('fastifyAdapter()', () => {
 
     it('rejects invalid body limits', () => {
       expect(() => fastifyAdapter({ bodyLimit: -1 })).toThrow(
-        'Invalid bodyLimit'
+        'bodyLimit must be a non-negative integer'
       )
       expect(() => fastifyAdapter({ bodyLimit: 1.5 })).toThrow(
-        'Invalid bodyLimit'
+        'bodyLimit must be a non-negative integer'
       )
     })
 
@@ -655,9 +655,14 @@ describe('fastifyAdapter()', () => {
       })
       targets.push(app)
 
-      await app.listen(0)
+      const { host, port } = await app.listen(0)
       const { address } = adapter.server()!.address() as AddressInfo
       expect(['::', '0.0.0.0']).toContain(address)
+      // listen() returns the address of the server.
+      expect({ host, port }).toEqual({
+        host: address,
+        port: (adapter.server()!.address() as AddressInfo).port,
+      })
     })
 
     it('refuses to listen twice or to be mounted twice', async () => {

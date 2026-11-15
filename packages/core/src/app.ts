@@ -2,6 +2,7 @@ import type {
   CompiledRoute,
   DotpressRuntime,
   HttpAdapter,
+  ListenAddress,
   RouteInfo,
 } from './adapter.js'
 import type { Middleware, ResponseFilter } from './context.js'
@@ -28,7 +29,11 @@ import {
   type RequestWrapper,
   type ResponseHook,
 } from './plugins.js'
-import { getRequestSource, type DotpressRequest } from './request.js'
+import {
+  getRequestSource,
+  requestView,
+  type DotpressRequest,
+} from './request.js'
 import {
   createRouter,
   getRouterState,
@@ -42,7 +47,7 @@ export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
   adapter: TAdapter
   /**
    * Routers to mount. Defaults to the global router (routes declared with
-   * `defineRoute()` and filters registered with `registerResponseFilter()`).
+   * `defineRoute()` and filters registered with `addResponseFilter()`).
    */
   routers?: Router[]
   /**
@@ -91,7 +96,7 @@ export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
    */
   exposeErrors?: boolean
   /** Defaults to `crypto.randomUUID()`. */
-  generateRequestId?: (request: NormalizedRequest) => string
+  generateRequestId?: (req: DotpressRequest) => string
   /** Called with unexpected errors, for instance to report them to Sentry. */
   onError?: ErrorHook
 }
@@ -132,8 +137,11 @@ export interface App<TNative = unknown> {
   publicPath(path: string): string
   /** Native server instance of the adapter. */
   native(): TNative
-  /** Starts the server. Not available on serverless adapters. */
-  listen(port: number, host?: string): Promise<void>
+  /**
+   * Starts the server, and returns the address it listens on: the actual
+   * port when `port` is 0. Not available on serverless adapters.
+   */
+  listen(port: number, host?: string): Promise<ListenAddress>
   /** Stops the server, then runs the plugin `onClose` hooks. */
   close(): Promise<void>
 }
@@ -190,7 +198,7 @@ const resolveBasePaths = (options: AppOptions): BasePaths => {
 
   if (options.basePath !== undefined && options.publicBasePath !== undefined) {
     throw new TypeError(
-      'basePath and publicBasePath cannot be combined: use basePath when the reverse proxy forwards the full path, publicBasePath when it removes the prefix.'
+      'createApp(): basePath and publicBasePath cannot be combined: use basePath when the reverse proxy forwards the full path, publicBasePath when it removes the prefix.'
     )
   }
 
@@ -246,14 +254,14 @@ const setupPlugins = async (
       logger: logger.child({ plugin: plugin.name }),
       ...paths,
       cors: pluginCors,
-      addRoute: register(
-        'addRoute',
+      defineRoute: register(
+        'defineRoute',
         router.defineRoute
-      ) as PluginAPI['addRoute'],
-      addRouteGroup: register(
-        'addRouteGroup',
+      ) as PluginAPI['defineRoute'],
+      createGroup: register(
+        'createGroup',
         router.createGroup
-      ) as PluginAPI['addRouteGroup'],
+      ) as PluginAPI['createGroup'],
       addGlobalMiddleware: register('addGlobalMiddleware', (middleware) => {
         registry.middlewares.push(middleware)
       }),
@@ -393,15 +401,22 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
   options: AppOptions<TAdapter>
 ): Promise<App<NativeOf<TAdapter>>> => {
   if (typeof options !== 'object' || options === null) {
-    throw new TypeError('createApp() requires an options object.')
+    throw new TypeError('createApp(): expected an object of options.')
   }
   assertKnownOptions('createApp()', options, APP_OPTIONS)
   const { adapter } = options
 
   if (!adapter || typeof adapter.mount !== 'function') {
-    throw new TypeError('createApp() requires an HTTP adapter.')
+    throw new TypeError('createApp(): adapter must be an HTTP adapter.')
   }
 
+  const userGenerateRequestId = options.generateRequestId
+  if (
+    userGenerateRequestId !== undefined &&
+    typeof userGenerateRequestId !== 'function'
+  ) {
+    throw new TypeError('createApp(): generateRequestId must be a function.')
+  }
   const paths = resolveBasePaths(options)
   const logger = options.logger ?? createConsoleLogger()
   const copies = loadedCopies()
@@ -420,7 +435,7 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
   const getRoutes = () => {
     if (!compiled.routes) {
       throw new Error(
-        'getRoutes() is available once the routes are compiled: from the onInit hook, or at request time.'
+        'api.getRoutes(): the routes are compiled after setup(): call it from the onInit hook, or at request time.'
       )
     }
     return compiled.routes
@@ -438,7 +453,10 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     logger,
     publicPath: paths.publicPath,
     exposeErrors: options.exposeErrors ?? false,
-    generateRequestId: options.generateRequestId ?? (() => crypto.randomUUID()),
+    generateRequestId: userGenerateRequestId
+      ? (request: NormalizedRequest) =>
+          userGenerateRequestId(requestView(request))
+      : () => crypto.randomUUID(),
     onError: composeErrorHooks(
       [...(options.onError ? [options.onError] : []), ...registry.errorHooks],
       logger
@@ -488,10 +506,10 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     listen: async (port: number, host?: string) => {
       if (!adapter.listen) {
         throw new Error(
-          `The "${adapter.name}" adapter does not support listen().`
+          `app.listen(): the "${adapter.name}" adapter does not start a server.`
         )
       }
-      await adapter.listen(port, host)
+      return adapter.listen(port, host)
     },
     close: async () => {
       await adapter.close?.()

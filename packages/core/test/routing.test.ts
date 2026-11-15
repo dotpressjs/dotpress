@@ -152,10 +152,10 @@ describe('routing', () => {
       ).toThrow('must start with "/"')
       expect(() =>
         router.defineRoute({ path: '/files/*', handler: () => null })
-      ).toThrow('Unsupported path syntax')
+      ).toThrow('unsupported segment')
       expect(() =>
         router.defineRoute({ path: '/users/:user-id', handler: () => null })
-      ).toThrow('Invalid path parameter')
+      ).toThrow('invalid parameter')
     })
 
     it('rejects unknown methods and invalid statuses', () => {
@@ -164,10 +164,10 @@ describe('routing', () => {
       expect(() =>
         // @ts-expect-error unsupported method
         router.defineRoute({ method: 'trace', path: '/', handler: () => null })
-      ).toThrow('Unsupported HTTP method')
+      ).toThrow('unsupported method')
       expect(() =>
         router.defineRoute({ path: '/', status: 99, handler: () => null })
-      ).toThrow('Invalid status')
+      ).toThrow('invalid status')
     })
 
     it('rejects conflicting routes, regardless of parameter names', async () => {
@@ -285,14 +285,16 @@ describe('routing', () => {
 
       expect(app.native()).toEqual({ routes: [] })
       await expect(app.listen(3000)).rejects.toThrow(
-        'The "memory" adapter does not support listen()'
+        'the "memory" adapter does not start a server'
       )
       await expect(app.close()).resolves.toBeUndefined()
     })
 
     it('requires an adapter', async () => {
       // @ts-expect-error missing adapter
-      await expect(createApp({})).rejects.toThrow('requires an HTTP adapter')
+      await expect(createApp({})).rejects.toThrow(
+        'adapter must be an HTTP adapter'
+      )
     })
   })
 })

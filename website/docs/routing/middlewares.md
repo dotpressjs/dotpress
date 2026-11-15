@@ -129,7 +129,7 @@ api.addResponseFilter((ctx, result) => ({
 | `createApp({ responseFilters })` | every route of the app |
 | `api.addResponseFilter()`, in a plugin | every route of the app, after the filters of `createApp()` |
 | `router.addResponseFilter()` | the routes of the router, after the filters above |
-| `registerResponseFilter()` | the routes of the global router |
+| `addResponseFilter()` | the routes of the global router |
 
 Filters can be `async`. They run after the `response` schema has validated the value, and only for JSON results: errors, `text()`, `stream()`, `file()` and the other raw responses are sent as they are.
 

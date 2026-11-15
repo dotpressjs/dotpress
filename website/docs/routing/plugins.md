@@ -50,7 +50,7 @@ export const featureFlagsPlugin = (source: FlagSource) =>
       // Computed on first access, once per request.
       api.decorateContext('flags', (ctx) => source.forTenant(ctx.req.header('x-tenant-id')))
 
-      api.addRoute({
+      api.defineRoute({
         path: '/flags',
         handler: async ({ flags }) => (await flags).all(),
       })
@@ -70,8 +70,8 @@ handler: async ({ flags }) => ((await flags).isEnabled('new-checkout') ? newChec
 
 | Method | Description |
 | --- | --- |
-| `addRoute(route)` | Adds a route, like `defineRoute()` |
-| `addRouteGroup(prefix, middlewares)` | Adds a group of routes |
+| `defineRoute(route)` | Adds a route, like `defineRoute()` |
+| `createGroup(prefix, middlewares)` | Adds a group of routes |
 | `addGlobalMiddleware(middleware)` | Runs on every route, before the middlewares of `createApp()` |
 | `addResponseFilter(filter)` | Filters every JSON response, after the filters of `createApp()` |
 | `decorateContext(key, factory)` | Provides a context key declared by module augmentation, computed on first access |
@@ -124,5 +124,5 @@ The other properties of a plugin object are visible to other plugins through `ap
 | Services of your app in `ctx` | a small plugin, see [Project structure](/getting-started/project-structure#handlers-find-their-services-in-ctx) |
 
 :::tip Coming from v1
-Plugins are objects declared with `definePlugin()`, no longer functions. `addGroup()` is renamed `addRouteGroup()`, and `useBeforeRoutes()` / `useAfterRoutes()` are removed: plugins do not depend on a server, native middlewares go to the adapter options. Plugins gain dependencies, lifecycle hooks and context keys.
+Plugins are objects declared with `definePlugin()`, no longer functions. `addGroup()` is renamed `createGroup()`, and `useBeforeRoutes()` / `useAfterRoutes()` are removed: plugins do not depend on a server, native middlewares go to the adapter options. Plugins gain dependencies, lifecycle hooks and context keys.
 :::

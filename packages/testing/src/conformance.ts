@@ -978,7 +978,7 @@ export const runConformanceSuite = (options: ConformanceSuiteOptions) => {
             })
             router.defineRoute({
               path: '/legacy',
-              middlewares: [() => redirect('/modern', 301)],
+              middlewares: [() => redirect('/modern', { status: 301 })],
               handler: () => ({ unreachable: true }),
             })
           },

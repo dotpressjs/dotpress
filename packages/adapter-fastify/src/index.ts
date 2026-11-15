@@ -1,11 +1,12 @@
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
-import type { Socket } from 'node:net'
+import type { AddressInfo, Socket } from 'node:net'
 import type { Readable } from 'node:stream'
 import {
   HttpError,
   type HttpAdapter,
   type NormalizedRequest,
   type NormalizedResponse,
+  type ListenAddress,
 } from '@dotpress/core'
 import {
   DEFAULT_BODY_LIMIT,
@@ -22,7 +23,9 @@ import Fastify, {
 } from 'fastify'
 import { assertKnownOptions } from './options.js'
 
-export interface FastifyAdapterOptions<TApp extends FastifyInstance> {
+export interface FastifyAdapterOptions<
+  TApp extends FastifyInstance = FastifyInstance,
+> {
   /** Fastify instance to mount the routes on. Defaults to `Fastify()`. */
   app?: TApp
   /**
@@ -50,7 +53,7 @@ export interface FastifyAdapter<
    * Starts the HTTP server (`fastify.listen()`). Without `host`, listens on
    * every interface, like Node.js.
    */
-  listen(port: number, host?: string): Promise<void>
+  listen(port: number, host?: string): Promise<ListenAddress>
   /**
    * Closes the Fastify instance (`onClose` hooks of the plugins): waits for
    * pending requests, and closes the responses being streamed (their
@@ -59,6 +62,12 @@ export interface FastifyAdapter<
   close(): Promise<void>
   /** HTTP server started by `listen()`, if any. */
   server(): Server | undefined
+}
+
+/** Address of a listening Node.js server. */
+const addressOf = (server: Server): ListenAddress => {
+  const address = server.address() as AddressInfo
+  return { port: address.port, host: address.address }
 }
 
 /**
@@ -250,7 +259,7 @@ export function fastifyAdapter<TApp extends FastifyInstance>(
 
   if (!Number.isInteger(bodyLimit) || bodyLimit < 0) {
     throw new RangeError(
-      'Invalid bodyLimit: expected a non-negative integer (bytes).'
+      'fastifyAdapter(): bodyLimit must be a non-negative integer (bytes).'
     )
   }
 
@@ -464,6 +473,9 @@ export function fastifyAdapter<TApp extends FastifyInstance>(
     },
 
     listen: async (port: number, host?: string) => {
+      if (listening) {
+        throw new Error('The Fastify adapter is already listening.')
+      }
       const app = application as unknown as FastifyInstance
       try {
         await app.listen({ port, host: host ?? '::' })
@@ -475,6 +487,7 @@ export function fastifyAdapter<TApp extends FastifyInstance>(
       }
       listening = true
       closeConnections = trackConnections(app.server as Server)
+      return addressOf(app.server as Server)
     },
 
     close: async () => {

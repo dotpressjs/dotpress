@@ -25,7 +25,7 @@ export interface App<TNative = unknown> {
   readonly publicBasePath: string
   publicPath(path: string): string
   native(): TNative
-  listen(port: number, host?: string): Promise<void>
+  listen(port: number, host?: string): Promise<ListenAddress>
   close(): Promise<void>
 }
 
@@ -40,7 +40,7 @@ export interface AppOptions<TAdapter extends HttpAdapter = HttpAdapter> {
   cors?: CorsOptions
   logger?: Logger
   exposeErrors?: boolean
-  generateRequestId?: (request: NormalizedRequest) => string
+  generateRequestId?: (req: DotpressRequest) => string
   onError?: ErrorHook
 }
 
@@ -80,12 +80,18 @@ export type CorsOrigin =
   | string
   | RegExp
   | readonly (string | RegExp)[]
-  | ((origin: string, request: NormalizedRequest) => boolean | Promise<boolean>)
+  | ((origin: string, req: DotpressRequest) => boolean | Promise<boolean>)
 
 export type DecoratableContextKey = Exclude<
   keyof RequestContext,
   BaseContextKey
 >
+
+export interface DocumentedResponse {
+  description: string
+  schema?: Schema
+  contentType?: string
+}
 
 export interface DotpressRequest<
   TParams = Record<string, string>,
@@ -167,8 +173,8 @@ export type HandlerContext<
 export type HandlerResult<S> = S extends {
   response: unknown
 }
-  ? | SchemaInput<S, 'response', unknown>
-    | JsonResult<SchemaInput<S, 'response', unknown>>
+  ? | RouteSchemaInput<S, 'response', unknown>
+    | JsonResult<RouteSchemaInput<S, 'response', unknown>>
     | RawResult
     | HttpError
     | undefined
@@ -180,7 +186,7 @@ export interface HttpAdapter<TNative = unknown> {
     routes: readonly CompiledRoute[],
     runtime: DotpressRuntime
   ): void | Promise<void>
-  listen?(port: number, host?: string): Promise<void>
+  listen?(port: number, host?: string): Promise<ListenAddress>
   close?(): Promise<void>
   native(): TNative
 }
@@ -215,6 +221,11 @@ export interface JsonResult<T = unknown> extends BaseResult {
 }
 
 export type LifecycleHook = () => void | Promise<void>
+
+export interface ListenAddress {
+  readonly port: number
+  readonly host: string
+}
 
 export interface LogFn {
   (message: string, ...args: unknown[]): void
@@ -290,8 +301,8 @@ export interface PluginAPI {
   readonly publicBasePath: string
   publicPath(path: string): string
   readonly cors: PluginCors | undefined
-  addRoute: RouteGroup['defineRoute']
-  addRouteGroup: RouteGroup['createGroup']
+  defineRoute: RouteGroup['defineRoute']
+  createGroup: RouteGroup['createGroup']
   addGlobalMiddleware(middleware: Middleware): void
   addResponseFilter(filter: ResponseFilter): void
   decorateContext<K extends DecoratableContextKey>(
@@ -341,6 +352,11 @@ export interface RateLimitStore {
 }
 
 export type RawResult = Exclude<ResponseResult, JsonResult>
+
+export interface RedirectInit {
+  status?: RedirectStatus | undefined
+  headers?: ResponseHeaders | undefined
+}
 
 export interface RedirectResult extends BaseResult {
   readonly kind: 'redirect'
@@ -414,7 +430,7 @@ export interface RouteConfig<
 > {
   method?: HttpMethod
   path: P
-  schema?: SchemaDefinition<S>
+  schema?: RouteSchemaDefinition<S>
   middlewares?: MiddlewareList<TProvided>
   rawBody?: TRawBody
   bodyLimit?: number
@@ -471,31 +487,25 @@ export interface RouteInfo {
 export interface RouteMeta {
   summary?: string
   description?: string
-  tags?: string[]
+  tags?: readonly string[]
   operationId?: string
   deprecated?: boolean
-  security?: string[]
+  security?: readonly string[]
   hidden?: boolean
-  responses?: Record<number, string | RouteResponse>
+  responses?: Record<number, string | DocumentedResponse>
 }
 
 export type RouteRequest<S, TPathParams, TRawBody = false> = DotpressRequest<
-  SchemaOutput<S, 'params', TPathParams>,
-  SchemaOutput<S, 'query', QueryValues>,
-  SchemaOutput<S, 'body', unknown>,
-  SchemaOutput<S, 'files', UploadedFiles>
+  RouteSchemaOutput<S, 'params', TPathParams>,
+  RouteSchemaOutput<S, 'query', QueryValues>,
+  RouteSchemaOutput<S, 'body', unknown>,
+  RouteSchemaOutput<S, 'files', UploadedFiles>
 > &
   (TRawBody extends true
     ? {
         readonly rawBody: Uint8Array
       }
     : EmptyObject)
-
-export interface RouteResponse {
-  description: string
-  schema?: Schema
-  contentType?: string
-}
 
 export interface RouteSchema {
   params?: Schema
@@ -505,26 +515,35 @@ export interface RouteSchema {
   response?: Schema
 }
 
+export type RouteSchemaDefinition<S extends RouteSchema> =
+  S | ((zod: typeof z) => S)
+
+export type RouteSchemaInput<
+  S,
+  K extends keyof RouteSchema,
+  Fallback,
+> = S extends {
+  [P in K]: infer T extends Schema
+}
+  ? z.input<T>
+  : Fallback
+
+export type RouteSchemaOutput<
+  S,
+  K extends keyof RouteSchema,
+  Fallback,
+> = S extends {
+  [P in K]: infer T extends Schema
+}
+  ? z.output<T>
+  : Fallback
+
 export interface Router extends RouteGroup {
   addResponseFilter(filter: ResponseFilter): void
   clear(): void
 }
 
 export type Schema = z.core.$ZodType
-
-export type SchemaDefinition<S extends RouteSchema> = S | ((zod: typeof z) => S)
-
-export type SchemaInput<S, K extends keyof RouteSchema, Fallback> = S extends {
-  [P in K]: infer T extends Schema
-}
-  ? z.input<T>
-  : Fallback
-
-export type SchemaOutput<S, K extends keyof RouteSchema, Fallback> = S extends {
-  [P in K]: infer T extends Schema
-}
-  ? z.output<T>
-  : Fallback
 
 export interface SseEvent {
   data?: unknown
@@ -580,6 +599,8 @@ export interface ValidationIssue {
   code: string
   message: string
 }
+
+export declare const addResponseFilter: (filter: ResponseFilter) => void
 
 export declare const arrayOf: <T extends Schema>(schema: T) => ArrayOf<T>
 
@@ -664,10 +685,8 @@ export declare const parseDuration: (value: unknown, label?: string) => number
 
 export declare const redirect: (
   location: string,
-  status?: RedirectStatus
+  init?: RedirectInit
 ) => RedirectResult
-
-export declare const registerResponseFilter: (filter: ResponseFilter) => void
 
 export declare const sse: (
   source: StreamSource<SseMessage>,

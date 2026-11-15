@@ -28,7 +28,7 @@ const FORBIDDEN_STATIC_CHARS = /[:*?(){}]/
  */
 export const normalizePath = (path: string): string => {
   if (!path.startsWith('/')) {
-    throw new TypeError(`Route path must start with "/": "${path}"`)
+    throw new TypeError(`Path "${path}": must start with "/".`)
   }
 
   const segments = path.split('/').filter((segment) => segment !== '')
@@ -37,12 +37,12 @@ export const normalizePath = (path: string): string => {
     if (segment.startsWith(':')) {
       if (!PARAM_NAME.test(segment.slice(1))) {
         throw new TypeError(
-          `Invalid path parameter "${segment}" in "${path}". Parameter names must match ${PARAM_NAME}.`
+          `Path "${path}": invalid parameter "${segment}", names must match ${PARAM_NAME}.`
         )
       }
     } else if (FORBIDDEN_STATIC_CHARS.test(segment)) {
       throw new TypeError(
-        `Unsupported path syntax "${segment}" in "${path}". Only static segments and ":param" segments are supported.`
+        `Path "${path}": unsupported segment "${segment}", only static segments and ":param" segments are supported.`
       )
     }
   }
@@ -69,7 +69,7 @@ export const joinPaths = (prefix: string, path: string): string => {
 export const normalizeBasePath = (value: unknown, option: string): string => {
   if (typeof value !== 'string' || !value.startsWith('/')) {
     throw new TypeError(
-      `Invalid ${option}: expected a path starting with "/", received ${JSON.stringify(value)}.`
+      `createApp(): ${option} must start with "/", received ${JSON.stringify(value)}.`
     )
   }
 
@@ -77,7 +77,7 @@ export const normalizeBasePath = (value: unknown, option: string): string => {
 
   if (getPathParamNames(path).length > 0) {
     throw new TypeError(
-      `Invalid ${option} "${value}": a base path cannot contain parameters.`
+      `createApp(): ${option} cannot contain parameters, received "${value}".`
     )
   }
 
@@ -91,7 +91,7 @@ export const normalizeBasePath = (value: unknown, option: string): string => {
 export const prefixPath = (basePath: string, path: string): string => {
   if (typeof path !== 'string' || !path.startsWith('/')) {
     throw new TypeError(
-      `publicPath() expects a path starting with "/", received ${JSON.stringify(path)}.`
+      `publicPath(): expected a path starting with "/", received ${JSON.stringify(path)}.`
     )
   }
 

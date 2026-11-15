@@ -25,7 +25,7 @@ An API needs exactly that: its documentation, its client, its tests and its secu
 - **The app describes itself**: `app.routes` lists the mounted routes with their schemas, metadata and security, and `@dotpress/openapi` builds the OpenAPI document from them. The documentation cannot drift from the code.
 - **Matching is the same on every adapter**: Dotpress matches the routes itself, with the same rules everywhere.
 - **Tests choose their routes**: an app made of one router tests it in isolation, and several apps can live in one process.
-- **Plugins add routes like an app does**: `api.addRoute()` records declarations, checked with the others.
+- **Plugins add routes like an app does**: `api.defineRoute()` records declarations, checked with the others.
 - With the global router, the modules that declare routes must be imported before `createApp()`. Explicit routers avoid this.
 
 See [How Dotpress works](/concepts/how-it-works) and [Routers](/routing/routes#routers).

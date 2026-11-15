@@ -107,7 +107,7 @@ export const createLambdaHandler = (
     const native: unknown = app?.native?.()
     if (typeof (native as Partial<HonoApplication>)?.fetch !== 'function') {
       throw new TypeError(
-        'createLambdaHandler() expects an app created with honoAdapter() of @dotpress/adapter-hono.'
+        'createLambdaHandler(): expected an app created with honoAdapter() of @dotpress/adapter-hono.'
       )
     }
     return toHandler(native as HonoApplication)

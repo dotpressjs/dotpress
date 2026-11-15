@@ -11,7 +11,8 @@ export interface Emission {
 }
 
 /** The fields of an envelope read here (`Envelope` of `@dotpress/events`). */
-interface EnvelopeLike {
+/** An envelope of `@dotpress/events`, as a transport sends it. */
+export interface EnvelopeLike {
   readonly emissionId: string
   readonly event: string
   readonly payload: unknown

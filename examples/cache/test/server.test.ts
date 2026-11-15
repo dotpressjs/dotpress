@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import { expressAdapter } from '@dotpress/adapter-express'
 import { createMemoryStore } from '@dotpress/cache'
 import { createMemoryLogger } from '@dotpress/testing'
@@ -20,9 +19,7 @@ beforeAll(async () => {
     db,
     logger: createMemoryLogger(),
   })
-  await app.listen(0, '127.0.0.1')
-
-  const { port } = adapter.server()!.address() as AddressInfo
+  const { port } = await app.listen(0, '127.0.0.1')
   baseUrl = `http://127.0.0.1:${port}`
   close = () => app.close()
 })

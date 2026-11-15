@@ -14,7 +14,7 @@ import {
   type PathParams,
   type Simplify,
 } from './path.js'
-import type { RouteSchema, Schema, SchemaDefinition } from './schema.js'
+import type { RouteSchema, Schema, RouteSchemaDefinition } from './schema.js'
 
 /**
  * Documentation metadata of a route (used by `@dotpress/openapi`).
@@ -22,7 +22,7 @@ import type { RouteSchema, Schema, SchemaDefinition } from './schema.js'
 export interface RouteMeta {
   summary?: string
   description?: string
-  tags?: string[]
+  tags?: readonly string[]
   operationId?: string
   deprecated?: boolean
   /**
@@ -30,7 +30,7 @@ export interface RouteMeta {
    * schemes declared by its middlewares (`defineMiddleware()`); `[]` marks
    * the route as public.
    */
-  security?: string[]
+  security?: readonly string[]
   /** Excludes the route from generated documentation. */
   hidden?: boolean
   /**
@@ -45,11 +45,11 @@ export interface RouteMeta {
    *   200: { description: 'CSV export', contentType: 'text/csv' },
    * }
    */
-  responses?: Record<number, string | RouteResponse>
+  responses?: Record<number, string | DocumentedResponse>
 }
 
 /** Documented response of a route (`meta.responses`). */
-export interface RouteResponse {
+export interface DocumentedResponse {
   description: string
   /** Body schema. */
   schema?: Schema
@@ -74,7 +74,7 @@ export interface RouteConfig<
   /** Defaults to `get`. */
   method?: HttpMethod
   path: P
-  schema?: SchemaDefinition<S>
+  schema?: RouteSchemaDefinition<S>
   /**
    * Route middlewares, run after global and group middlewares. Context
    * properties they guarantee (`defineMiddleware()`) are typed in the
@@ -108,7 +108,7 @@ export interface RouteConfig<
 export interface RouteRecord {
   readonly method: HttpMethod
   readonly path: string
-  readonly schema: SchemaDefinition<RouteSchema> | undefined
+  readonly schema: RouteSchemaDefinition<RouteSchema> | undefined
   readonly middlewares: readonly Middleware[]
   readonly handler: RouteHandler<RouteSchema, Record<string, string>>
   readonly meta: RouteMeta
@@ -190,14 +190,14 @@ const RESPONSE_OPTIONS: ReadonlySet<string> = new Set([
   'description',
   'schema',
   'contentType',
-] satisfies (keyof RouteResponse)[])
+] satisfies (keyof DocumentedResponse)[])
 
 const isStatus = (status: number) =>
   Number.isInteger(status) && status >= 100 && status <= 599
 
 const assertStatus = (status: number | undefined, path: string) => {
   if (status !== undefined && !isStatus(status)) {
-    throw new RangeError(`Invalid status ${status} for route "${path}".`)
+    throw new RangeError(`Route "${path}": invalid status ${status}.`)
   }
 }
 
@@ -206,14 +206,14 @@ const assertResponses = (responses: RouteMeta['responses'], path: string) => {
   for (const [key, response] of Object.entries(responses)) {
     if (!isStatus(Number(key))) {
       throw new RangeError(
-        `Invalid status "${key}" in meta.responses of route "${path}".`
+        `Route "${path}": invalid status "${key}" in meta.responses.`
       )
     }
     const description =
       typeof response === 'string' ? response : response?.description
     if (typeof description !== 'string') {
       throw new TypeError(
-        `meta.responses[${key}] of route "${path}" needs a description.`
+        `Route "${path}": meta.responses[${key}] needs a description.`
       )
     }
   }
@@ -255,11 +255,11 @@ export const createRouter = (): Router => {
     const method = route.method ?? 'get'
 
     if (!isHttpMethod(method)) {
-      throw new TypeError(`Unsupported HTTP method "${String(method)}".`)
+      throw new TypeError(`${label}: unsupported method "${String(method)}".`)
     }
 
     if (typeof route.handler !== 'function') {
-      throw new TypeError(`Route "${route.path}" has no handler.`)
+      throw new TypeError(`${label}: handler must be a function.`)
     }
 
     const path = joinPaths(prefix, route.path)
@@ -267,7 +267,7 @@ export const createRouter = (): Router => {
     assertResponses(route.meta?.responses, path)
 
     if (route.rawBody !== undefined && typeof route.rawBody !== 'boolean') {
-      throw new TypeError(`Invalid rawBody option for route "${path}".`)
+      throw new TypeError(`${label}: rawBody must be a boolean.`)
     }
 
     if (
@@ -275,7 +275,7 @@ export const createRouter = (): Router => {
       (!Number.isInteger(route.bodyLimit) || route.bodyLimit < 0)
     ) {
       throw new RangeError(
-        `Invalid bodyLimit for route "${path}": expected a non-negative integer (bytes).`
+        `${label}: bodyLimit must be a non-negative integer (bytes).`
       )
     }
 
@@ -348,7 +348,7 @@ export const loadedCopies = (): readonly string[] => [...copies]
 
 /**
  * Router used by `defineRoute()`, `createRouteGroup()` and
- * `registerResponseFilter()`. `createApp()` uses it when no `routers` option
+ * `addResponseFilter()`. `createApp()` uses it when no `routers` option
  * is given.
  */
 export const globalRouter: Router = createRouter()
@@ -368,5 +368,5 @@ export const createRouteGroup: Router['createGroup'] = (prefix, middlewares) =>
 /**
  * Registers a response filter on the global router.
  */
-export const registerResponseFilter = (filter: ResponseFilter): void =>
+export const addResponseFilter = (filter: ResponseFilter): void =>
   globalRouter.addResponseFilter(filter)

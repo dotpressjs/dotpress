@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import { createMemoryLogger } from '@dotpress/testing'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createNotesApp } from '../src/app.ts'
@@ -9,9 +8,7 @@ let close: () => Promise<void>
 
 beforeAll(async () => {
   const app = await createNotesApp({ logger: createMemoryLogger() })
-  await app.listen(0, '127.0.0.1')
-
-  const { port } = app.native().server.address() as AddressInfo
+  const { port } = await app.listen(0, '127.0.0.1')
   baseUrl = `http://127.0.0.1:${port}`
   close = () => app.close()
 })

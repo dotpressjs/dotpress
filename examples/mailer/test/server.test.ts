@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import { honoAdapter } from '@dotpress/adapter-hono/node'
 import { createMemoryProvider } from '@dotpress/mailer'
 import { createMemoryLogger, expectMailSent } from '@dotpress/testing'
@@ -21,9 +20,7 @@ beforeAll(async () => {
     previews: true,
     logger: createMemoryLogger(),
   })
-  await app.listen(0, '127.0.0.1')
-
-  const { port } = adapter.server()!.address() as AddressInfo
+  const { port } = await app.listen(0, '127.0.0.1')
   baseUrl = `http://127.0.0.1:${port}`
   close = () => app.close()
 })

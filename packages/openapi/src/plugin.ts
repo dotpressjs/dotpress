@@ -63,7 +63,9 @@ export const openapiPlugin = (options: OpenApiPluginOptions) => {
     )
   }
   if (!options?.info?.title || !options.info.version) {
-    throw new TypeError('openapiPlugin() requires info.title and info.version.')
+    throw new TypeError(
+      'openapiPlugin(): info.title and info.version are required.'
+    )
   }
 
   const {
@@ -88,7 +90,7 @@ export const openapiPlugin = (options: OpenApiPluginOptions) => {
     },
     setup(api) {
       // Serialized once: response filters of the app do not apply.
-      api.addRoute({
+      api.defineRoute({
         path,
         middlewares,
         meta: { hidden: true },
@@ -101,7 +103,7 @@ export const openapiPlugin = (options: OpenApiPluginOptions) => {
           ui.title ?? settings.info.title,
           ui
         )
-        api.addRoute({
+        api.defineRoute({
           path: ui.path ?? '/docs',
           middlewares,
           meta: { hidden: true },

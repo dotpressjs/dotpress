@@ -492,8 +492,8 @@ describe('cors option', () => {
       const checked: string[] = []
       const { inject } = await createCorsApp(
         {
-          origin: (origin) => {
-            checked.push(origin)
+          origin: (origin, req) => {
+            checked.push(`${req.method} ${req.path} ${origin}`)
             return origin === APP
           },
           credentials: true,
@@ -512,7 +512,7 @@ describe('cors option', () => {
       // A copy of ctx.req is not a request of the app.
       expect(seen).toEqual([true, false, false, false, false, false])
       // Once per request, for the plugin and the headers.
-      expect(checked).toEqual([APP, EVIL])
+      expect(checked).toEqual([`GET /users ${APP}`, `GET /users ${EVIL}`])
     })
 
     it('reports credentials: false', async () => {

@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import { expressAdapter } from '@dotpress/adapter-express'
 import { createMemoryLogger } from '@dotpress/testing'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -12,9 +11,7 @@ let close: () => Promise<void>
 beforeAll(async () => {
   const adapter = expressAdapter()
   const app = await createTasksApp({ adapter, logger: createMemoryLogger() })
-  await app.listen(0, '127.0.0.1')
-
-  const { port } = adapter.server()!.address() as AddressInfo
+  const { port } = await app.listen(0, '127.0.0.1')
   baseUrl = `http://127.0.0.1:${port}`
   close = () => app.close()
 })

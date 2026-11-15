@@ -203,10 +203,12 @@ export const internalsOf = (auth: unknown): AuthInternals | undefined =>
 
 /** A duration option, in whole seconds, at least `min`. */
 const wholeSeconds = (label: string, value: unknown, min: number) => {
-  const result = Math.round(parseDuration(value, label) / 1000)
+  const result = Math.round(
+    parseDuration(value, `createAuth(): ${label}`) / 1000
+  )
   if (result < min) {
     throw new RangeError(
-      `Invalid ${label}: expected ${min === 0 ? 'a non-negative' : `at least ${min} second`} duration.`
+      `createAuth(): ${label} must be at least ${min} second${min === 1 ? '' : 's'}.`
     )
   }
   return result
@@ -340,7 +342,7 @@ const resolveLoginThrottle = (
     )
     if (!Number.isInteger(resolved.max) || resolved.max < 1) {
       throw new RangeError(
-        `Invalid loginThrottle.limits.${name}.max: expected a positive integer.`
+        `createAuth(): loginThrottle.limits.${name}.max must be a positive integer.`
       )
     }
     return {
@@ -359,7 +361,7 @@ const resolveLoginThrottle = (
     typeof store.reset !== 'function'
   ) {
     throw new TypeError(
-      'Invalid loginThrottle.store: expected increment() and reset() methods.'
+      'createAuth(): loginThrottle.store must have increment() and reset() methods.'
     )
   }
 
@@ -374,11 +376,11 @@ const resolveLoginThrottle = (
 
 const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
   if (typeof settings !== 'object' || settings === null) {
-    throw new TypeError('createAuth() requires an options object.')
+    throw new TypeError('createAuth(): expected an object of options.')
   }
   if ('refreshTokenTTLInDays' in settings) {
     throw new TypeError(
-      'refreshTokenTTLInDays is replaced by session.idleTimeout, in seconds.'
+      'createAuth(): refreshTokenTTLInDays is replaced by session.idleTimeout.'
     )
   }
   if (
@@ -386,7 +388,9 @@ const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
     settings.keys !== null &&
     'secretKey' in settings.keys
   ) {
-    throw new TypeError('keys.secretKey is renamed keys.privateKey.')
+    throw new TypeError(
+      'createAuth(): keys.secretKey is renamed keys.privateKey.'
+    )
   }
   assertKnown(settings, OPTIONS)
   assertKnown(settings.keys, KEY_OPTIONS, 'keys.')
@@ -409,19 +413,19 @@ const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
   )
   if (!settings?.keys?.privateKey || !settings.keys.publicKey) {
     throw new TypeError(
-      'createAuth() requires keys.privateKey and keys.publicKey.'
+      'createAuth(): keys.privateKey and keys.publicKey are required.'
     )
   }
   if (!settings.dataProvider) {
-    throw new TypeError('createAuth() requires a dataProvider.')
+    throw new TypeError('createAuth(): dataProvider is required.')
   }
   if (typeof settings.issuer !== 'string' || settings.issuer === '') {
     throw new TypeError(
-      'createAuth() requires an issuer (iss claim), such as the URL of the API.'
+      'createAuth(): issuer is required (the iss claim), such as the URL of the API.'
     )
   }
   if (settings.audience !== undefined && settings.audience === '') {
-    throw new TypeError('Invalid audience: expected a non-empty string.')
+    throw new TypeError('createAuth(): audience must be a non-empty string.')
   }
   const clients = settings.clients
   if (
@@ -431,7 +435,7 @@ const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
       clients.allowed.some((id) => typeof id !== 'string' || id === ''))
   ) {
     throw new TypeError(
-      'Invalid clients.allowed: expected a non-empty list of client identifiers.'
+      'createAuth(): clients.allowed must be a non-empty list of client identifiers.'
     )
   }
   const rounds = settings.passwordHashRounds
@@ -440,7 +444,7 @@ const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
     (!Number.isInteger(rounds) || rounds < 4 || rounds > 31)
   ) {
     throw new RangeError(
-      'Invalid passwordHashRounds: expected an integer between 4 and 31.'
+      'createAuth(): passwordHashRounds must be an integer between 4 and 31.'
     )
   }
   for (const origin of settings.cookies?.trustedOrigins ?? []) {
@@ -452,7 +456,7 @@ const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
     }
     if (!valid) {
       throw new TypeError(
-        `Invalid cookies.trustedOrigins: "${origin}" is not an origin (expected a scheme and a host, such as https://app.example.com, without path or trailing slash).`
+        `createAuth(): cookies.trustedOrigins: "${origin}" is not an origin (expected a scheme and a host, such as https://app.example.com, without path or trailing slash).`
       )
     }
   }
@@ -461,7 +465,7 @@ const resolveSettings = (settings: AuthOptions): ResolvedAuthOptions => {
   for (const [clientId, override] of Object.entries(clients?.sessions ?? {})) {
     if (!clients?.allowed.includes(clientId)) {
       throw new TypeError(
-        `Invalid clients.sessions: "${clientId}" is not in clients.allowed.`
+        `createAuth(): clients.sessions: "${clientId}" is not in clients.allowed.`
       )
     }
     clientSessions[clientId] = resolveSession(
@@ -526,12 +530,12 @@ const cookieName = (
   const lowerName = name.toLowerCase()
   if (lowerName.startsWith('__host-') && !hostAllowed) {
     throw new TypeError(
-      `Invalid cookies.${setting}: a __Host- cookie must be secure, without domain, and with path "/".`
+      `createAuth(): cookies.${setting}: a __Host- cookie must be secure, without domain, and with path "/".`
     )
   }
   if (lowerName.startsWith('__secure-') && !secure) {
     throw new TypeError(
-      `Invalid cookies.${setting}: a __Secure- cookie must be secure.`
+      `createAuth(): cookies.${setting}: a __Secure- cookie must be secure.`
     )
   }
   return name
@@ -547,9 +551,7 @@ const resolveCookies = (
   }
   for (const key of ['path', 'refreshTokenPath'] as const) {
     if (!merged[key].startsWith('/')) {
-      throw new TypeError(
-        `Invalid cookies.${key}: expected a path starting with "/".`
-      )
+      throw new TypeError(`createAuth(): cookies.${key} must start with "/".`)
     }
   }
   const { secure, domain } = merged
@@ -589,7 +591,7 @@ const loadKey = async (kind: string, load: () => Promise<CryptoKey>) => {
     return await load()
   } catch (error) {
     throw new TypeError(
-      `Invalid auth ${kind}: expected an RSA PEM key (${(error as Error).message}).`,
+      `createAuth(): keys.${kind} must be an RSA PEM key (${(error as Error).message}).`,
       { cause: error }
     )
   }
@@ -601,7 +603,7 @@ const loadPublicKey = async (
   kid: string | undefined
 ): Promise<VerificationKey> => {
   if (pem.includes('BEGIN RSA PUBLIC KEY')) {
-    throw new TypeError(`Invalid auth ${kind}: ${PKCS1_PUBLIC_KEY_ERROR}`)
+    throw new TypeError(`createAuth(): keys.${kind}: ${PKCS1_PUBLIC_KEY_ERROR}`)
   }
   const key = await loadKey(kind, () =>
     importSPKI(pem, ALGORITHM, { extractable: true })
@@ -619,7 +621,7 @@ const importKeys = async ({
 }: ResolvedAuthOptions['keys']) => {
   if (privateKey.includes('BEGIN RSA PRIVATE KEY')) {
     throw new TypeError(
-      'Invalid auth privateKey: PKCS#1 keys ("BEGIN RSA PRIVATE KEY") are not supported, use PKCS#8 ("BEGIN PRIVATE KEY"). Convert it with: openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem'
+      'createAuth(): keys.privateKey: PKCS#1 keys ("BEGIN RSA PRIVATE KEY") are not supported, use PKCS#8 ("BEGIN PRIVATE KEY"). Convert it with: openssl pkcs8 -topk8 -nocrypt -in private.pem -out private.pkcs8.pem'
     )
   }
 
@@ -637,7 +639,7 @@ const importKeys = async ({
     await compactVerify(probe, active.key)
   } catch (error) {
     throw new TypeError(
-      'Invalid auth keys: publicKey does not match privateKey.',
+      'createAuth(): keys.publicKey does not match keys.privateKey.',
       { cause: error }
     )
   }
@@ -659,7 +661,7 @@ const importKeys = async ({
       existing.jwk.e !== loaded.jwk.e
     ) {
       throw new TypeError(
-        `Invalid auth keys: kid "${loaded.kid}" is used by several keys.`
+        `createAuth(): keys: kid "${loaded.kid}" is used by several keys.`
       )
     }
   }
@@ -951,12 +953,12 @@ export const createAuth = (input: AuthOptions): Auth => {
   const bindRoutesPath = (path: string) => {
     if (typeof path !== 'string' || !path.startsWith('/')) {
       throw new TypeError(
-        `Invalid routesPath: expected a path starting with "/", received ${JSON.stringify(path)}.`
+        `authPlugin(): the routes path must start with "/", received ${JSON.stringify(path)}.`
       )
     }
     if (routesPath !== undefined && routesPath !== path) {
       throw new Error(
-        `This auth service already serves routes under "${routesPath}": create one auth service per app to serve them under "${path}".`
+        `authPlugin(): this auth service already serves routes under "${routesPath}": create one auth service per app to serve them under "${path}".`
       )
     }
     routesPath = path
@@ -1157,7 +1159,9 @@ export const createAuth = (input: AuthOptions): Auth => {
 
     async revokeUserSessions(userId) {
       if (typeof userId !== 'string' || userId === '') {
-        throw new TypeError('revokeUserSessions() requires a userId.')
+        throw new TypeError(
+          'revokeUserSessions(): userId must be a non-empty string.'
+        )
       }
       await settings.dataProvider.revokeUserTokens(userId)
     },

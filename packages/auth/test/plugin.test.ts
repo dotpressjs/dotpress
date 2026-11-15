@@ -49,7 +49,7 @@ describe('authPlugin()', () => {
 
     expect(() => authPlugin({} as never)).toThrow(
       new TypeError(
-        'authPlugin() expects an auth service created with createAuth().'
+        'authPlugin(): expected an auth service created with createAuth().'
       )
     )
     expect(() => authPlugin(auth, { prefixe: '/login' } as never)).toThrow(
@@ -455,7 +455,7 @@ describe('authPlugin()', () => {
             issuer: 'https://api.example.com',
             cookies: { trustedOrigins: [origin] },
           })
-        ).toThrow('Invalid cookies.trustedOrigins')
+        ).toThrow('cookies.trustedOrigins: ')
       }
     })
   })
@@ -594,7 +594,7 @@ describe('authPlugin()', () => {
 
       await expect(
         createTestApp({ routers: [], plugins: [authPlugin(auth)] })
-      ).rejects.toThrow('Invalid auth privateKey')
+      ).rejects.toThrow('keys.privateKey must be an RSA PEM key')
     })
 
     it('exposes the service and the security schemes to other plugins', () => {

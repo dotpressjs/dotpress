@@ -1022,7 +1022,7 @@ describe('auth routes', () => {
         await app({ basePath: '/a' })
         await expect(app({ basePath: '/a' })).resolves.toBeDefined()
         await expect(app({ basePath: '/b' })).rejects.toThrow(
-          'This auth service already serves routes under "/a/auth": create one auth service per app to serve them under "/b/auth".'
+          'authPlugin(): this auth service already serves routes under "/a/auth": create one auth service per app to serve them under "/b/auth".'
         )
         expect(settingsOf(auth).cookies.refreshTokenPath).toBe('/a/auth')
       })
@@ -1035,7 +1035,7 @@ describe('auth routes', () => {
         })
 
         await expect(initAuth(auth, { routesPath: 'auth' })).rejects.toThrow(
-          'Invalid routesPath: expected a path starting with "/", received "auth".'
+          'authPlugin(): the routes path must start with "/", received "auth".'
         )
       })
     })

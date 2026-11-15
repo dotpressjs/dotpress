@@ -432,8 +432,12 @@ describe('honoAdapter()', () => {
     })
 
     it('rejects invalid body limits', () => {
-      expect(() => honoAdapter({ bodyLimit: -1 })).toThrow('Invalid bodyLimit')
-      expect(() => honoAdapter({ bodyLimit: 1.5 })).toThrow('Invalid bodyLimit')
+      expect(() => honoAdapter({ bodyLimit: -1 })).toThrow(
+        'bodyLimit must be a non-negative integer'
+      )
+      expect(() => honoAdapter({ bodyLimit: 1.5 })).toThrow(
+        'bodyLimit must be a non-negative integer'
+      )
     })
 
     it('rejects unknown options', () => {
@@ -610,6 +614,25 @@ describe('honoAdapter()', () => {
 
       await target.close()
       expect(adapter.server()).toBeUndefined()
+    })
+
+    it('returns the address it listens on', async () => {
+      const adapter = nodeHonoAdapter()
+      const app = await createApp({
+        adapter,
+        logger: createMemoryLogger(),
+        routers: [createRouter()],
+      })
+      const address = await app.listen(0, '127.0.0.1')
+      try {
+        expect(address).toEqual({
+          host: '127.0.0.1',
+          port: (adapter.server()!.address() as AddressInfo).port,
+        })
+        expect(address.port).toBeGreaterThan(0)
+      } finally {
+        await app.close()
+      }
     })
 
     it('refuses to listen twice or to be mounted twice', async () => {

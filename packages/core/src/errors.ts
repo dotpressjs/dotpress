@@ -42,7 +42,7 @@ export class HttpError extends Error {
     options: HttpErrorOptions = {}
   ) {
     if (typeof options !== 'object' || options === null) {
-      throw new TypeError('HttpError options must be an object.')
+      throw new TypeError('HttpError: options must be an object.')
     }
     for (const key of Object.keys(options)) {
       if (!OPTIONS.has(key)) {
@@ -54,7 +54,7 @@ export class HttpError extends Error {
 
     if (!Number.isInteger(status) || status < 400 || status > 599) {
       throw new RangeError(
-        `HttpError status must be an integer between 400 and 599, received ${status}.`
+        `HttpError: status must be an integer between 400 and 599, received ${status}.`
       )
     }
 

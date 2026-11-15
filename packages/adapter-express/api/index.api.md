@@ -5,17 +5,19 @@
 ## Exports
 
 ```ts
-import type { HttpAdapter } from '@dotpress/core'
+import type { HttpAdapter, ListenAddress } from '@dotpress/core'
 
 export interface ExpressAdapter<
   TApp extends ExpressApplication = Express,
 > extends HttpAdapter<TApp> {
-  listen(port: number, host?: string): Promise<void>
+  listen(port: number, host?: string): Promise<ListenAddress>
   close(): Promise<void>
   server(): Server | undefined
 }
 
-export interface ExpressAdapterOptions<TApp extends ExpressApplication> {
+export interface ExpressAdapterOptions<
+  TApp extends ExpressApplication = Express,
+> {
   app?: TApp
   beforeRoutes?: (app: TApp) => void | Promise<void>
   afterRoutes?: (app: TApp) => void | Promise<void>

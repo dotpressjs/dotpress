@@ -3,6 +3,7 @@ import {
   createApp,
   createRouter,
   sse,
+  text,
   type AppOptions,
   type Router,
 } from '@dotpress/core'
@@ -86,6 +87,44 @@ const unhandled = (message: string) => ({
 
 describe('honoAdapter()', () => {
   describe('native middlewares', () => {
+    it('keeps a route header unless a beforeRoutes middleware writes after the route', async () => {
+      const page = () =>
+        text('<p>Page</p>', {
+          headers: { 'content-security-policy': "default-src 'none'" },
+        })
+      const { fetch } = await serve(
+        (router) => {
+          router.defineRoute({ path: '/before/page', handler: page })
+          router.defineRoute({ path: '/after/page', handler: page })
+        },
+        {
+          beforeRoutes: (app) => {
+            app.use('/before/*', async (c, next) => {
+              c.header('content-security-policy', "script-src 'self'")
+              await next()
+            })
+            app.use(
+              '/after/*',
+              secureHeaders({
+                contentSecurityPolicy: { scriptSrc: ["'self'"] },
+              })
+            )
+          },
+        }
+      )
+
+      const before = await fetch('/before/page')
+      expect(before.headers.get('content-security-policy')).toBe(
+        "default-src 'none'"
+      )
+      // secureHeaders() sets its headers once the route answered: its
+      // policy wins (documented for the API reference page).
+      const after = await fetch('/after/page')
+      expect(after.headers.get('content-security-policy')).toBe(
+        "script-src 'self'"
+      )
+    })
+
     it('runs beforeRoutes middlewares and routes first', async () => {
       const { fetch } = await serve(
         (router) => {

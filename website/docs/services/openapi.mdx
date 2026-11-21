@@ -118,7 +118,14 @@ The document lists every route of the API, with its parameters. For an internal 
 
 ## The API reference
 
-The page loads a pinned version of Scalar from jsDelivr, checked with Subresource Integrity. It is neutral by default (`SCALAR_NEUTRAL_CONFIGURATION`): no telemetry, no AI agent or MCP integration, no developer toolbar, no link to the Scalar client, system fonts, and no "Powered by Scalar" link. `ui.configuration` overrides these settings with the [Scalar configuration](https://guides.scalar.com/scalar/scalar-api-references/configuration), and its `customCss` is appended. `cdnUrl` hosts the script yourself. With a strict Content Security Policy, the page needs an inline script.
+The page loads a pinned version of Scalar from jsDelivr, checked with Subresource Integrity. It is neutral by default (`SCALAR_NEUTRAL_CONFIGURATION`): no telemetry, no AI agent or MCP integration, no developer toolbar, no link to the Scalar client, system fonts, and no "Powered by Scalar" link. `ui.configuration` overrides these settings with the [Scalar configuration](https://guides.scalar.com/scalar/scalar-api-references/configuration), and its `customCss` is appended. `cdnUrl` hosts the script yourself.
+
+### Content Security Policy
+
+The page sets its own Content Security Policy: the Scalar script, its inline script (allowed by its hash), styles, and requests to the document and to the `servers` of the document, for "Try it". Nothing else is loaded. This policy replaces the one that a security middleware sets for the whole app before the routes, such as `helmet()` on Express or `@fastify/helmet`, which would block the page.
+
+- `ui.contentSecurityPolicy` adds sources to the directives, for instance an image host used in your descriptions: `{ 'img-src': ['https://cdn.example.com'] }`. `false` sets no policy.
+- A middleware that writes its headers after the route replaces the policy of the page, and blocks it: the `secureHeaders()` middleware of Hono, with its `contentSecurityPolicy` option. Leave the page out of it, by registering the middleware on the paths of your API only.
 
 ## The document in CI
 

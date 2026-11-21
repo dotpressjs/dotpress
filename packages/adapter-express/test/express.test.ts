@@ -5,6 +5,7 @@ import {
   createRouter,
   sse,
   stream,
+  text,
   type Router,
 } from '@dotpress/core'
 import { createMemoryLogger } from '@dotpress/testing'
@@ -33,6 +34,45 @@ afterEach(async () => {
 
 describe('expressAdapter()', () => {
   describe('native middlewares', () => {
+    it('lets a route header replace the one of a beforeRoutes middleware (helmet)', async () => {
+      const { fetch } = await start(
+        expressAdapter({
+          beforeRoutes: (app) => {
+            app.use((_req, res, next) => {
+              res.setHeader('content-security-policy', "script-src 'self'")
+              next()
+            })
+          },
+        }),
+        {
+          logger: createMemoryLogger(),
+          routers: [
+            routerWith((router) => {
+              router.defineRoute({
+                path: '/page',
+                handler: () =>
+                  text('<p>Page</p>', {
+                    headers: {
+                      'content-security-policy': "default-src 'none'",
+                    },
+                  }),
+              })
+              router.defineRoute({ path: '/data', handler: () => ({ a: 1 }) })
+            }),
+          ],
+        }
+      )
+
+      const page = await fetch('/page')
+      expect(page.headers.get('content-security-policy')).toBe(
+        "default-src 'none'"
+      )
+      const data = await fetch('/data')
+      expect(data.headers.get('content-security-policy')).toBe(
+        "script-src 'self'"
+      )
+    })
+
     it('runs beforeRoutes middlewares before the Dotpress routes', async () => {
       const { fetch } = await start(
         expressAdapter({

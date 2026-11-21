@@ -5,6 +5,7 @@ import {
   createApp,
   createRouter,
   sse,
+  text,
   type AppOptions,
   type Router,
 } from '@dotpress/core'
@@ -56,6 +57,50 @@ const unhandled = (message: string) => ({
 
 describe('fastifyAdapter()', () => {
   describe('native hooks, plugins and routes', () => {
+    it('lets a route header replace the one of a beforeRoutes hook (@fastify/helmet)', async () => {
+      const { fetch } = await start(
+        fastifyAdapter({
+          beforeRoutes: (app) => {
+            app.addHook('onRequest', async (request, reply) => {
+              // @fastify/helmet writes on the Node.js response; other
+              // plugins use reply.header().
+              if (request.url.endsWith('raw')) {
+                reply.raw.setHeader(
+                  'content-security-policy',
+                  "script-src 'self'"
+                )
+              } else {
+                reply.header('content-security-policy', "script-src 'self'")
+              }
+            })
+          },
+        }),
+        (router) => {
+          for (const path of ['/page', '/page-raw']) {
+            router.defineRoute({
+              path,
+              handler: () =>
+                text('<p>Page</p>', {
+                  headers: { 'content-security-policy': "default-src 'none'" },
+                }),
+            })
+          }
+          router.defineRoute({ path: '/data', handler: () => ({ a: 1 }) })
+        }
+      )
+
+      for (const path of ['/page', '/page-raw']) {
+        const page = await fetch(path)
+        expect(page.headers.get('content-security-policy'), path).toBe(
+          "default-src 'none'"
+        )
+      }
+      const data = await fetch('/data')
+      expect(data.headers.get('content-security-policy')).toBe(
+        "script-src 'self'"
+      )
+    })
+
     it('applies beforeRoutes hooks to the Dotpress routes, not afterRoutes hooks', async () => {
       const { fetch } = await start(
         fastifyAdapter({

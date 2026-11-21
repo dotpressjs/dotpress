@@ -1,7 +1,11 @@
 import { definePlugin, text, type Middleware } from '@dotpress/core'
 import { generateOpenApi, type OpenApiOptions } from './generate.js'
 import type { OpenApiDocument } from './types.js'
-import { renderScalarPage, type ScalarOptions } from './ui.js'
+import {
+  renderScalarPage,
+  scalarContentSecurityPolicy,
+  type ScalarOptions,
+} from './ui.js'
 import { assertKnownOptions } from './options.js'
 
 export interface OpenApiPluginOptions extends Omit<
@@ -58,6 +62,7 @@ export const openapiPlugin = (options: OpenApiPluginOptions) => {
         'cdnUrl',
         'integrity',
         'configuration',
+        'contentSecurityPolicy',
       ] satisfies (keyof ScalarOptions)[],
       'ui.'
     )
@@ -97,21 +102,25 @@ export const openapiPlugin = (options: OpenApiPluginOptions) => {
         handler: () => text(body, { headers: JSON_TYPE }),
       })
 
-      if (ui !== false) {
-        const page = renderScalarPage(
-          api.publicPath(path),
-          ui.title ?? settings.info.title,
-          ui
-        )
+      const page =
+        ui === false
+          ? undefined
+          : renderScalarPage(
+              api.publicPath(path),
+              ui.title ?? settings.info.title,
+              ui
+            )
+      let pageHeaders: Record<string, string> = HTML
+      if (ui !== false && page) {
         api.defineRoute({
           path: ui.path ?? '/docs',
           middlewares,
           meta: { hidden: true },
-          handler: () => text(page, { headers: HTML }),
+          handler: () => text(page.html, { headers: pageHeaders }),
         })
       }
 
-      api.hooks.onInit(() => {
+      api.hooks.onInit(async () => {
         document = generateOpenApi(
           {
             routes: api.getRoutes(),
@@ -121,6 +130,21 @@ export const openapiPlugin = (options: OpenApiPluginOptions) => {
           { ...settings, onWarning: (message) => api.logger.warn(message) }
         )
         body = JSON.stringify(document)
+
+        // The policy of the page replaces the one of the app (helmet()):
+        // the requests of Try it go to the servers of the document.
+        if (ui !== false && page && ui.contentSecurityPolicy !== false) {
+          pageHeaders = {
+            ...HTML,
+            'content-security-policy': await scalarContentSecurityPolicy(
+              page.script,
+              {
+                ...ui,
+                servers: (document.servers ?? []).map((server) => server.url),
+              }
+            ),
+          }
+        }
       })
     },
   })

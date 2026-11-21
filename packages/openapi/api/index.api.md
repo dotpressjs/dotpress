@@ -134,6 +134,7 @@ export interface ScalarOptions {
   cdnUrl?: string
   integrity?: string
   configuration?: Record<string, unknown>
+  contentSecurityPolicy?: false | Readonly<Record<string, readonly string[]>>
 }
 
 export type SecurityRequirementObject = Record<string, string[]>

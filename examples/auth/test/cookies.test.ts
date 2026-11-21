@@ -82,7 +82,7 @@ it('ignores the cookies sent by a request from another site', async () => {
   const refreshed = await api.post('/auth/refresh', {}, crossSite)
   expect(refreshed.status).toBe(403)
   expect(await refreshed.json()).toMatchObject({
-    message: 'CROSS_ORIGIN_REQUEST',
+    error: 'CROSS_ORIGIN_REQUEST',
   })
 })
 

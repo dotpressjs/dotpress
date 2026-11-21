@@ -84,8 +84,7 @@ describe('login', () => {
     expect(wrongPassword.status).toBe(401)
     const body = await wrongPassword.json()
     expect(body).toMatchObject({
-      error: 'UNAUTHORIZED',
-      message: 'INVALID_LOGIN',
+      error: 'INVALID_LOGIN',
     })
     expect(await unknownUser.json()).toEqual(body)
   })
@@ -169,7 +168,7 @@ describe('refresh', () => {
     const reused = await refresh(first)
     expect(reused.status).toBe(401)
     expect(await reused.json()).toMatchObject({
-      message: 'INVALID_REFRESH_TOKEN',
+      error: 'INVALID_REFRESH_TOKEN',
     })
 
     expect((await refresh(second)).status).toBe(401)

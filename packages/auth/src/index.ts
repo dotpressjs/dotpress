@@ -23,6 +23,8 @@ export {
   type AuthPluginOptions,
 } from './plugin.js'
 
+export type { AuthRouteErrorCode } from './route-errors.js'
+
 export type {
   AdditionalPublicKey,
   AuthCookieOptions,

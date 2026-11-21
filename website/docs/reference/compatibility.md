@@ -10,7 +10,7 @@ From 2.0, the packages follow [semantic versioning](https://semver.org): a minor
   | Union | Package |
   | --- | --- |
   | `HttpMethod`, `LogLevel` | `@dotpress/core` |
-  | `AuthErrorCode`, `LoginErrorType` | `@dotpress/auth` |
+  | `AuthErrorCode`, `AuthRouteErrorCode`, `LoginErrorType` | `@dotpress/auth` |
   | `DeadReason`, `RetryReason`, `HandleResult['status']` | `@dotpress/events` |
   | `StoreOperation`, `CacheAccess['type']`, `CacheAccess['reason']` | `@dotpress/cache` |
   | `MailFormat` | `@dotpress/mailer` |

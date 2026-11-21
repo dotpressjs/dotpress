@@ -53,8 +53,7 @@ describe('login throttle', () => {
     const blocked = await attempt(fetch, 'ada', 'secret')
     expect(blocked.status).toBe(429)
     expect(await blocked.json()).toMatchObject({
-      error: 'TOO_MANY_REQUESTS',
-      message: 'TOO_MANY_LOGIN_ATTEMPTS',
+      error: 'TOO_MANY_LOGIN_ATTEMPTS',
     })
     const retryAfter = Number(blocked.headers.get('retry-after'))
     expect(retryAfter).toBeGreaterThan(50)

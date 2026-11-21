@@ -86,11 +86,15 @@ The plugin is named `auth`, provides `ctx.user` and `ctx.auth`, and declares the
 
 ### Errors
 
-The routes answer the standard error format; the `message` carries the reason:
+The routes answer the standard error format. The `error` field holds the code, typed `AuthRouteErrorCode`: test it, or the status. The `message` is a sentence for people, and may change.
 
-| Status | `message` | When |
+```json
+{ "status": 401, "error": "EXPIRED_REFRESH_TOKEN", "message": "The session has expired. Log in again." }
+```
+
+| Status | `error` | When |
 | --- | --- | --- |
-| `400` | `Validation failed` | Invalid body, or a `clientId` outside `clients.allowed` |
+| `400` | `VALIDATION_FAILED` | Invalid body, or a `clientId` outside `clients.allowed` |
 | `401` | `INVALID_LOGIN` | Unknown username, wrong password, account without password, or a role not allowed for the client |
 | `429` | `TOO_MANY_LOGIN_ATTEMPTS` | Over a limit of the login throttle, with `Retry-After` |
 | `401` | `NO_TOKENS_PROVIDED` | `/auth/refresh` without tokens, in the body or as cookies |
@@ -99,7 +103,7 @@ The routes answer the standard error format; the `message` carries the reason:
 | `401` | `COOKIES_NOT_ENABLED`, `ACCESS_TOKEN_NOT_IN_COOKIE` | `/auth/restore` without the cookie mode, or without `accessTokenInCookie` |
 | `401` | `NO_REFRESH_TOKEN`, `NO_ACCESS_TOKEN` | `/auth/restore` without one of the cookies |
 | `403` | `CROSS_ORIGIN_REQUEST` | A cookie request from an untrusted origin, on `/auth/refresh`, `/auth/restore` or `/auth/logout` |
-| `401` | `Unauthorized` | `/auth/logout` with `scope: 'all'`, without a valid access token or an active refresh token |
+| `401` | `UNAUTHORIZED` | `/auth/logout` with `scope: 'all'`, without a valid access token or an active refresh token |
 
 Outside the routes, the service throws an `AuthError` whose `code` is `INVALID_ACCESS_TOKEN`, `INVALID_REFRESH_TOKEN`, `EXPIRED_REFRESH_TOKEN`, `REFRESH_TOKEN_REUSED` or `SESSION_REVOKED`.
 

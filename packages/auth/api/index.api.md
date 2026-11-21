@@ -122,6 +122,18 @@ export interface AuthPluginOptions {
   jwks?: boolean
 }
 
+export type AuthRouteErrorCode =
+  | 'INVALID_LOGIN'
+  | 'TOO_MANY_LOGIN_ATTEMPTS'
+  | 'NO_TOKENS_PROVIDED'
+  | 'INVALID_REFRESH_TOKEN'
+  | 'EXPIRED_REFRESH_TOKEN'
+  | 'COOKIES_NOT_ENABLED'
+  | 'ACCESS_TOKEN_NOT_IN_COOKIE'
+  | 'NO_REFRESH_TOKEN'
+  | 'NO_ACCESS_TOKEN'
+  | 'CROSS_ORIGIN_REQUEST'
+
 export interface AuthSession {
   readonly userId: string
   readonly username: string | undefined

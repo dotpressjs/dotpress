@@ -2,10 +2,12 @@ import { closeOf, createFetchTarget, type TestTarget } from './target.js'
 
 /**
  * Lambda event formats: API Gateway REST API (payload v1), HTTP API and
- * Function URLs (payload v2), Application Load Balancer (with multi-value
- * headers, required for repeated query keys and several cookies).
+ * Function URLs (payload v2), Application Load Balancer with multi-value
+ * headers (`alb`), or without them (`alb-single-value`, the default of a
+ * target group): one value per header and query key, and the response
+ * headers read from `headers` only.
  */
-export type LambdaEventFormat = 'v1' | 'v2' | 'alb'
+export type LambdaEventFormat = 'v1' | 'v2' | 'alb' | 'alb-single-value'
 
 export interface LambdaTargetOptions {
   format: LambdaEventFormat
@@ -134,8 +136,15 @@ export const toLambdaEvent = async (
     Object.entries(headers).map(([name, value]) => [name, [value]])
   )
 
-  if (format === 'alb') {
-    return {
+  if (format === 'alb' || format === 'alb-single-value') {
+    const forwarded = {
+      // The load balancer appends the client address.
+      'x-forwarded-for': headers['x-forwarded-for']
+        ? `${headers['x-forwarded-for']}, ${sourceIp}`
+        : sourceIp,
+      'x-forwarded-proto': url.protocol.slice(0, -1),
+    }
+    const context = {
       requestContext: {
         elb: {
           targetGroupArn: `arn:aws:elasticloadbalancing:us-east-1:${ACCOUNT}:targetgroup/dotpress/0123456789abcdef`,
@@ -143,16 +152,25 @@ export const toLambdaEvent = async (
       },
       httpMethod: request.method,
       path: url.pathname,
-      multiValueQueryStringParameters: rawQuery(url.search),
-      // The load balancer appends the client address.
+    }
+    // Query values as sent, not decoded.
+    const albQuery = rawQuery(url.search)
+    if (format === 'alb-single-value') {
+      return {
+        ...context,
+        queryStringParameters: lastValues(albQuery),
+        headers: { ...headers, ...forwarded },
+        body: body ?? '',
+        isBase64Encoded,
+      }
+    }
+    return {
+      ...context,
+      multiValueQueryStringParameters: albQuery,
       multiValueHeaders: {
         ...multiValueHeaders,
-        'x-forwarded-for': [
-          headers['x-forwarded-for']
-            ? `${headers['x-forwarded-for']}, ${sourceIp}`
-            : sourceIp,
-        ],
-        'x-forwarded-proto': [url.protocol.slice(0, -1)],
+        'x-forwarded-for': [forwarded['x-forwarded-for']],
+        'x-forwarded-proto': [forwarded['x-forwarded-proto']],
       },
       body: body ?? '',
       isBase64Encoded,
@@ -190,22 +208,35 @@ export const toLambdaEvent = async (
 
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
 
-/** Converts the result of a Lambda handler into a Web response. */
-export const fromLambdaResult = (result: unknown): Response => {
+/**
+ * Converts the result of a Lambda handler into a Web response. With
+ * `alb-single-value`, only `headers` are read, with string values, as a
+ * load balancer without multi-value headers does.
+ */
+export const fromLambdaResult = (
+  result: unknown,
+  format?: LambdaEventFormat
+): Response => {
   const { statusCode, headers, multiValueHeaders, cookies, body, ...rest } =
     result as LambdaResult
 
   const responseHeaders = new Headers()
-  for (const [name, value] of Object.entries(headers ?? {})) {
-    for (const item of Array.isArray(value) ? value : [value]) {
-      responseHeaders.append(name, item)
+  if (format === 'alb-single-value') {
+    for (const [name, value] of Object.entries(headers ?? {})) {
+      if (typeof value === 'string') responseHeaders.set(name, value)
     }
-  }
-  for (const [name, values] of Object.entries(multiValueHeaders ?? {})) {
-    for (const value of values) responseHeaders.append(name, value)
-  }
-  for (const cookie of cookies ?? []) {
-    responseHeaders.append('set-cookie', cookie)
+  } else {
+    for (const [name, value] of Object.entries(headers ?? {})) {
+      for (const item of Array.isArray(value) ? value : [value]) {
+        responseHeaders.append(name, item)
+      }
+    }
+    for (const [name, values] of Object.entries(multiValueHeaders ?? {})) {
+      for (const value of values) responseHeaders.append(name, value)
+    }
+    for (const cookie of cookies ?? []) {
+      responseHeaders.append('set-cookie', cookie)
+    }
   }
 
   const content =
@@ -268,7 +299,7 @@ export const createLambdaTarget = (
           { status: 502 }
         )
       }
-      return fromLambdaResult(result)
+      return fromLambdaResult(result, options.format)
     },
     { close }
   )

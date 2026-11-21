@@ -9,6 +9,7 @@ import {
 } from '@dotpress/core'
 import {
   createMemoryLogger,
+  fromLambdaResult,
   memoryAdapter,
   toLambdaEvent,
   type LambdaEventFormat,
@@ -70,23 +71,8 @@ const event = async (
   )) as EventRecord
 
 /** Load balancer event without multi-value headers. */
-const singleValueAlb = async (path: string, init?: RequestInit) => {
-  const { multiValueHeaders, multiValueQueryStringParameters, ...rest } =
-    await event(path, 'alb', init, '203.0.113.9')
-  const query = multiValueQueryStringParameters as Record<string, string[]>
-  return {
-    ...rest,
-    headers: Object.fromEntries(
-      Object.entries(multiValueHeaders!).map(([name, values]) => [
-        name,
-        values.at(-1)!,
-      ])
-    ),
-    queryStringParameters: Object.fromEntries(
-      Object.entries(query).map(([key, values]) => [key, values.at(-1)!])
-    ),
-  }
-}
+const singleValueAlb = (path: string, init?: RequestInit) =>
+  event(path, 'alb-single-value', init, '203.0.113.9')
 
 const invoke = async (
   handler: LambdaHandler,
@@ -357,6 +343,13 @@ describe('createLambdaHandler()', () => {
         multiValueHeaders: { 'set-cookie': ['a=1; Path=/', 'b=2; Path=/'] },
       })
     }
+
+    // A load balancer without multi-value headers reads `headers` only:
+    // the first cookie.
+    const single = await invoke(handler, '/login', 'alb-single-value')
+    expect(single.headers?.['set-cookie']).toBe('a=1; Path=/')
+    const res = fromLambdaResult(single, 'alb-single-value')
+    expect(res.headers.getSetCookie()).toEqual(['a=1; Path=/'])
   })
 
   describe('query string', () => {

@@ -54,7 +54,7 @@ export declare class ExpectationError extends Error {
 
 export type ExpectedAddresses = string | readonly string[]
 
-export type LambdaEventFormat = 'v1' | 'v2' | 'alb'
+export type LambdaEventFormat = 'v1' | 'v2' | 'alb' | 'alb-single-value'
 
 export interface LambdaTargetOptions {
   format: LambdaEventFormat
@@ -190,7 +190,10 @@ export declare const expectNoMailSent: (
   criteria?: MailCriteria
 ) => void
 
-export declare const fromLambdaResult: (result: unknown) => Response
+export declare const fromLambdaResult: (
+  result: unknown,
+  format?: LambdaEventFormat
+) => Response
 
 export declare const memoryAdapter: (
   options?: MemoryAdapterOptions

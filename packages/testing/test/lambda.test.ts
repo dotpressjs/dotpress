@@ -104,6 +104,31 @@ describe('toLambdaEvent()', () => {
     ).toEqual({})
   })
 
+  it('creates load balancer events without multi-value headers', async () => {
+    const event = await toLambdaEvent(
+      request('/search?q=a%20b&q=c&flag', {
+        headers: { 'x-forwarded-for': '198.51.100.1' },
+      }),
+      'alb-single-value',
+      '203.0.113.9'
+    )
+
+    // One value per key: the last one, as sent.
+    expect(event).toEqual({
+      requestContext: { elb: { targetGroupArn: expect.any(String) } },
+      httpMethod: 'GET',
+      path: '/search',
+      queryStringParameters: { q: 'c', flag: '' },
+      headers: {
+        host: 'api.example.com',
+        'x-forwarded-for': '198.51.100.1, 203.0.113.9',
+        'x-forwarded-proto': 'https',
+      },
+      body: '',
+      isBase64Encoded: false,
+    })
+  })
+
   it('encodes binary bodies in base64', async () => {
     const bytes = Uint8Array.from({ length: 70_000 }, (_, index) => index % 256)
     const binary = await toLambdaEvent(
@@ -159,6 +184,22 @@ describe('fromLambdaResult()', () => {
     expect(res.headers.get('vary')).toBe('a, b')
     expect(res.headers.getSetCookie()).toEqual(['a=1', 'b=2', 'c=3'])
     expect(await res.text()).toBe('created')
+  })
+
+  it('reads only `headers` for a load balancer without multi-value headers', async () => {
+    const result = {
+      statusCode: 200,
+      headers: { 'content-type': 'text/plain', vary: ['a', 'b'] },
+      multiValueHeaders: { 'set-cookie': ['a=1', 'b=2'] },
+      cookies: ['c=3'],
+      body: 'ok',
+    }
+
+    const res = fromLambdaResult(result, 'alb-single-value')
+    expect(res.headers.get('content-type')).toBe('text/plain')
+    // Ignored by the load balancer: arrays, multi-value headers, cookies.
+    expect(res.headers.get('vary')).toBeNull()
+    expect(res.headers.getSetCookie()).toEqual([])
   })
 
   it('decodes base64 bodies, and drops the body of null-body statuses', async () => {

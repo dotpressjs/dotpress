@@ -60,9 +60,9 @@ The source of events is a fake event bus (`createFakeEventBus()`) or a memory tr
 
 | Function | Description |
 | --- | --- |
-| `createLambdaTarget(handler, { format, close?, sourceIp? })` | A `TestTarget` that sends each request to a Lambda handler as an event of the format (`'v1'`, `'v2'` or `'alb'`). A failed invocation gets a `502`. |
+| `createLambdaTarget(handler, { format, close?, sourceIp? })` | A `TestTarget` that sends each request to a Lambda handler as an event of the format (`'v1'`, `'v2'`, `'alb'`, or `'alb-single-value'` for a load balancer without multi-value headers). A failed invocation gets a `502`. |
 | `toLambdaEvent(request, format, sourceIp?)` | The event of a Web `Request`. |
-| `fromLambdaResult(result)` | The Web `Response` of a result. |
+| `fromLambdaResult(result, format?)` | The Web `Response` of a result. With `'alb-single-value'`, only `headers` are read, like the load balancer. |
 
 ## @dotpress/testing/conformance
 

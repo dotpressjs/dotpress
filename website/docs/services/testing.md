@@ -68,7 +68,7 @@ expect(logger.entries).toContainEqual({
 
 ## AWS Lambda
 
-`createLambdaTarget(handler, { format, close? })` sends requests to a Lambda handler as simulated events, and converts the results back: test the handler without an AWS account. `format` is `'v1'` (API Gateway REST API), `'v2'` (HTTP API, Function URLs) or `'alb'` (Application Load Balancer). A failed invocation gets a `502`, like API Gateway. To run the conformance suite on a Lambda handler, pass `bufferedResponses: true`: the scenarios that need incremental streaming or client disconnections are skipped.
+`createLambdaTarget(handler, { format, close? })` sends requests to a Lambda handler as simulated events, and converts the results back: test the handler without an AWS account. `format` is `'v1'` (API Gateway REST API), `'v2'` (HTTP API, Function URLs), `'alb'` (Application Load Balancer with multi-value headers) or `'alb-single-value'` (without them, the default of a target group: one value per header and query key, and the response headers read from `headers` only). A failed invocation gets a `502`, like API Gateway. To run the conformance suite on a Lambda handler, pass `bufferedResponses: true`: the scenarios that need incremental streaming or client disconnections are skipped.
 
 `toLambdaEvent()` and `fromLambdaResult()` are exported for finer tests. The [Fastify](/examples/fastify) and [Hono](/examples/hono) examples test their handler, and their bundle, this way.
 

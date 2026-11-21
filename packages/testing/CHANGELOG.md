@@ -1,5 +1,12 @@
 # @dotpress/testing
 
+## 2.0.0-alpha.6
+
+### Patch Changes
+
+- Updated dependencies [[`eacaf1c`](https://github.com/dotpressjs/dotpress/commit/eacaf1ce2c9168b46c103d89773cade65ed5650e)]:
+  - @dotpress/core@2.0.0-alpha.6
+
 ## 2.0.0-alpha.5
 
 ### Minor Changes

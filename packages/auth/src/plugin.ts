@@ -1,8 +1,6 @@
 import {
   definePlugin,
-  forbiddenError,
   internalError,
-  tooManyRequestsError,
   unauthorizedError,
   type DotpressRequest,
   type Middleware,
@@ -19,6 +17,7 @@ import type {
   ResolvedLoginThrottleOptions,
   TokenPair,
 } from './types.js'
+import { authRouteError } from './route-errors.js'
 import './context.js'
 
 export interface AuthPluginOptions {
@@ -110,7 +109,7 @@ const loginThrottleKeys = async (
 }
 
 /** Response of the cookie routes to a cross-origin request. */
-const crossOriginError = () => forbiddenError('CROSS_ORIGIN_REQUEST')
+const crossOriginError = () => authRouteError('CROSS_ORIGIN_REQUEST')
 
 /**
  * Token pair sent to the refresh route: refresh token cookie first, then
@@ -142,9 +141,9 @@ const extractTokens = (
 const refreshErrorResponse = (error: unknown, fallback: string) => {
   if (error instanceof AuthError) {
     if (error.code === 'EXPIRED_REFRESH_TOKEN') {
-      return unauthorizedError('EXPIRED_REFRESH_TOKEN')
+      return authRouteError('EXPIRED_REFRESH_TOKEN')
     }
-    return unauthorizedError('INVALID_REFRESH_TOKEN')
+    return authRouteError('INVALID_REFRESH_TOKEN')
   }
   return internalError(fallback)
 }
@@ -198,7 +197,7 @@ const registerRoutes = (
 
   const loginFailed = async (event: LoginFailedEvent) => {
     await settings.onLoginFailed?.(event)
-    return unauthorizedError('INVALID_LOGIN')
+    return authRouteError('INVALID_LOGIN')
   }
 
   const meta = { tags: ['auth'] }
@@ -276,7 +275,7 @@ const registerRoutes = (
             errorType: 'too_many_attempts',
           })
           res.setHeader('retry-after', String(retryAfter))
-          return tooManyRequestsError('TOO_MANY_LOGIN_ATTEMPTS')
+          return authRouteError('TOO_MANY_LOGIN_ATTEMPTS')
         }
       }
 
@@ -385,7 +384,7 @@ const registerRoutes = (
     }),
     handler: async ({ req, res }) => {
       const extracted = extractTokens(req, req.body, cookies)
-      if (!extracted) return unauthorizedError('NO_TOKENS_PROVIDED')
+      if (!extracted) return authRouteError('NO_TOKENS_PROVIDED')
       if (
         extracted.mode === 'cookie' &&
         !(await auth.isCookieAuthenticationAllowed(req))
@@ -438,15 +437,15 @@ const registerRoutes = (
       }),
     }),
     handler: async ({ req, res }) => {
-      if (!cookies.enabled) return unauthorizedError('COOKIES_NOT_ENABLED')
+      if (!cookies.enabled) return authRouteError('COOKIES_NOT_ENABLED')
       if (!cookies.accessTokenInCookie) {
-        return unauthorizedError('ACCESS_TOKEN_NOT_IN_COOKIE')
+        return authRouteError('ACCESS_TOKEN_NOT_IN_COOKIE')
       }
 
       const refreshToken = req.cookies[cookies.refreshTokenName]
       const accessToken = req.cookies[cookies.accessTokenName]
-      if (!refreshToken) return unauthorizedError('NO_REFRESH_TOKEN')
-      if (!accessToken) return unauthorizedError('NO_ACCESS_TOKEN')
+      if (!refreshToken) return authRouteError('NO_REFRESH_TOKEN')
+      if (!accessToken) return authRouteError('NO_ACCESS_TOKEN')
       if (!(await auth.isCookieAuthenticationAllowed(req))) {
         return crossOriginError()
       }

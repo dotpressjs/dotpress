@@ -341,7 +341,7 @@ describe('authPlugin()', () => {
         const res = await fetch(path, { method: 'POST', headers: crossSite })
         expect(res.status).toBe(403)
         expect(await res.json()).toMatchObject({
-          message: 'CROSS_ORIGIN_REQUEST',
+          error: 'CROSS_ORIGIN_REQUEST',
         })
       }
 

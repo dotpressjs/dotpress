@@ -81,8 +81,8 @@ describe('auth routes', () => {
       expect(res.status).toBe(401)
       expect(body).toEqual({
         status: 401,
-        error: 'UNAUTHORIZED',
-        message: 'INVALID_LOGIN',
+        error: 'INVALID_LOGIN',
+        message: 'Invalid username or password.',
       })
       expect(onLoginFailed).toHaveBeenCalledWith({
         username: credentials.username,
@@ -339,7 +339,7 @@ describe('auth routes', () => {
       const reused = await fetch('/auth/refresh', postJson(stolen))
       expect(reused.status).toBe(401)
       expect(await reused.json()).toMatchObject({
-        message: 'INVALID_REFRESH_TOKEN',
+        error: 'INVALID_REFRESH_TOKEN',
       })
 
       // The attacker's rotated tokens are revoked with the session.
@@ -353,7 +353,7 @@ describe('auth routes', () => {
       const missing = await fetch('/auth/refresh', { method: 'POST' })
       expect(missing.status).toBe(401)
       expect(await missing.json()).toMatchObject({
-        message: 'NO_TOKENS_PROVIDED',
+        error: 'NO_TOKENS_PROVIDED',
       })
 
       const { body: tokens } = await login(fetch)
@@ -361,7 +361,7 @@ describe('auth routes', () => {
 
       const expired = await fetch('/auth/refresh', postJson(tokens))
       expect(await expired.json()).toMatchObject({
-        message: 'EXPIRED_REFRESH_TOKEN',
+        error: 'EXPIRED_REFRESH_TOKEN',
       })
     })
 
@@ -376,7 +376,7 @@ describe('auth routes', () => {
 
       expect(res.status).toBe(401)
       expect(await res.json()).toMatchObject({
-        message: 'INVALID_REFRESH_TOKEN',
+        error: 'INVALID_REFRESH_TOKEN',
       })
     })
   })
@@ -412,23 +412,23 @@ describe('auth routes', () => {
     it('requires cookies with the access token', async () => {
       const disabled = await createAuthApp()
       expect(await (await restore(disabled.fetch, {})).json()).toMatchObject({
-        message: 'COOKIES_NOT_ENABLED',
+        error: 'COOKIES_NOT_ENABLED',
       })
 
       const refreshOnly = await createAuthApp({
         settings: { cookies: { enabled: true } },
       })
       expect(await (await restore(refreshOnly.fetch, {})).json()).toMatchObject(
-        { message: 'ACCESS_TOKEN_NOT_IN_COOKIE' }
+        { error: 'ACCESS_TOKEN_NOT_IN_COOKIE' }
       )
 
       const { fetch } = await createAuthApp({ settings: { cookies: COOKIES } })
       expect(await (await restore(fetch, {})).json()).toMatchObject({
-        message: 'NO_REFRESH_TOKEN',
+        error: 'NO_REFRESH_TOKEN',
       })
       expect(
         await (await restore(fetch, { [REFRESH_COOKIE]: 'r' })).json()
-      ).toMatchObject({ message: 'NO_ACCESS_TOKEN' })
+      ).toMatchObject({ error: 'NO_ACCESS_TOKEN' })
     })
 
     it('restores a session with a valid access token', async () => {
@@ -898,7 +898,7 @@ describe('auth routes', () => {
 
       expect(res.status).toBe(401)
       expect(await res.json()).toMatchObject({
-        message: 'INVALID_REFRESH_TOKEN',
+        error: 'INVALID_REFRESH_TOKEN',
       })
     })
   })

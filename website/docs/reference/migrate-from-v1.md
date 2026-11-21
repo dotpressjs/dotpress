@@ -430,7 +430,7 @@ Your columns keep their names: map `jwt_id` to `accessTokenId`. Refresh tokens s
 
 - **Tokens set as cookies are no longer in the body.** With the refresh token in a cookie, the body has the `accessToken` only; with both in cookies, no token. `userId`, `expiresIn` and `expiresAt` are always there.
 - **The access token is read from the `Authorization: Bearer` header** (or its cookie), no longer from an `accessToken` field of the body. Send the header on `/auth/logout` too. `/auth/refresh` still reads its body as before.
-- **Errors**: an invalid token on `/auth/refresh` or `/auth/restore` gives `401 INVALID_REFRESH_TOKEN` (v1: `500`). New: `429 TOO_MANY_LOGIN_ATTEMPTS`, with `Retry-After`, and `403 CROSS_ORIGIN_REQUEST`.
+- **Errors**: the code of an error is in the `error` field (`INVALID_LOGIN`), with a sentence in `message`. An invalid token on `/auth/refresh` or `/auth/restore` gives `401 INVALID_REFRESH_TOKEN` (v1: `500`). New: `429 TOO_MANY_LOGIN_ATTEMPTS`, with `Retry-After`, and `403 CROSS_ORIGIN_REQUEST`.
 - **Logout is idempotent**: without a valid token, it answers `200` and clears the cookies (v1: `401`).
 - **`onLoginFailed`** has a new `errorType`, `'too_many_attempts'`: an exhaustive `switch` needs a case. Its events report `clientId` instead of `client`.
 

@@ -403,7 +403,7 @@ For an SQL table:
 
 ```sql
 ALTER TABLE refresh_tokens ADD COLUMN session_id VARCHAR(36) NULL;
-ALTER TABLE refresh_tokens ADD COLUMN used_at TIMESTAMP NULL;
+ALTER TABLE refresh_tokens ADD COLUMN used_at TIMESTAMP NULL; -- the type of expires_at: TIMESTAMPTZ on PostgreSQL
 CREATE INDEX refresh_tokens_session_id ON refresh_tokens (session_id);
 ```
 

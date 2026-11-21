@@ -100,7 +100,7 @@ isSessionRevoked: async (sessionId) => {
     'SELECT 1 FROM refresh_tokens WHERE session_id = $1 AND revoked_at IS NOT NULL LIMIT 1',
     [sessionId]
   )
-  return rowCount > 0
+  return (rowCount ?? 0) > 0 // rowCount: number | null
 }
 ```
 

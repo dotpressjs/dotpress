@@ -32,13 +32,15 @@ CREATE TABLE refresh_tokens (
   user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   access_token_id TEXT NOT NULL,
   session_id TEXT NOT NULL, -- the session
-  expires_at TIMESTAMP NOT NULL,
-  used_at TIMESTAMP,
-  revoked_at TIMESTAMP
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
 );
 CREATE INDEX refresh_tokens_session_id ON refresh_tokens (session_id);
 CREATE INDEX refresh_tokens_user_id ON refresh_tokens (user_id);
 ```
+
+The dates are instants: on PostgreSQL, store them as `TIMESTAMPTZ`. A `TIMESTAMP` column has no time zone, and drivers like `pg` write dates in the time zone of the process: when the API does not run in UTC, the dates compared with `now()` in SQL are off by its offset. On MySQL, `TIMESTAMP` is stored in UTC.
 
 Expired tokens can be deleted by a scheduled job: `DELETE FROM refresh_tokens WHERE expires_at < now()`.
 

@@ -5,6 +5,7 @@ import {
   type App,
   type Logger,
 } from '@dotpress/core'
+import { registerLazyApp } from '@dotpress/core/adapter'
 import { handle } from '@hono/aws-lambda'
 import { Hono } from 'hono'
 import type { HonoApplication } from './index.js'
@@ -93,6 +94,8 @@ export const createLambdaHandler = (
     'logger',
     'isContentTypeBinary',
   ] satisfies (keyof LambdaHandlerOptions)[])
+  // Documented by a tool (dotpress-openapi): the app is created now.
+  registerLazyApp(factory)
   const logger = options.logger ?? createConsoleLogger()
   const toHandler = (app: HonoApplication) =>
     handle(app as unknown as Hono, {

@@ -7,6 +7,7 @@ import type {
 } from './adapter.js'
 import type { Middleware, ResponseFilter } from './context.js'
 import { createCorsPolicy, type CorsOptions, type CorsPolicy } from './cors.js'
+import { documentMode } from './document-mode.js'
 import type { NormalizedRequest } from './http.js'
 import { createConsoleLogger, type Logger } from './logger.js'
 import { assertKnownOptions } from './options.js'
@@ -496,7 +497,7 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
 
   const typedAdapter = adapter as HttpAdapter<NativeOf<TAdapter>>
 
-  return Object.freeze({
+  const app: App<NativeOf<TAdapter>> = Object.freeze({
     adapter: typedAdapter,
     logger,
     routes: routeInfos,
@@ -504,6 +505,8 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
     ...paths,
     native: () => typedAdapter.native(),
     listen: async (port: number, host?: string) => {
+      // Documented by a tool: the module runs to the end, without a server.
+      if (documentMode()) return { port, host: host ?? 'localhost' }
       if (!adapter.listen) {
         throw new Error(
           `app.listen(): the "${adapter.name}" adapter does not start a server.`
@@ -530,4 +533,6 @@ export const createApp = async <TAdapter extends HttpAdapter<unknown>>(
       if (failure !== undefined) throw failure
     },
   })
+  documentMode()?.apps.push(app)
+  return app
 }

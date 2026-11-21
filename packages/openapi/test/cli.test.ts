@@ -98,6 +98,45 @@ describe('dotpress-openapi', () => {
     )
   })
 
+  const pathsOf = (stdout: string) =>
+    Object.keys((JSON.parse(stdout) as OpenApiDocument).paths)
+
+  it('documents the app created by an entry point, without starting a server', async () => {
+    const { code, stdout, stderr } = await run(['server.ts'])
+
+    expect(stderr).toBe('')
+    expect(code).toBe(0)
+    expect(pathsOf(stdout)).toEqual(['/orders'])
+    // The document mode is off again.
+    expect(
+      (globalThis as Record<symbol, unknown>)[
+        Symbol.for('dotpress.core.documentMode')
+      ]
+    ).toBeUndefined()
+  })
+
+  it('documents the app of an AWS Lambda entry point', async () => {
+    const { code, stdout } = await run(['lambda.ts'])
+
+    expect(code).toBe(0)
+    expect(pathsOf(stdout)).toEqual(['/events'])
+  })
+
+  it('calls the factories with an adapter that mounts nothing', async () => {
+    for (const name of ['createWithAdapter', 'createWithOptions']) {
+      const { code, stdout } = await run(['factories.ts', '--export', name])
+      expect(code).toBe(0)
+      expect(pathsOf(stdout)).toEqual(['/tasks'])
+    }
+  })
+
+  it('uses the only exported function, without --export', async () => {
+    const { code, stdout } = await run(['single-factory.ts'])
+
+    expect(code).toBe(0)
+    expect(pathsOf(stdout)).toEqual(['/notes'])
+  })
+
   it('takes the title and the version from the options', async () => {
     const options = ['--title', 'My API', '--api-version', '2.0.0']
     const { stdout } = await run([
@@ -158,7 +197,19 @@ describe('dotpress-openapi', () => {
       [['missing.mjs'], `Module not found: ${join(fixtures, 'missing.mjs')}`],
       [
         ['factory.ts'],
-        'factory.ts has no "default" export (exports: createApp, failing, leaky, notAnApp). Choose one with --export.',
+        'factory.ts creates no Dotpress app, and exports several apps or functions (createApp, failing, leaky): choose one with --export.',
+      ],
+      [
+        ['factory.ts', '--export', 'missing'],
+        'factory.ts has no "missing" export (exports: createApp, failing, leaky, notAnApp).',
+      ],
+      [
+        ['no-app.ts'],
+        'no-app.ts creates no Dotpress app, and exports none (exports: port). Point to the module that creates the app, like the entry point of the server.',
+      ],
+      [
+        ['two-apps.ts'],
+        'two-apps.ts creates 2 apps: export the one to document, and choose it with --export.',
       ],
       [
         ['factory.ts', '--export', 'notAnApp'],
@@ -173,6 +224,15 @@ describe('dotpress-openapi', () => {
         stderr: `dotpress-openapi: ${message}\n`,
       })
     }
+  })
+
+  // After 'reports modules that cannot be used': a module is imported once
+  // per process, and two-apps.ts creates its apps at import.
+  it('uses the export chosen among the apps created', async () => {
+    const { code, stdout } = await run(['two-apps.ts', '--export', 'adminApp'])
+
+    expect(code).toBe(0)
+    expect(pathsOf(stdout)).toEqual([])
   })
 
   it('explains how to load TypeScript modules when the import fails', async () => {
@@ -213,6 +273,20 @@ describe('dotpress-openapi', () => {
         title: 'fixture-api',
         version: '3.2.1',
       })
+    }
+  )
+
+  it.skipIf(!existsSync(bin))(
+    'prints the output of the module on the standard error',
+    async () => {
+      const { stdout, stderr } = await promisify(execFile)(
+        process.execPath,
+        [bin, 'server.ts'],
+        { cwd: fixtures }
+      )
+
+      expect(Object.keys(JSON.parse(stdout).paths)).toEqual(['/orders'])
+      expect(stderr).toBe('Listening on port 3000\n')
     }
   )
 

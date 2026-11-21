@@ -122,13 +122,18 @@ The page loads a pinned version of Scalar from jsDelivr, checked with Subresourc
 
 ## The document in CI
 
-`dotpress-openapi` writes the document without starting the server, to commit it, check its changes in pull requests, or generate clients:
+`dotpress-openapi` writes the document without starting the server, to commit it, check its changes in pull requests, or generate clients. Point it to the entry point of your server:
 
 ```sh
-npx dotpress-openapi src/app.ts --export createApp --out openapi.json
+npx dotpress-openapi src/server.ts --out openapi.json
 ```
 
-The module exports the app, or a function creating it; `--export` chooses the export (`default` by default). The routes are mounted, no server is started, and the app is closed afterwards (`onClose` hooks).
+The command imports the module like `node src/server.ts`, with two differences: `app.listen()` starts no server, and what the module prints goes to the standard error. It documents the app that the module creates, then closes it (`onClose` hooks). Code that runs at startup still runs: the configuration is read and validated, and connections opened by your code are closed when the command exits.
+
+The module can also be:
+
+- the entry point of [AWS Lambda](/adapters/aws-lambda): the factory of `createLambdaHandler()` is called right away;
+- a module that exports the app, or a function creating it, like `src/app.ts`. The function receives an adapter that mounts nothing, as its single argument: `createTasksApp(adapter)` and `createTasksApp({ adapter })` both work. `--export` chooses the export, when the module does not create the app itself: `default`, or the only exported function, by default.
 
 - With `openapiPlugin()`, its document is used as is. Otherwise, the document is generated with `--title` and `--api-version`, or the name and version of the `package.json` of the current directory.
 - Without `--out`, the document is printed on the standard output. Warnings and errors go to the standard error, with a non-zero exit code on failure.

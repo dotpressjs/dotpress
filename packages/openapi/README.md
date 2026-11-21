@@ -23,7 +23,7 @@ await createApp({
 Write the document in CI, without starting the server:
 
 ```sh
-npx dotpress-openapi src/app.ts --export createApp --out openapi.json
+npx dotpress-openapi src/server.ts --out openapi.json
 ```
 
 ## Documentation

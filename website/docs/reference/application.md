@@ -144,5 +144,6 @@ import {
 | `parseQueryString()`, `parseRequestBody()`, `DEFAULT_BODY_LIMIT` | The query and the body, limited to 1 MiB by default. |
 | `malformedBodyError()`, `payloadTooLargeError()`, `unsupportedMediaTypeError()` | The errors of an unreadable body. |
 | `fromWebRequest()`, `readRequestBody()`, `toWebResponse()` | For adapters built on the Web `Request` and `Response`. |
+| `registerLazyApp(factory)` | For a handler that creates the app at the first request (AWS Lambda): when `dotpress-openapi` documents the app, the factory is called right away. |
 
 The rules every adapter follows are documented on the `HttpAdapter` interface, and checked by the [conformance suite](/services/testing#writing-an-adapter).

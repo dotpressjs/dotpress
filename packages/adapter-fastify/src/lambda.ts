@@ -5,6 +5,7 @@ import {
   type App,
   type Logger,
 } from '@dotpress/core'
+import { registerLazyApp } from '@dotpress/core/adapter'
 import awsLambdaFastify from '@fastify/aws-lambda'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { assertKnownOptions } from './options.js'
@@ -163,6 +164,8 @@ export const createLambdaHandler = (
     'logger',
     'isContentTypeBinary',
   ] satisfies (keyof LambdaHandlerOptions)[])
+  // Documented by a tool (dotpress-openapi): the app is created now.
+  registerLazyApp(factory)
   const logger = options.logger ?? createConsoleLogger()
   const isBinary = options.isContentTypeBinary ?? ((type) => !isTextType(type))
 

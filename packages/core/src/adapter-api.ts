@@ -4,6 +4,8 @@
 
 export type { CompiledRoute, DotpressRuntime } from './adapter.js'
 
+export { registerLazyApp } from './document-mode.js'
+
 export {
   DEFAULT_BODY_LIMIT,
   parseQueryString,

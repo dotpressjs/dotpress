@@ -19,13 +19,14 @@ const TYPESCRIPT_HINT =
 
 export const USAGE = `Usage: dotpress-openapi <module> [options]
 
-Writes the OpenAPI document of a Dotpress app. <module> exports the app
-(the result of createApp()), or a function creating it. The routes are
-mounted, but no server is started. With openapiPlugin(), its document is
-used as is.
+Writes the OpenAPI document of a Dotpress app, without starting a server.
+<module> creates the app, like the entry point of the server or of AWS
+Lambda, or exports it, or exports a function creating it. With
+openapiPlugin(), its document is used as is.
 
 Options:
-  --export <name>        Export of the module (default: "default")
+  --export <name>        Export to use, when the module does not create one app
+                         (default: "default", or the only exported app or function)
   --out <file>           Output file (default: standard output)
   --title <title>        Title, without openapiPlugin() (default: package.json name)
   --api-version <v>      Version, without openapiPlugin() (default: package.json version)
@@ -48,44 +49,132 @@ const isApp = (value: unknown): value is AppLike =>
   value !== null &&
   Array.isArray((value as AppLike).routes)
 
-/** The app exported by the module, created by the factory if needed. */
+/**
+ * Key of the document mode of `@dotpress/core` (`document-mode.ts`): while
+ * it is set, the apps created are recorded, `app.listen()` starts no server,
+ * and the factories of `createLambdaHandler()` are called right away.
+ */
+const DOCUMENT_MODE_KEY = Symbol.for('dotpress.core.documentMode')
+
+interface DocumentMode {
+  readonly apps: unknown[]
+  readonly pending: Promise<unknown>[]
+}
+
+/**
+ * Runs `load` in document mode. What the module prints on the standard
+ * output (`Listening on…`) goes to the standard error: the standard output
+ * is the document.
+ */
+const inDocumentMode = async <T>(
+  mode: DocumentMode,
+  load: () => Promise<T>
+): Promise<T> => {
+  const global = globalThis as Record<symbol, unknown>
+  const previous = global[DOCUMENT_MODE_KEY]
+  const write = process.stdout.write
+  global[DOCUMENT_MODE_KEY] = mode
+  process.stdout.write = process.stderr.write.bind(
+    process.stderr
+  ) as typeof write
+  try {
+    return await load()
+  } finally {
+    process.stdout.write = write
+    global[DOCUMENT_MODE_KEY] = previous
+  }
+}
+
+/**
+ * The adapter given to an exported factory: it mounts nothing. It is also
+ * its own `adapter` option, for factories taking `{ adapter }` as well as
+ * those taking the adapter itself.
+ */
+const documentAdapter = () => {
+  const adapter = {
+    name: 'dotpress-openapi',
+    mount: () => {},
+    native: () => undefined,
+  }
+  return Object.assign(adapter, { adapter })
+}
+
+/** The exports that can be the app: apps and functions. */
+const candidatesOf = (module: Record<string, unknown>) =>
+  Object.keys(module)
+    .filter((name) => typeof module[name] === 'function' || isApp(module[name]))
+    .sort()
+
+/**
+ * The app of the module: the one it creates, or its export (an app, or a
+ * factory called with an adapter that mounts nothing).
+ */
 const loadApp = async (
   modulePath: string,
-  exportName: string,
-  cwd: string
+  exportName: string | undefined,
+  cwd: string,
+  mode: DocumentMode
 ): Promise<AppLike> => {
   const file = resolve(cwd, modulePath)
   if (!existsSync(file)) throw new CliError(`Module not found: ${file}`)
 
-  let module: Record<string, unknown>
-  try {
-    module = (await import(pathToFileURL(file).href)) as Record<string, unknown>
-  } catch (error) {
-    const hint = /\.[cm]?ts$/.test(file) ? `\n${TYPESCRIPT_HINT}` : ''
-    throw new CliError(
-      `Cannot load ${file}: ${error instanceof Error ? error.message : String(error)}${hint}`,
-      { cause: error }
-    )
-  }
+  return inDocumentMode(mode, async () => {
+    let module: Record<string, unknown>
+    try {
+      module = (await import(pathToFileURL(file).href)) as Record<
+        string,
+        unknown
+      >
+    } catch (error) {
+      const hint = /\.[cm]?ts$/.test(file) ? `\n${TYPESCRIPT_HINT}` : ''
+      throw new CliError(
+        `Cannot load ${file}: ${error instanceof Error ? error.message : String(error)}${hint}`,
+        { cause: error }
+      )
+    }
+    await Promise.all(mode.pending)
 
-  if (!(exportName in module)) {
-    throw new CliError(
-      `${modulePath} has no "${exportName}" export (exports: ${Object.keys(module).sort().join(', ') || 'none'}). Choose one with --export.`
-    )
-  }
+    const fromExport = async (name: string): Promise<AppLike> => {
+      const exported = module[name]
+      const app: unknown =
+        typeof exported === 'function'
+          ? await (exported as (adapter: unknown) => unknown)(documentAdapter())
+          : exported
+      if (!isApp(app)) {
+        throw new CliError(
+          `The "${name}" export of ${modulePath} is not a Dotpress app: export the result of createApp(), or a function returning it.`
+        )
+      }
+      return app
+    }
 
-  const exported = module[exportName]
-  const app: unknown =
-    typeof exported === 'function'
-      ? await (exported as () => unknown)()
-      : exported
+    const exports = Object.keys(module).sort().join(', ') || 'none'
+    if (exportName !== undefined) {
+      if (!(exportName in module)) {
+        throw new CliError(
+          `${modulePath} has no "${exportName}" export (exports: ${exports}).`
+        )
+      }
+      return fromExport(exportName)
+    }
 
-  if (!isApp(app)) {
+    const created = mode.apps.filter(isApp)
+    if (created.length === 1) return created[0]!
+    if (created.length > 1) {
+      throw new CliError(
+        `${modulePath} creates ${created.length} apps: export the one to document, and choose it with --export.`
+      )
+    }
+
+    if ('default' in module) return fromExport('default')
+    const candidates = candidatesOf(module)
+    if (candidates.length === 1) return fromExport(candidates[0]!)
     throw new CliError(
-      `The "${exportName}" export of ${modulePath} is not a Dotpress app: export the result of createApp(), or a function returning it.`
+      candidates.length === 0
+        ? `${modulePath} creates no Dotpress app, and exports none (exports: ${exports}). Point to the module that creates the app, like the entry point of the server.`
+        : `${modulePath} creates no Dotpress app, and exports several apps or functions (${candidates.join(', ')}): choose one with --export.`
     )
-  }
-  return app
+  })
 }
 
 /** `info` from the options, or from the package.json of the directory. */
@@ -157,7 +246,7 @@ export const main = async (
       args: [...args],
       allowPositionals: true,
       options: {
-        export: { type: 'string', default: 'default' },
+        export: { type: 'string' },
         out: { type: 'string' },
         title: { type: 'string' },
         'api-version': { type: 'string' },
@@ -179,17 +268,20 @@ export const main = async (
     return 1
   }
 
+  const mode: DocumentMode = { apps: [], pending: [] }
   try {
-    const app = await loadApp(positionals[0]!, values.export, io.cwd)
     let document: OpenApiDocument
     try {
+      const app = await loadApp(positionals[0]!, values.export, io.cwd, mode)
+      if (!mode.apps.includes(app)) mode.apps.push(app)
       document = await documentOf(
         app,
         { title: values.title, version: values['api-version'] },
         io
       )
     } finally {
-      await app.close?.()
+      // Every app created by the module, last created first.
+      for (const app of mode.apps.filter(isApp).reverse()) await app.close?.()
     }
 
     const json = `${JSON.stringify(document, null, 2)}\n`

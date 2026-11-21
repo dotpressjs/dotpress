@@ -101,6 +101,22 @@ const INTERNAL_ERROR = JSON.stringify({
 })
 
 describe('createLambdaHandler()', () => {
+  it('creates the app right away when dotpress-openapi documents it', async () => {
+    const key = Symbol.for('dotpress.core.documentMode')
+    const mode = { apps: [] as unknown[], pending: [] as Promise<unknown>[] }
+    const global = globalThis as Record<symbol, unknown>
+    global[key] = mode
+    try {
+      const factory = vi.fn(() => createFastifyApp())
+      createLambdaHandler(factory)
+      await Promise.all(mode.pending)
+      expect(factory).toHaveBeenCalledOnce()
+      expect(mode.apps).toHaveLength(1)
+    } finally {
+      delete global[key]
+    }
+  })
+
   it('rejects unknown options', () => {
     expect(() =>
       createLambdaHandler(() => createFastifyApp(), {

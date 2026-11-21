@@ -91,6 +91,8 @@ export declare const readRequestBody: (
   limit: number
 ) => Promise<RequestBody>
 
+export declare const registerLazyApp: (factory: () => unknown) => void
+
 export declare const toWebResponse: (
   response: NormalizedResponse,
   method: string

@@ -46,18 +46,18 @@ Returns the document of an app, or of a list of `RouteInfo` (`app.routes`). It t
 ## dotpress-openapi
 
 ```sh
-npx dotpress-openapi src/app.ts --export createApp --out openapi.json
+npx dotpress-openapi src/server.ts --out openapi.json
 ```
 
 | Argument | Description |
 | --- | --- |
-| `<module>` | The module that exports the app, or a function creating it. |
-| `--export <name>` | The export to use. Defaults to `default`. |
+| `<module>` | The module that creates the app, like the entry point of the server or of AWS Lambda; or a module exporting the app, or a function creating it. |
+| `--export <name>` | The export to use, when the module does not create one app. Defaults to `default`, or to the only exported app or function. |
 | `--out <file>` | Writes the document to a file, instead of the standard output. |
 | `--title`, `--api-version` | `info` of the document, without `openapiPlugin()`. Default to the name and version of the `package.json` of the current directory. |
 | `--help`, `-h` | Prints the usage. |
 
-With `openapiPlugin()` in the app, its document is used as is. The command exits with a non-zero code on failure.
+The module runs without starting a server: `app.listen()` opens no port, the factory of `createLambdaHandler()` is called right away, and what the module prints goes to the standard error. An exported function receives an adapter that mounts nothing, as its single argument (`createApp(adapter)` or `createApp({ adapter })`). With `openapiPlugin()` in the app, its document is used as is. The apps are closed afterwards, and the command exits with a non-zero code on failure.
 
 ## Types
 

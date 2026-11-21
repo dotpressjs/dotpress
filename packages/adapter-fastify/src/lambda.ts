@@ -127,6 +127,21 @@ const prepare = (event: EventShape): EventShape => {
   }
 }
 
+/**
+ * The result for a load balancer without multi-value headers, which only
+ * reads `headers`, with one value each: the first value of the headers
+ * that `@fastify/aws-lambda` sets in `multiValueHeaders` (several cookies),
+ * like the Hono adapter.
+ */
+const singleValued = (result: LambdaResult): LambdaResult => {
+  const { multiValueHeaders, ...rest } = result
+  const headers = { ...rest.headers }
+  for (const [name, values] of Object.entries(multiValueHeaders ?? {})) {
+    if (!(name in headers) && values[0] !== undefined) headers[name] = values[0]
+  }
+  return { ...rest, headers }
+}
+
 /** Answers `500 INTERNAL_ERROR` when the app cannot be created. */
 const failureApp = () => {
   const app = Fastify()
@@ -190,16 +205,17 @@ export const createLambdaHandler = (
 
     return async (event, context) => {
       const prepared = prepare(event as EventShape)
-      if (
-        prepared.requestContext?.elb === undefined ||
-        !prepared.multiValueHeaders
-      ) {
+      if (prepared.requestContext?.elb === undefined) {
         return single(prepared, context)
       }
-      // Load balancers with multi-value headers only read these ones.
-      const result = await multi(prepared, context)
-      delete result.headers
-      return result
+      if (prepared.multiValueHeaders) {
+        // Load balancers with multi-value headers only read these ones.
+        const result = await multi(prepared, context)
+        delete result.headers
+        return result
+      }
+      // Without them, they only read `headers`.
+      return singleValued(await single(prepared, context))
     }
   }
 

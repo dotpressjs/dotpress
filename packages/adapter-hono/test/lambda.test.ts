@@ -8,6 +8,7 @@ import {
 } from '@dotpress/core'
 import {
   createMemoryLogger,
+  fromLambdaResult,
   memoryAdapter,
   toLambdaEvent,
   type LambdaEventFormat,
@@ -279,6 +280,13 @@ describe('createLambdaHandler()', () => {
         multiValueHeaders: { 'set-cookie': ['a=1; Path=/', 'b=2; Path=/'] },
       })
     }
+
+    // A load balancer without multi-value headers reads `headers` only:
+    // the first cookie.
+    const single = await invoke(handler, '/login', 'alb-single-value')
+    expect(single.headers?.['set-cookie']).toBe('a=1; Path=/')
+    const res = fromLambdaResult(single, 'alb-single-value')
+    expect(res.headers.getSetCookie()).toEqual(['a=1; Path=/'])
   })
 
   describe('client IP address', () => {

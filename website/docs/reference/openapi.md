@@ -30,6 +30,7 @@ Serves the document of the app, and an API reference page (Scalar). Unknown opti
 | `title` | `info.title` | The title of the page. |
 | `configuration` | `SCALAR_NEUTRAL_CONFIGURATION` | The [Scalar configuration](https://guides.scalar.com/scalar/scalar-api-references/configuration), merged with the neutral one. |
 | `cdnUrl`, `integrity` | a pinned version on jsDelivr, with its hash | The script of Scalar, to host it yourself. |
+| `contentSecurityPolicy` | the policy of the page | Extra sources for the directives of the Content Security Policy of the page (`{ 'img-src': ['https://cdn.example.com'] }`), or `false` for no policy. The page allows the Scalar script, its inline script by hash, and requests to the document and its `servers`. See [Content Security Policy](/services/openapi#content-security-policy). |
 
 `docs.getDocument()` returns the document, once the app is created. The warnings of the generation (a scheme used but not declared, a schema without JSON representation) are logged by the plugin.
 

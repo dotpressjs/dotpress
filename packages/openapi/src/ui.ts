@@ -40,6 +40,15 @@ export interface ScalarOptions {
    * the neutral one. `url` is set to the document.
    */
   configuration?: Record<string, unknown>
+  /**
+   * The Content Security Policy of the page. By default, the page allows
+   * the Scalar script, its own inline script (by hash) and requests to the
+   * document and its servers, and nothing else: it replaces a policy set
+   * for the whole app, such as the one of `helmet()`, that would block it.
+   * Extra sources are added to the directives, like
+   * `{ 'img-src': ['https://cdn.example.com'] }`. `false` sets no policy.
+   */
+  contentSecurityPolicy?: false | Readonly<Record<string, readonly string[]>>
 }
 
 const escapeHtml = (value: string) =>
@@ -58,12 +67,12 @@ const scriptJson = (value: unknown) =>
     (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
   )
 
-/** HTML page of the Scalar API Reference. */
+/** HTML page of the Scalar API Reference, and its inline script. */
 export const renderScalarPage = (
   documentUrl: string,
   title: string,
   options: ScalarOptions
-) => {
+): { html: string; script: string } => {
   const cdnUrl = options.cdnUrl ?? SCALAR_CDN_URL
   const integrity =
     options.integrity ?? (options.cdnUrl ? undefined : SCALAR_INTEGRITY)
@@ -76,8 +85,11 @@ export const renderScalarPage = (
       .join('\n'),
     url: documentUrl,
   }
+  const script = `
+      Scalar.createApiReference('#app', ${scriptJson(configuration)})
+    `
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -87,10 +99,60 @@ export const renderScalarPage = (
   <body>
     <div id="app"></div>
     <script src="${escapeHtml(cdnUrl)}"${integrity ? ` integrity="${escapeHtml(integrity)}" crossorigin="anonymous"` : ''}></script>
-    <script>
-      Scalar.createApiReference('#app', ${scriptJson(configuration)})
-    </script>
+    <script>${script}</script>
   </body>
 </html>
 `
+  return { html, script }
+}
+
+/** The origin of an absolute URL, or `'self'` for a path. */
+const sourceOf = (url: string) => {
+  try {
+    return new URL(url).origin
+  } catch {
+    return "'self'"
+  }
+}
+
+/** Base64 SHA-256 hash, with Web Crypto: Node.js and other runtimes. */
+const sha256 = async (text: string) => {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(text)
+  )
+  let binary = ''
+  for (const byte of new Uint8Array(digest)) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+/**
+ * The Content Security Policy of the page: the Scalar script and the
+ * inline script, requests to the document and to the `servers` (Try it).
+ */
+export const scalarContentSecurityPolicy = async (
+  script: string,
+  options: ScalarOptions & { servers?: readonly string[] }
+): Promise<string> => {
+  const directives: Record<string, string[]> = {
+    'default-src': ["'none'"],
+    'script-src': [
+      sourceOf(options.cdnUrl ?? SCALAR_CDN_URL),
+      `'sha256-${await sha256(script)}'`,
+    ],
+    'style-src': ["'self'", "'unsafe-inline'"],
+    'img-src': ["'self'", 'data:'],
+    'font-src': ["'self'", 'data:'],
+    'connect-src': ["'self'", ...(options.servers ?? []).map(sourceOf)],
+    'base-uri': ["'none'"],
+    'form-action': ["'none'"],
+  }
+  for (const [name, sources] of Object.entries(
+    options.contentSecurityPolicy || {}
+  )) {
+    directives[name] = [...(directives[name] ?? []), ...sources]
+  }
+  return Object.entries(directives)
+    .map(([name, sources]) => `${name} ${[...new Set(sources)].join(' ')}`)
+    .join('; ')
 }

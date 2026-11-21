@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { authPlugin, createAuth, requireRole } from '@dotpress/auth'
 import { arrayOf, createRouter, forbiddenError } from '@dotpress/core'
 import { createTestApp, type TestAppOptions } from '@dotpress/testing'
@@ -95,6 +96,88 @@ describe('openapiPlugin()', () => {
     expect(configurationOf(html)).toEqual({
       ...SCALAR_NEUTRAL_CONFIGURATION,
       url: '/openapi.json',
+    })
+  })
+
+  describe('Content Security Policy of the page', () => {
+    /** The policy as directives, and the hash of the inline script. */
+    const policyOf = async (res: Response) => {
+      const header = res.headers.get('content-security-policy')
+      const html = await res.text()
+      const inline = /<script>([\s\S]*?)<\/script>/.exec(html)![1]!
+      const hash = createHash('sha256').update(inline).digest('base64')
+      const directives = Object.fromEntries(
+        (header ?? '').split('; ').map((directive) => {
+          const [name, ...sources] = directive.split(' ')
+          return [name!, sources]
+        })
+      )
+      return { header, directives, hash }
+    }
+
+    it('allows the Scalar script, the inline script and the document only', async () => {
+      const { fetch } = await createDocsApp()
+
+      const { directives, hash } = await policyOf(await fetch('/docs'))
+
+      expect(directives).toEqual({
+        'default-src': ["'none'"],
+        'script-src': ['https://cdn.jsdelivr.net', `'sha256-${hash}'`],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:'],
+        'font-src': ["'self'", 'data:'],
+        'connect-src': ["'self'"],
+        'base-uri': ["'none'"],
+        'form-action': ["'none'"],
+      })
+    })
+
+    it('follows the configuration: hash, script host, servers', async () => {
+      const { fetch } = await createDocsApp({
+        servers: [{ url: 'https://api.example.com/v1' }, { url: '/relative' }],
+        ui: {
+          cdnUrl: '/assets/scalar.js',
+          configuration: { theme: 'purple' },
+        },
+      })
+
+      const { directives, hash } = await policyOf(await fetch('/docs'))
+
+      // The hash covers the configuration of the page.
+      expect(directives['script-src']).toEqual(["'self'", `'sha256-${hash}'`])
+      expect(directives['connect-src']).toEqual([
+        "'self'",
+        'https://api.example.com',
+      ])
+    })
+
+    it('takes extra sources, or no policy', async () => {
+      const extended = await createDocsApp({
+        ui: {
+          contentSecurityPolicy: {
+            'img-src': ['https://cdn.example.com'],
+            'frame-ancestors': ["'self'"],
+          },
+        },
+      })
+      const { directives } = await policyOf(await extended.fetch('/docs'))
+      expect(directives['img-src']).toEqual([
+        "'self'",
+        'data:',
+        'https://cdn.example.com',
+      ])
+      expect(directives['frame-ancestors']).toEqual(["'self'"])
+
+      const none = await createDocsApp({ ui: { contentSecurityPolicy: false } })
+      const res = await none.fetch('/docs')
+      expect(res.headers.get('content-security-policy')).toBeNull()
+      expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    })
+
+    it('is not set on the document', async () => {
+      const { fetch } = await createDocsApp()
+      const res = await fetch('/openapi.json')
+      expect(res.headers.get('content-security-policy')).toBeNull()
     })
   })
 

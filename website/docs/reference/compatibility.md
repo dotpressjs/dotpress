@@ -32,4 +32,4 @@ Each entry point of a package has an API report, committed with the code: a chan
 
 ## Prereleases
 
-Until 2.0, the prereleases (`2.0.0-alpha.N`, then `beta`) may still break the API from one to the next: each one lists its breaking changes in the changelog of the packages.
+Until 2.0, the prereleases may still break the API from one to the next: each one lists its breaking changes in the changelog of the packages. Since the beta (`2.0.0-beta.N`), the API is complete, and changes only from feedback.

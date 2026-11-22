@@ -138,7 +138,7 @@ Add the `timeout` option to `defineRoute()`.
 
 Write the summary for users, in English: what changes for them, and what to do for a `major` change. All the `@dotpress/*` packages share one version: the highest level of the pending changesets applies to all of them.
 
-Until 2.0.0 (alpha, beta and release candidates), every release is a prerelease (`2.0.0-alpha.N`…), and breaking changes are still possible: mark them `major` all the same, so that the changelog of 2.0.0 lists them.
+Until 2.0.0 (alpha, beta and release candidates), every release is a prerelease (`2.0.0-beta.N`…), and breaking changes are still possible: mark them `major` all the same, so that the changelog of 2.0.0 lists them.
 
 ## Conventions
 
@@ -177,6 +177,8 @@ The repository is in prerelease mode (`.changeset/pre.json`) until 2.0.0:
 pnpm changeset pre exit        # the next Version Packages pull request releases 2.0.0
 pnpm changeset pre enter beta  # after an exit: 2.0.0-beta.N
 ```
+
+To change the prerelease tag (from `alpha` to `beta`, or from `beta` to `rc`), run both commands, then set the `version` of every package to the new tag without number (`2.0.0-beta`): otherwise, Changesets goes on with the number of the previous tag, and `2.0.0-alpha.8` becomes `2.0.0-beta.9` instead of `2.0.0-beta.0`. A changeset is needed for the Version Packages pull request to open.
 
 In prerelease mode, the packages without stable version have their prereleases under the `latest` dist-tag, and the others under the prerelease tag: `@dotpress/auth`, whose `latest` is the 1.x, gets its prereleases under `alpha`, `beta` or `rc`. After a stable release, `latest` is the new version and older prerelease tags are removed.
 

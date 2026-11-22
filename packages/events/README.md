@@ -2,7 +2,7 @@
 
 Typed events for [Dotpress](https://dotpress.dev): emit a fact, and let listeners react to it in workers, through interchangeable transports: Redis (BullMQ), Postgres (pg-boss), Amazon SQS, Cloudflare Queues, Google Cloud Pub/Sub, Azure Service Bus. The code that emits never knows where the listeners run. Works without a Dotpress app: in a script, a worker or a Lambda function.
 
-> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
+> 🚧 Dotpress V2 is in beta (`2.0.0-beta`): the API is complete, and changes before 2.0.0 only from feedback.
 
 ```sh
 npm install @dotpress/events zod

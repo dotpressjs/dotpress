@@ -2,7 +2,7 @@
 
 Testing helpers for [Dotpress](https://dotpress.dev): a test app in memory, the adapter conformance suite, simulated AWS Lambda events, a memory logger, and assertions for events and emails.
 
-> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
+> 🚧 Dotpress V2 is in beta (`2.0.0-beta`): the API is complete, and changes before 2.0.0 only from feedback.
 
 ```sh
 npm install --save-dev @dotpress/testing vitest

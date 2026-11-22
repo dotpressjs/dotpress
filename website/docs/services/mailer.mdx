@@ -84,6 +84,8 @@ await mailer.send(contactReceived, {
 
 `send()` also takes `cc`, `bcc`, `replyTo`, `from`, `subject`, `attachments` (inline ones with `contentId`), `headers`, and `tags` and `metadata` for the statistics and webhooks of the provider. Addresses, headers and attachments are checked before rendering: a line break in a name or a header throws, so user input cannot inject headers.
 
+An attachment is `{ filename, content, contentType?, contentId? }`, with `content` as bytes or as a string, sent in UTF-8. Excel and the preview of Outlook ignore the charset of a CSV file and read it as Windows-1252: start the content with a byte order mark, `'\uFEFF' + csv`, to keep its accents.
+
 `send()` returns the `messageId` given by the provider. `createMailer()` also takes a default `replyTo`, and a `logger` that logs each sent message, without the addresses.
 
 `mailer.sendMessage({ to, subject, html })` sends a message rendered elsewhere. `mailer.render(template, { locale, data })` renders without sending: previews and tests.
@@ -114,6 +116,23 @@ The console provider is for development. In production, a missing provider confi
 
 ```ts file="<root>/../examples/mailer/src/mailer.ts"
 ```
+
+### Amazon SES
+
+The function or the server needs the `ses:SendEmail` permission on the identity of the sender. When the identity has a default configuration set, or when the provider has a `configurationSetName`, the permission must also cover the configuration set, or SES answers `AccessDenied`:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "ses:SendEmail",
+  "Resource": [
+    "arn:aws:ses:<region>:<account>:identity/example.com",
+    "arn:aws:ses:<region>:<account>:configuration-set/*"
+  ]
+}
+```
+
+Set a custom MAIL FROM domain on the identity, such as `bounce.example.com` (one MX record and one SPF record). Without it, the envelope sender is an `amazonses.com` address: SPF does not align with the domain of the sender for DMARC, and spam filters lower the score of the messages.
 
 ## In a route
 

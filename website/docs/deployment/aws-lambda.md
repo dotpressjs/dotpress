@@ -26,7 +26,28 @@ Deploy it with your tool: AWS SAM, CDK, Serverless Framework, Terraform, SST… 
 
 The handler of Dotpress accepts the four: changing the trigger does not change the code.
 
-Mind the limits of the trigger: API Gateway stops a request after about 30 seconds by default (29 for REST APIs), and a synchronous invocation accepts 6 MB of request and response. Keep the [body limit](/routing/bodies#body-size-limit) of upload routes below it, or upload large files directly to S3 with a presigned URL.
+### Timeouts and sizes
+
+API Gateway stops a request after about 30 seconds by default (29 for REST APIs).
+
+AWS also limits the size of requests and responses. Over a limit, AWS answers `413` itself, before the function runs, in its own format rather than the [error format](/routing/errors) of Dotpress:
+
+| Trigger | Largest request | Largest response |
+| --- | --- | --- |
+| API Gateway, Function URL | 6 MB for the whole event: about 4.5 MB of binary body, sent in base64 | 6 MB |
+| Application Load Balancer | 1 MB of body | 1 MB |
+
+Keep the [body limit](/routing/bodies#body-size-limit) of upload routes below these, or upload large files directly to S3 with a presigned URL.
+
+### REST APIs
+
+A REST API sends a binary response as binary only when the `Accept` header of the request matches one of its binary media types, and passes a binary request body intact only when its `Content-Type` matches. Set the binary media types to `*/*`: otherwise downloads and `stream()` responses arrive in base64. HTTP APIs, Function URLs and load balancers need no setting.
+
+| Tool | Setting |
+| --- | --- |
+| AWS CDK | `binaryMediaTypes: ['*/*']` in the options of `LambdaRestApi` or `RestApi` |
+| AWS SAM | `BinaryMediaTypes: ['*~1*']` in the `AWS::Serverless::Api` (SAM writes `/` as `~1`) |
+| Terraform | `binary_media_types = ["*/*"]` in `aws_api_gateway_rest_api` |
 
 ## Configuration and secrets
 

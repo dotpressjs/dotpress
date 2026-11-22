@@ -19,6 +19,22 @@ export const silentLogger: EventsLogger = {
   error: noop,
 }
 
+const toConsole =
+  (level: 'info' | 'warn' | 'error') => (data: object, message: string) => {
+    const fields = Object.keys(data).length > 0 ? [data] : []
+    console[level](message, ...fields)
+  }
+
+/**
+ * Default logger of the workers and the queue handlers: the global
+ * `console`, from the `info` level. A failing listener is never silent.
+ */
+export const consoleLogger: EventsLogger = {
+  info: toConsole('info'),
+  warn: toConsole('warn'),
+  error: toConsole('error'),
+}
+
 /** Checks a logger option. */
 export const checkLogger = (label: string, logger: unknown) => {
   for (const level of ['info', 'warn', 'error'] as const) {

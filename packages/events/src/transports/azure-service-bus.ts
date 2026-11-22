@@ -11,7 +11,7 @@ import type {
 } from '@azure/service-bus'
 import type { Envelope } from '../envelope.js'
 import { PartialSendError } from '../errors.js'
-import { checkLogger, silentLogger, type EventsLogger } from '../logger.js'
+import { checkLogger, consoleLogger, type EventsLogger } from '../logger.js'
 import type { Source, Transport } from '../transport.js'
 import type { HandleResult, Worker } from '../worker.js'
 
@@ -448,7 +448,9 @@ export const createServiceBusHandler = (
     'logger',
   ])
   const logger =
-    loggerOption === undefined ? silentLogger : checkLogger(label, loggerOption)
+    loggerOption === undefined
+      ? consoleLogger
+      : checkLogger(label, loggerOption)
   const deadSender =
     deadLetter === undefined
       ? undefined

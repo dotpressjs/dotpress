@@ -102,7 +102,7 @@ The memory transport has `sent` (the envelopes sent), `drain()` (waits for every
 | Option | Description |
 | --- | --- |
 | `listeners` | The listeners this worker runs. |
-| `logger` | The logger of the worker, given to the listeners. |
+| `logger` | The logger of the worker, given to the listeners: any logger with `info`, `warn` and `error`. The global `console` by default, from the `info` level. |
 | `onFailure(error, info)` | Called for every failure. Its own errors are logged and ignored. |
 | `maxAttempts` | The retry limit of the queue, so that the last attempt is reported as `final`. |
 
@@ -118,7 +118,7 @@ The memory transport has `sent` (the envelopes sent), `drain()` (waits for every
 
 `worker.handle(message, { attempt })` returns `success`, `retry` or `dead`, and never throws: the entry points of the transports (Lambda handler, `queue()` handler…) are built on it.
 
-`startWorker(worker, source, { logger, signal })` reads a source until stopped, and returns `{ stop(), done }`: `stop()` finishes the messages in progress, and `done` resolves when the worker has stopped, or rejects when the source failed. The module given to `dotpress-events work` exports a `WorkerEntry`: `{ worker, source, logger? }`.
+`startWorker(worker, source, { logger, signal })` reads a source until stopped (logging to the console without `logger`), and returns `{ stop(), done }`: `stop()` finishes the messages in progress, and `done` resolves when the worker has stopped, or rejects when the source failed. The module given to `dotpress-events work` exports a `WorkerEntry`: `{ worker, source, logger? }`.
 
 ## eventsPlugin()
 

@@ -4,7 +4,7 @@ import {
   type ListenerHandler,
 } from './define.js'
 import { parseEnvelope, type Envelope } from './envelope.js'
-import { checkLogger, silentLogger, type EventsLogger } from './logger.js'
+import { checkLogger, consoleLogger, type EventsLogger } from './logger.js'
 
 /** Why a message can never be handled: retrying would not help. */
 export type DeadReason =
@@ -132,7 +132,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
   const listeners = listenersByName(label, options.listeners)
   const logger =
     options.logger === undefined
-      ? silentLogger
+      ? consoleLogger
       : checkLogger(label, options.logger)
   const { onFailure, maxAttempts } = options
   if (onFailure !== undefined && typeof onFailure !== 'function') {

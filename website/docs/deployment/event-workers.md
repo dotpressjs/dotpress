@@ -58,6 +58,8 @@ node_modules/.bin/dotpress-events work src/worker.ts --watch # development: rest
 
 In code, `startWorker(worker, source, { logger, signal })` does the same, and returns `{ stop() }`.
 
+Without a `logger`, the workers and the queue handlers (`createSqsHandler()` and the others below) log to the console, from the `info` level: a failing listener always leaves a trace, in CloudWatch Logs or the logs of the platform. Pass your logger, such as Pino or the Dotpress logger, to change the format or the level.
+
 ## Redis (BullMQ)
 
 ```sh

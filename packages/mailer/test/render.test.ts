@@ -559,5 +559,25 @@ describe('renderMail()', () => {
         ].join('\n')
       )
     })
+
+    it('converts data tables in columns, and layout tables as blocks', async () => {
+      const template = html({
+        html: `<table role="presentation"><tr><td>
+<p>Your receipt</p>
+<table><tr><td>Plan</td><td>29.00</td></tr><tr><td>Storage</td><td>4.50</td></tr></table>
+</td></tr><tr><td><p>Thanks</p></td></tr></table>`,
+      })
+      const mail = await renderMail(template, {})
+      expect(mail.text).toBe(
+        [
+          'Your receipt',
+          '',
+          'Plan      29.00',
+          'Storage   4.50',
+          '',
+          'Thanks',
+        ].join('\n')
+      )
+    })
   })
 })

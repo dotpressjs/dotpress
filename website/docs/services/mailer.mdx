@@ -57,7 +57,7 @@ Translations can use the data too (`{ en: 'Hello {{name}}' }`), and contain HTML
 Use `{{value}}` for any data, and in particular for user input: it is HTML-escaped. Keep `{{{url}}}` for the URLs built by your app. `/`, `=` and `` ` `` are not escaped, so that links work in every email client.
 :::
 
-Without a `text` source, the text version is converted from the HTML: lines wrapped at 78 characters, links followed by their URL, images and hidden elements left out. The subject is a single line: line breaks become spaces.
+Without a `text` source, the text version is converted from the HTML: lines wrapped at 78 characters, links followed by their URL, data tables in columns, images and hidden elements left out. Layout tables are recognized by their `role="presentation"`, which MJML adds. The subject is a single line: line breaks become spaces.
 
 ## Locales
 

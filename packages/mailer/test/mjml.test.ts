@@ -113,6 +113,21 @@ describe('MJML templates', () => {
     )
   })
 
+  it('converts an mj-table to text in columns', async () => {
+    const template = defineTemplate({
+      name: 'receipt',
+      subject: 'Receipt',
+      mjml: `<mjml><mj-body><mj-section><mj-column>
+<mj-text>Your receipt</mj-text>
+<mj-table><tr><td>Plan</td><td>29.00</td></tr><tr><td>Storage</td><td>4.50</td></tr></mj-table>
+</mj-column></mj-section></mj-body></mjml>`,
+    })
+    const mail = await renderMail(template, {})
+    expect(mail.text).toBe(
+      ['Your receipt', '', 'Plan      29.00', 'Storage   4.50'].join('\n')
+    )
+  })
+
   it('reports invalid MJML', async () => {
     const template = defineTemplate({
       name: 'invalid',

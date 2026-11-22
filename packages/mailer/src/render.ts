@@ -146,6 +146,10 @@ export const toText = async (html: string) => {
       { selector: '[style*="display:none"]', format: 'skip' },
       { selector: '[style*="display: none"]', format: 'skip' },
       { selector: 'a', options: { hideLinkHrefIfSameAsText: true } },
+      // Data tables in columns; layout tables, marked as presentation
+      // (MJML marks all of them), as blocks.
+      { selector: 'table', format: 'dataTable' },
+      { selector: 'table[role="presentation"]', format: 'block' },
     ],
   })
 }

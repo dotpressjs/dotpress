@@ -17,7 +17,6 @@ it('reads the Redis URL', () => {
     password: 'p@ss',
     db: 2,
     tls: {},
-    maxRetriesPerRequest: null,
   })
 })
 

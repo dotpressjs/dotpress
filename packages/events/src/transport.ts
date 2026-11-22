@@ -9,6 +9,11 @@ export interface SendOptions {
    * rounded up.
    */
   readonly delay: number | undefined
+  /**
+   * Aborted when the bus stops waiting (its `sendTimeout`): a transport that
+   * can cancel its request should. Not given to in-process transports.
+   */
+  readonly signal?: AbortSignal | undefined
 }
 
 /**

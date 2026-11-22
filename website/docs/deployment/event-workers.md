@@ -69,13 +69,16 @@ npm install bullmq ioredis
 ```ts
 import { createBullmqSource, createBullmqTransport } from '@dotpress/events/bullmq'
 
-const connection = { host: 'redis.internal', port: 6379, maxRetriesPerRequest: null }
+const connection = { host: 'redis.internal', port: 6379 }
 
-// The API
-const transport = createBullmqTransport({ queue: 'events', connection })
+// The API: while Redis is unreachable, emit() fails at once.
+const transport = createBullmqTransport({
+  queue: 'events',
+  connection: { ...connection, enableOfflineQueue: false },
+})
 // On shutdown: await transport.close()
 
-// worker.ts
+// worker.ts: the worker waits for Redis to come back.
 export default {
   worker: createWorker({ listeners, maxAttempts: 3 }),
   source: createBullmqSource({ queue: 'events', connection, concurrency: 5 }),
@@ -88,7 +91,8 @@ Each message becomes a [BullMQ](https://docs.bullmq.io) job named after its list
 - **Retries** (`jobOptions`, merged with the defaults): 3 `attempts`, an `exponential` backoff from 1 second, completed jobs removed (`removeOnComplete: true`), failed jobs kept (`removeOnFail: false`). Set `maxAttempts` to the same number.
 - **Dead letters**: failed jobs stay in the failed set of the queue, with their error, where a dashboard such as Bull Board shows and retries them. Messages that can never be handled fail at once, without retries (`UnrecoverableError`).
 - **The source** handles `concurrency` jobs at a time (1 by default). On stop, it waits for the jobs in progress, up to `closeTimeout` (30 seconds by default); their jobs then become stalled, and another worker retries them. While Redis is unreachable, BullMQ cannot close: the stop gives up after `closeTimeout`.
-- **Connection**: use the `prefix` option for the key prefix, not the `keyPrefix` of ioredis. An ioredis instance passed as `connection` needs `maxRetriesPerRequest: null`. Pass `queue` instead of `name` and `connection` to reuse a BullMQ `Queue`.
+- **Redis outages**: with `enableOfflineQueue: false`, the transport fails at once while Redis is unreachable, and `emit()` throws an `EventEmitError` that `retry()` sends again. Without it, ioredis keeps the commands until Redis comes back, and `emit()` waits up to the `sendTimeout` of the bus (10 seconds by default). The source waits for Redis and resumes on its own.
+- **Connection**: use the `prefix` option for the key prefix, not the `keyPrefix` of ioredis. The source needs `maxRetriesPerRequest: null`: BullMQ sets it for connection options, and an ioredis instance passed to the source must have it. The transport does not: with `null`, its commands would wait for Redis without limit. Pass `queue` instead of `name` and `connection` to reuse a BullMQ `Queue`.
 - BullMQ runs on Node.js and Bun.
 
 For development, the [Events example](/examples/events) starts Redis with Docker Compose:

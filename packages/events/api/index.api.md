@@ -58,6 +58,7 @@ export type EventBusOptions = {
   listeners: readonly ListenerDefinition[]
   logger?: EventsLogger | undefined
   onFailure?: FailureHook | undefined
+  sendTimeout?: Duration | false | undefined
 } & (
   | {
       transport: Transport
@@ -114,6 +115,13 @@ export declare class EventPayloadError extends EventsError {
 export interface EventPayloadIssue {
   readonly path: readonly (string | number)[]
   readonly message: string
+}
+
+export declare class EventSendTimeoutError extends EventsError {
+  readonly transport: string
+  readonly timeout: number
+  name: string
+  constructor(transport: string, timeout: number)
 }
 
 export interface EventTransports {}
@@ -253,6 +261,7 @@ export interface RunningWorker {
 
 export interface SendOptions {
   readonly delay: number | undefined
+  readonly signal?: AbortSignal | undefined
 }
 
 export interface Source {

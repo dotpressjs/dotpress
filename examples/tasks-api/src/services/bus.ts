@@ -18,8 +18,6 @@ export const redisConnection = (redisUrl: string) => {
     ...(url.password && { password: decodeURIComponent(url.password) }),
     ...(url.pathname.length > 1 && { db: Number(url.pathname.slice(1)) }),
     ...(url.protocol === 'rediss:' && { tls: {} }),
-    // Required by the BullMQ workers.
-    maxRetriesPerRequest: null,
   }
 }
 
@@ -37,7 +35,11 @@ export const createTransport = (
   if (config.REDIS_URL) {
     return createBullmqTransport({
       queue: config.EVENTS_QUEUE,
-      connection: redisConnection(config.REDIS_URL),
+      // While Redis is unreachable, emit() fails at once.
+      connection: {
+        ...redisConnection(config.REDIS_URL),
+        enableOfflineQueue: false,
+      },
     })
   }
   const memory = createMemoryTransport()

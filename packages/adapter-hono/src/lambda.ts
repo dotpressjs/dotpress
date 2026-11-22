@@ -70,6 +70,36 @@ const failureApp = () =>
   )
 
 /**
+ * A load balancer event with its repeated headers joined with `, `, as
+ * HTTP does: `@hono/aws-lambda` joins them with `; `, right for `cookie`
+ * only. Other events are returned as they are.
+ */
+const joinRepeatedHeaders = (event: LambdaEvent): LambdaEvent => {
+  const { requestContext, multiValueHeaders } = event as {
+    requestContext?: object
+    multiValueHeaders?: Record<string, string[] | undefined>
+  }
+  if (
+    requestContext === undefined ||
+    !Object.hasOwn(requestContext, 'elb') ||
+    multiValueHeaders === undefined ||
+    multiValueHeaders === null
+  ) {
+    return event
+  }
+  const joined: Record<string, string[] | undefined> = {}
+  for (const [name, values] of Object.entries(multiValueHeaders)) {
+    joined[name] =
+      Array.isArray(values) &&
+      values.length > 1 &&
+      name.toLowerCase() !== 'cookie'
+        ? [values.join(', ')]
+        : values
+  }
+  return { ...event, multiValueHeaders: joined }
+}
+
+/**
  * Creates the AWS Lambda handler of an app (`@hono/aws-lambda`).
  *
  * The app is created by the factory at the first invocation (cold start),
@@ -97,10 +127,12 @@ export const createLambdaHandler = (
   // Documented by a tool (dotpress-openapi): the app is created now.
   registerLazyApp(factory)
   const logger = options.logger ?? createConsoleLogger()
-  const toHandler = (app: HonoApplication) =>
-    handle(app as unknown as Hono, {
+  const toHandler = (app: HonoApplication): LambdaHandler => {
+    const hono = handle(app as unknown as Hono, {
       isContentTypeBinary: options.isContentTypeBinary,
     }) as unknown as LambdaHandler
+    return (event, context) => hono(joinRepeatedHeaders(event), context)
+  }
 
   let ready: Promise<LambdaHandler> | undefined
   let failure: LambdaHandler | undefined

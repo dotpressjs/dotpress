@@ -8,6 +8,7 @@ import {
 import { base64, utf8 } from '../encoding.js'
 import { MailSendError } from '../errors.js'
 import type { MailProvider } from '../mailer.js'
+import { buildMimeMessage } from '../mime.js'
 import { keyValueTags } from './key-value-tags.js'
 import {
   checkKeys,
@@ -88,8 +89,41 @@ const toSesAttachment = (attachment: MailAttachment) => {
   }
 }
 
+/**
+ * `SendEmail` input of a message with inline images: raw content, built
+ * here. With simple content, SES puts inline attachments next to the HTML
+ * version, not with it in a `multipart/related`: Thunderbird, among
+ * others, then shows them at the end of the message, not in the HTML.
+ */
+const toRawEmailInput = (
+  message: MailMessage,
+  configurationSetName?: string
+): SendEmailCommandInput => ({
+  FromEmailAddress: toSesAddress(message.from),
+  // Bcc is not in the headers: SES takes the recipients from here.
+  Destination: {
+    ToAddresses: message.to.map(toSesAddress),
+    CcAddresses: message.cc.map(toSesAddress),
+    BccAddresses: message.bcc.map(toSesAddress),
+  },
+  Content: { Raw: { Data: utf8(buildMimeMessage(message)) } },
+  ...(configurationSetName === undefined
+    ? {}
+    : { ConfigurationSetName: configurationSetName }),
+  ...emailTags(message),
+})
+
 /** `SendEmail` input of a message (simple content). */
 const toSendEmailInput = (
+  message: MailMessage,
+  configurationSetName?: string
+): SendEmailCommandInput =>
+  message.html !== undefined &&
+  message.attachments.some(({ contentId }) => contentId !== undefined)
+    ? toRawEmailInput(message, configurationSetName)
+    : toSimpleEmailInput(message, configurationSetName)
+
+const toSimpleEmailInput = (
   message: MailMessage,
   configurationSetName?: string
 ): SendEmailCommandInput => ({

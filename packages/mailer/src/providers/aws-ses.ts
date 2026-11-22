@@ -13,6 +13,7 @@ import {
   checkKeys,
   formatAddress,
   type Address,
+  type MailAttachment,
   type MailMessage,
 } from '../message.js'
 
@@ -57,6 +58,36 @@ const emailTags = (message: MailMessage) => {
     : {}
 }
 
+/**
+ * Content type of an attachment. Text content is sent as UTF-8: a `text/*`
+ * type without charset declares it.
+ */
+const attachmentType = ({ content, contentType }: MailAttachment) =>
+  typeof content === 'string' &&
+  contentType !== undefined &&
+  /^text\//i.test(contentType) &&
+  !/;\s*charset=/i.test(contentType)
+    ? `${contentType}; charset=utf-8`
+    : contentType
+
+/**
+ * An attachment for SES. Always in base64: without a transfer encoding,
+ * SES sends the part as 7bit, and drops binary content.
+ */
+const toSesAttachment = (attachment: MailAttachment) => {
+  const { filename, content, contentId } = attachment
+  const contentType = attachmentType(attachment)
+  return {
+    FileName: filename,
+    RawContent: typeof content === 'string' ? utf8(content) : content,
+    ...(contentType === undefined ? {} : { ContentType: contentType }),
+    ContentTransferEncoding: 'BASE64' as const,
+    ...(contentId === undefined
+      ? { ContentDisposition: 'ATTACHMENT' as const }
+      : { ContentDisposition: 'INLINE' as const, ContentId: contentId }),
+  }
+}
+
 /** `SendEmail` input of a message (simple content). */
 const toSendEmailInput = (
   message: MailMessage,
@@ -82,16 +113,7 @@ const toSendEmailInput = (
         Name,
         Value,
       })),
-      Attachments: message.attachments.map(
-        ({ filename, content, contentType, contentId }) => ({
-          FileName: filename,
-          RawContent: typeof content === 'string' ? utf8(content) : content,
-          ...(contentType === undefined ? {} : { ContentType: contentType }),
-          ...(contentId === undefined
-            ? { ContentDisposition: 'ATTACHMENT' as const }
-            : { ContentDisposition: 'INLINE' as const, ContentId: contentId }),
-        })
-      ),
+      Attachments: message.attachments.map(toSesAttachment),
     },
   },
   ...(configurationSetName === undefined

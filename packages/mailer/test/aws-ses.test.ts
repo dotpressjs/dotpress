@@ -25,6 +25,7 @@ const message: MessageOptions = {
       contentType: 'application/pdf',
     },
     { filename: 'notes.txt', content: 'Notes é' },
+    { filename: 'data.csv', content: 'name\nZoë\n', contentType: 'text/csv' },
     { filename: 'logo.png', content: new Uint8Array([9]), contentId: 'logo' },
   ],
   headers: { 'List-Unsubscribe': '<https://example.com/unsubscribe>' },
@@ -89,16 +90,26 @@ describe('SES provider', () => {
               FileName: 'invoice.pdf',
               RawContent: new Uint8Array([1, 2, 3]),
               ContentType: 'application/pdf',
+              ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'ATTACHMENT',
             },
             {
               FileName: 'notes.txt',
               RawContent: new TextEncoder().encode('Notes é'),
+              ContentTransferEncoding: 'BASE64',
+              ContentDisposition: 'ATTACHMENT',
+            },
+            {
+              FileName: 'data.csv',
+              RawContent: new TextEncoder().encode('name\nZoë\n'),
+              ContentType: 'text/csv; charset=utf-8',
+              ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'ATTACHMENT',
             },
             {
               FileName: 'logo.png',
               RawContent: new Uint8Array([9]),
+              ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'INLINE',
               ContentId: 'logo',
             },
@@ -107,6 +118,35 @@ describe('SES provider', () => {
       },
       ConfigurationSetName: 'transactional',
     })
+  })
+
+  it('declares UTF-8 only for text content with a text type and no charset', async () => {
+    const { client, send } = mockClient()
+    const bytes = new TextEncoder().encode('a;b\n')
+    await mailerWith(createSesProvider({ client })).sendMessage({
+      ...minimalMessage,
+      attachments: [
+        { filename: 'a.txt', content: 'é', contentType: 'TEXT/plain' },
+        {
+          filename: 'b.csv',
+          content: 'é',
+          contentType: 'text/csv; charset=iso-8859-1',
+        },
+        { filename: 'c.csv', content: bytes, contentType: 'text/csv' },
+        { filename: 'd.json', content: '{}', contentType: 'application/json' },
+      ],
+    })
+    const attachments =
+      send.mock.calls[0]?.[0].input.Content?.Simple?.Attachments
+    expect(attachments?.map((item) => item.ContentType)).toEqual([
+      'TEXT/plain; charset=utf-8',
+      'text/csv; charset=iso-8859-1',
+      'text/csv',
+      'application/json',
+    ])
+    expect(
+      attachments?.every((item) => item.ContentTransferEncoding === 'BASE64')
+    ).toBe(true)
   })
 
   it('sends text-only messages without configuration set', async () => {
@@ -333,16 +373,26 @@ describe('SES provider with the AWS SDK client', () => {
               FileName: 'invoice.pdf',
               RawContent: 'AQID',
               ContentType: 'application/pdf',
+              ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'ATTACHMENT',
             },
             {
               FileName: 'notes.txt',
               RawContent: Buffer.from('Notes é').toString('base64'),
+              ContentTransferEncoding: 'BASE64',
+              ContentDisposition: 'ATTACHMENT',
+            },
+            {
+              FileName: 'data.csv',
+              RawContent: Buffer.from('name\nZoë\n').toString('base64'),
+              ContentType: 'text/csv; charset=utf-8',
+              ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'ATTACHMENT',
             },
             {
               FileName: 'logo.png',
               RawContent: 'CQ==',
+              ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'INLINE',
               ContentId: 'logo',
             },

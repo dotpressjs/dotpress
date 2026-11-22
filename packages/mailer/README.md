@@ -2,7 +2,7 @@
 
 Typed, multilingual email templates for [Dotpress](https://dotpress.dev), written in [MJML](https://mjml.io) or HTML, with shared layouts, data checked by a Zod schema, and interchangeable providers: SMTP, Amazon SES, Resend, SendGrid, Postmark, Brevo, Mailjet, Mailgun, Scaleway. Works without a Dotpress app: in a script, a worker or a Lambda function.
 
-> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
+> 🚧 Dotpress V2 is in beta (`2.0.0-beta`): the API is complete, and changes before 2.0.0 only from feedback.
 
 ```sh
 npm install @dotpress/mailer zod

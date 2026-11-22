@@ -2,10 +2,10 @@
 
 JWT authentication for [Dotpress](https://dotpress.dev): login, refresh token rotation, `httpOnly` cookie sessions protected against cross-site request forgery, brute force protection, and a typed `ctx.user`. Works with any database through a small data provider, and on any adapter.
 
-> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0. Until then, install this package with the `alpha` tag: without it, `@dotpress/auth` is the 1.x.
+> 🚧 Dotpress V2 is in beta (`2.0.0-beta`): the API is complete, and changes before 2.0.0 only from feedback. Until then, install this package with the `beta` tag: without it, `@dotpress/auth` is the 1.x.
 
 ```sh
-npm install @dotpress/auth@alpha @dotpress/core zod
+npm install @dotpress/auth@beta @dotpress/core zod
 ```
 
 ```ts

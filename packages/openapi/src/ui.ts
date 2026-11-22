@@ -48,7 +48,7 @@ export interface ScalarOptions {
    * Extra sources are added to the directives, like
    * `{ 'img-src': ['https://cdn.example.com'] }`. `false` sets no policy.
    */
-  contentSecurityPolicy?: false | Readonly<Record<string, readonly string[]>>
+  contentSecurityPolicy?: Readonly<Record<string, readonly string[]>> | false
 }
 
 const escapeHtml = (value: string) =>

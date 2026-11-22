@@ -2,7 +2,7 @@
 
 [Hono](https://hono.dev) adapter for [Dotpress](https://dotpress.dev), on Node.js and AWS Lambda. Supports Hono 4.13 or later; Hono 5 is tested against its release candidate.
 
-> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
+> 🚧 Dotpress V2 is in beta (`2.0.0-beta`): the API is complete, and changes before 2.0.0 only from feedback.
 
 ```sh
 npm install @dotpress/core @dotpress/adapter-hono hono @hono/node-server zod

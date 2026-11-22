@@ -2,7 +2,7 @@
 
 OpenAPI 3.1 documents generated from the routes of a [Dotpress](https://dotpress.dev) app, with a [Scalar](https://scalar.com) API reference. No annotations: paths, parameters, bodies and responses come from the Zod schemas of the routes, and security from their middlewares.
 
-> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
+> 🚧 Dotpress V2 is in beta (`2.0.0-beta`): the API is complete, and changes before 2.0.0 only from feedback.
 
 ```sh
 npm install @dotpress/openapi

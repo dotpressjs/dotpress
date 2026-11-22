@@ -2,7 +2,7 @@
 
 The core of [Dotpress](https://dotpress.dev), a lightweight, decorator-free TypeScript framework for end-to-end typed HTTP APIs: routes, validation with Zod, returned errors, middlewares and plugins. It knows no HTTP server: an adapter runs it on Express, Fastify, Hono or AWS Lambda.
 
-> 🚧 Dotpress V2 is in alpha (`2.0.0-alpha`): the API may still change before 2.0.0.
+> 🚧 Dotpress V2 is in beta (`2.0.0-beta`): the API is complete, and changes before 2.0.0 only from feedback.
 
 ```sh
 npm install @dotpress/core @dotpress/adapter-express express zod

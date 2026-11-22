@@ -1,5 +1,13 @@
 # @dotpress/adapter-hono
 
+## 2.0.0-alpha.7
+
+### Patch Changes
+
+- [#36](https://github.com/dotpressjs/dotpress/pull/36) [`389e06e`](https://github.com/dotpressjs/dotpress/commit/389e06e349fc88522a348b3161d9e59c863fd9d5) Thanks [@renoguyon](https://github.com/renoguyon)! - On AWS Lambda behind a load balancer with multi-value headers, a repeated request header is joined with `, `, as documented and as the other adapters do: `@hono/aws-lambda` joined it with `; `. The `cookie` header keeps `; `.
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.7
+
 ## 2.0.0-alpha.6
 
 ### Patch Changes

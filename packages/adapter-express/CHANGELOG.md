@@ -1,5 +1,12 @@
 # @dotpress/adapter-express
 
+## 2.0.0-alpha.7
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.7
+
 ## 2.0.0-alpha.6
 
 ### Patch Changes

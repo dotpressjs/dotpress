@@ -1,5 +1,22 @@
 # @dotpress/auth
 
+## 2.0.0-alpha.7
+
+### Minor Changes
+
+- [#29](https://github.com/dotpressjs/dotpress/pull/29) [`6a2aa47`](https://github.com/dotpressjs/dotpress/commit/6a2aa47f5e94ca2916e3de6b2c08b906cfe023a4) Thanks [@renoguyon](https://github.com/renoguyon)! - **Breaking (prerelease):** the errors of the authentication routes carry their code in the `error` field, with a sentence in `message`, like every error of Dotpress. Before, the code was in `message`, and `error` held the generic code of the status.
+  
+  ```json
+  { "status": 401, "error": "EXPIRED_REFRESH_TOKEN", "message": "The session has expired. Log in again." }
+  ```
+  
+  Clients test `error` (or the status) instead of `message`. The codes are typed by the new `AuthRouteErrorCode` export: `INVALID_LOGIN`, `TOO_MANY_LOGIN_ATTEMPTS`, `NO_TOKENS_PROVIDED`, `INVALID_REFRESH_TOKEN`, `EXPIRED_REFRESH_TOKEN`, `COOKIES_NOT_ENABLED`, `ACCESS_TOKEN_NOT_IN_COOKIE`, `NO_REFRESH_TOKEN`, `NO_ACCESS_TOKEN` and `CROSS_ORIGIN_REQUEST`.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.7
+
 ## 2.0.0-alpha.6
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @dotpress/events
 
+## 2.0.0-alpha.7
+
+### Minor Changes
+
+- [#35](https://github.com/dotpressjs/dotpress/pull/35) [`112b41c`](https://github.com/dotpressjs/dotpress/commit/112b41cfca3bd4918400f097e8d89856569180a4) Thanks [@renoguyon](https://github.com/renoguyon)! - Workers and queue handlers log to the console by default, from the `info` level: `createWorker()`, `startWorker()`, `createSqsHandler()`, `createPubSubHandler()`, `createServiceBusHandler()` and `createCloudflareQueueHandler()`. They were silent without a `logger`, so a failing listener left no trace. The event bus stays silent by default: in an app, it logs with the request logger. `createPubSubHandler()` now checks its `logger` option.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.7
+
 ## 2.0.0-alpha.6
 
 ### Patch Changes

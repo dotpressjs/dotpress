@@ -1,6 +1,6 @@
 {
   "name": "@dotpress/core",
-  "version": "2.0.0-alpha.6",
+  "version": "2.0.0-alpha.7",
   "description": "Lightweight, decorator-free TypeScript framework for end-to-end typed HTTP APIs, independent of the underlying HTTP server",
   "author": "Renaud Guyon",
   "license": "MIT",

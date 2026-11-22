@@ -8,9 +8,13 @@
 // - stable release: `latest` is the new version, and the prerelease tags of
 //   older versions are removed.
 //
-// The registry takes a moment to list a version just published: the script
-// waits for it (5 minutes at most for the whole run), then fails if it is
-// still missing.
+// The registry takes a moment to list a version just published, and npm may
+// hold a new version in staging for several minutes (10 for
+// @dotpress/testing@2.0.0-beta.0) before listing it: the script waits for
+// it (20 minutes at most for the whole run), then fails if it is still
+// missing. Publishing it again does not help: npm answers 409 "Cannot
+// publish over previously staged version". Once the version is listed, run
+// the dist-tags job of the Release workflow.
 //
 // npm authenticates with trusted publishing in CI (npm 11.21 or later, with
 // "Allow npm dist-tag" on the trusted publisher), or with the npmrc of the
@@ -25,9 +29,10 @@ const dryRun = Boolean(process.env.DRY_RUN)
 const npm = (args) =>
   execFileSync('npm', args, { cwd: root, encoding: 'utf8' }).trim()
 
-// One deadline for all the packages: a run never waits more than 5 minutes.
-const deadline = Date.now() + 5 * 60_000
-const RETRY_DELAY = 15_000
+// One deadline for all the packages: a run never waits more than 20 minutes.
+const WAIT_MINUTES = 20
+const deadline = Date.now() + WAIT_MINUTES * 60_000
+const RETRY_DELAY = 30_000
 const sleep = (ms) =>
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
@@ -55,7 +60,9 @@ const viewPublished = (name, version) => {
       reason = (error.stderr || error.message).trim().split('\n')[0]
     }
     if (Date.now() + RETRY_DELAY > deadline) return undefined
-    console.log(`${name}@${version}: ${reason}, waiting`)
+    console.log(
+      `${name}@${version}: ${reason} (npm may stage a new version for several minutes), waiting`
+    )
     sleep(RETRY_DELAY)
   }
 }
@@ -87,7 +94,9 @@ for (const dir of readdirSync(join(root, 'packages')).sort()) {
   const published = viewPublished(name, version)
   if (!published) {
     failed = true
-    console.error(`${name}@${version}: not listed by the registry, skipped`)
+    console.error(
+      `${name}@${version}: not listed by the registry after ${WAIT_MINUTES} minutes, skipped. Do not publish it again (npm answers 409 while it stages a version): once it is listed, run the dist-tags job of the Release workflow.`
+    )
     continue
   }
   const { versions, tags } = published

@@ -1,5 +1,13 @@
 # @dotpress/mailer
 
+## 2.0.0-beta.0
+
+### Patch Changes
+
+- [#42](https://github.com/dotpressjs/dotpress/pull/42) [`3c7b664`](https://github.com/dotpressjs/dotpress/commit/3c7b6649c2ff5482c9be3bb40d2cf7780c1afed4) Thanks [@renoguyon](https://github.com/renoguyon)! - First beta of Dotpress 2. The API is complete: until 2.0.0, it changes only from feedback, and each change is listed in this changelog. `@dotpress/auth` is installed with the `beta` tag (without a tag, npm installs the 1.x).
+- Updated dependencies [[`3c7b664`](https://github.com/dotpressjs/dotpress/commit/3c7b6649c2ff5482c9be3bb40d2cf7780c1afed4)]:
+  - @dotpress/core@2.0.0-beta.0
+
 ## 2.0.0-alpha.8
 
 ### Patch Changes

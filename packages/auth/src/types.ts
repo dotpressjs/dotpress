@@ -71,7 +71,11 @@ export interface AuthCookieOptions {
   enabled?: boolean
   /** Defaults to `true`. */
   httpOnly?: boolean
-  /** Defaults to `true` (browsers accept secure cookies on `localhost`). */
+  /**
+   * Defaults to `true`. Chrome and Firefox accept secure cookies on
+   * `http://localhost`, Safari does not: use HTTPS, or `false` in
+   * development.
+   */
   secure?: boolean
   /** Defaults to `lax`. */
   sameSite?: 'strict' | 'lax' | 'none'

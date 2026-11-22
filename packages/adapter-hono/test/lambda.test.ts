@@ -345,6 +345,39 @@ describe('createLambdaHandler()', () => {
       expect(JSON.parse(result.body)).toBeNull()
     })
 
+    it('joins the repeated headers of a load balancer with commas', async () => {
+      const router = routerWith((r) => {
+        r.defineRoute({
+          path: '/headers',
+          handler: ({ req }) => ({
+            accept: req.headers.accept,
+            cookies: req.cookies,
+            ip: req.ip,
+          }),
+        })
+      })
+      const handler = createLambdaHandler(() => createHonoApp(router))
+      const alb = (await event(
+        '/headers',
+        'alb',
+        undefined,
+        '203.0.113.9'
+      )) as unknown as {
+        multiValueHeaders: Record<string, string[]>
+      }
+      // A real load balancer sends a repeated header as several values.
+      alb.multiValueHeaders.accept = ['text/html', 'application/json']
+      alb.multiValueHeaders.cookie = ['a=1', 'b=2']
+      alb.multiValueHeaders['x-forwarded-for'] = ['198.51.100.1', '203.0.113.9']
+
+      const result = await handler(alb as unknown as LambdaEvent)
+      expect(JSON.parse(result.body)).toEqual({
+        accept: 'text/html, application/json',
+        cookies: { a: '1', b: '2' },
+        ip: '203.0.113.9',
+      })
+    })
+
     it('uses getIp when given', async () => {
       const handler = createLambdaHandler(() => ipApp(() => '192.0.2.1'))
       expect(await ipOf(handler, 'v2')).toBe('192.0.2.1')

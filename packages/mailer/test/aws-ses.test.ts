@@ -26,7 +26,6 @@ const message: MessageOptions = {
     },
     { filename: 'notes.txt', content: 'Notes é' },
     { filename: 'data.csv', content: 'name\nZoë\n', contentType: 'text/csv' },
-    { filename: 'logo.png', content: new Uint8Array([9]), contentId: 'logo' },
   ],
   headers: { 'List-Unsubscribe': '<https://example.com/unsubscribe>' },
 }
@@ -106,18 +105,75 @@ describe('SES provider', () => {
               ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'ATTACHMENT',
             },
-            {
-              FileName: 'logo.png',
-              RawContent: new Uint8Array([9]),
-              ContentTransferEncoding: 'BASE64',
-              ContentDisposition: 'INLINE',
-              ContentId: 'logo',
-            },
           ],
         },
       },
       ConfigurationSetName: 'transactional',
     })
+  })
+
+  it('sends a message with inline images as raw content', async () => {
+    const { client, send } = mockClient()
+    const provider = createSesProvider({
+      client,
+      configurationSetName: 'transactional',
+    })
+    await mailerWith(provider).sendMessage({
+      ...message,
+      html: '<p>Hello</p><img src="cid:logo">',
+      attachments: [
+        {
+          filename: 'logo.png',
+          content: new Uint8Array([9]),
+          contentId: 'logo',
+        },
+        { filename: 'invoice.pdf', content: new Uint8Array([1, 2, 3]) },
+      ],
+      metadata: { kind: 'receipt' },
+    })
+    const input = send.mock.calls[0]?.[0].input
+    expect(input).toMatchObject({
+      FromEmailAddress: '=?UTF-8?B?w4lxdWlwZQ==?= <noreply@example.com>',
+      Destination: {
+        ToAddresses: ['"Ada Lovelace" <ada@example.com>', 'grace@example.com'],
+        CcAddresses: ['=?UTF-8?B?Wm/DqyDDnG5hbA==?= <zoe@example.com>'],
+        BccAddresses: ['archive@example.com'],
+      },
+      ConfigurationSetName: 'transactional',
+      EmailTags: [{ Name: 'kind', Value: 'receipt' }],
+    })
+    expect(input?.Content?.Simple).toBeUndefined()
+    expect(input?.ReplyToAddresses).toBeUndefined()
+    const raw = new TextDecoder().decode(input?.Content?.Raw?.Data)
+    expect(raw).toMatch(
+      /^From: =\?UTF-8\?B\?w4lxdWlwZQ==\?= <noreply@example.com>\r\n/
+    )
+    expect(raw).toContain('\r\nReply-To: support@example.com\r\n')
+    expect(raw).toContain(
+      '\r\nList-Unsubscribe: <https://example.com/unsubscribe>\r\n'
+    )
+    // Bcc only in the destination.
+    expect(raw).not.toContain('archive@example.com')
+    // The image with the HTML version, the PDF next to them.
+    const related = raw.indexOf('multipart/related')
+    expect(raw.indexOf('multipart/mixed')).toBeLessThan(related)
+    expect(related).toBeLessThan(raw.indexOf('multipart/alternative'))
+    expect(raw).toContain('Content-ID: <logo>')
+  })
+
+  it('keeps simple content for text-only messages and attachments', async () => {
+    const { client, send } = mockClient()
+    await mailerWith(createSesProvider({ client })).sendMessage({
+      ...minimalMessage,
+      attachments: [
+        {
+          filename: 'logo.png',
+          content: new Uint8Array([9]),
+          contentId: 'logo',
+        },
+      ],
+    })
+    expect(send.mock.calls[0]?.[0].input.Content?.Simple).toBeDefined()
   })
 
   it('declares UTF-8 only for text content with a text type and no charset', async () => {
@@ -388,13 +444,6 @@ describe('SES provider with the AWS SDK client', () => {
               ContentType: 'text/csv; charset=utf-8',
               ContentTransferEncoding: 'BASE64',
               ContentDisposition: 'ATTACHMENT',
-            },
-            {
-              FileName: 'logo.png',
-              RawContent: 'CQ==',
-              ContentTransferEncoding: 'BASE64',
-              ContentDisposition: 'INLINE',
-              ContentId: 'logo',
             },
           ],
           Headers: [

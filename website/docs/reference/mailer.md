@@ -140,7 +140,7 @@ Every provider sends the sender, the reply-to addresses, several `to`, `cc` and 
 
 - **Memory**: `outbox.sent` lists the messages, `last()` returns the last one, `clear()` empties it.
 - **SMTP**: nodemailer 10, Node.js only. Install `nodemailer`. SMTP errors (`cause.responseCode`, such as `550`) are `MailSendError`.
-- **Amazon SES**: the `SendEmail` operation of the API v2, with `@aws-sdk/client-sesv2` 3.782 or later. Credentials come from the environment. On AWS Lambda, the SDK of the Node.js runtime works, without bundling it, if its version is 3.782 or later.
+- **Amazon SES**: the `SendEmail` operation of the API v2, with `@aws-sdk/client-sesv2` 3.782 or later. A message with inline attachments is built by the provider and sent as raw content, with its images next to the HTML version in a `multipart/related` part: with simple content, SES places them apart, and some clients, such as Thunderbird, show them at the end of the message instead of in the HTML. Credentials come from the environment. On AWS Lambda, the SDK of the Node.js runtime works, without bundling it, if its version is 3.782 or later.
 - **Resend**: install `resend`.
 - **SendGrid**: the message ID is read from the `X-Message-Id` response header, when present.
 - **Postmark**: the message ID is the `MessageID` of the response; errors include the Postmark `ErrorCode`.

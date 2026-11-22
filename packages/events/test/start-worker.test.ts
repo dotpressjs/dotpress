@@ -61,6 +61,25 @@ describe('startWorker()', () => {
     ])
   })
 
+  it('logs to the console without logger', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      const running = startWorker(worker, createSource(), {
+        signal: AbortSignal.abort(),
+      })
+      await running.done
+      expect(info).toHaveBeenCalledWith('Event worker started', {
+        source: 'test',
+        listeners: ['send-welcome-mail'],
+      })
+      expect(info).toHaveBeenCalledWith('Event worker stopped', {
+        source: 'test',
+      })
+    } finally {
+      info.mockRestore()
+    }
+  })
+
   it('stops when the signal is aborted', async () => {
     const controller = new AbortController()
     const running = startWorker(worker, createSource(), {

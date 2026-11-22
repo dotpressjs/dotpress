@@ -2,7 +2,7 @@ import { optionalMilliseconds, type Duration } from '../duration.js'
 import type { PubSub } from '@google-cloud/pubsub'
 import type { Envelope } from '../envelope.js'
 import { PartialSendError } from '../errors.js'
-import type { EventsLogger } from '../logger.js'
+import { checkLogger, consoleLogger, type EventsLogger } from '../logger.js'
 import type { Source, Transport } from '../transport.js'
 import type { HandleResult, Worker } from '../worker.js'
 
@@ -448,7 +448,10 @@ export const createPubSubHandler = (
       'baseUrl',
     ])
   }
-  const logger = values.logger as EventsLogger | undefined
+  const logger =
+    values.logger === undefined
+      ? consoleLogger
+      : checkLogger(label, values.logger)
   const verify = verifyToken
     ? verifierOf(audience as string, certsUrl)
     : undefined

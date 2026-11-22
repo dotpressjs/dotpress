@@ -130,16 +130,37 @@ describe('worker.handle()', () => {
     expect(attempt).toBe(1)
   })
 
-  it('works without logger nor onFailure', async () => {
-    const listener = defineListener(userCreated, {
-      name: 'send-welcome-mail',
-      handle: () => {
-        throw new Error('boom')
-      },
-    })
-    const worker = createWorker({ listeners: [listener] })
-    expect(await worker.handle(envelopeOf())).toMatchObject({ status: 'retry' })
-    expect(await worker.handle('x')).toMatchObject({ status: 'dead' })
+  it('logs to the console without logger', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const listener = defineListener(userCreated, {
+        name: 'send-welcome-mail',
+        handle: () => {
+          throw new Error('boom')
+        },
+      })
+      const worker = createWorker({ listeners: [listener] })
+      expect(await worker.handle(envelopeOf())).toMatchObject({
+        status: 'retry',
+      })
+      expect(warn).toHaveBeenCalledWith(
+        'Event listener failed, the message is retried',
+        expect.objectContaining({
+          listener: 'send-welcome-mail',
+          attempt: 1,
+          error: 'boom',
+        })
+      )
+      expect(await worker.handle('x')).toMatchObject({ status: 'dead' })
+      expect(error).toHaveBeenCalledWith(
+        'Event listener failed, the message is not retried',
+        expect.objectContaining({ reason: 'invalid-envelope' })
+      )
+    } finally {
+      warn.mockRestore()
+      error.mockRestore()
+    }
   })
 
   it('passes the parsed payload', async () => {

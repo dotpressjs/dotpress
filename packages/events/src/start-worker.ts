@@ -1,4 +1,4 @@
-import { checkLogger, silentLogger, type EventsLogger } from './logger.js'
+import { checkLogger, consoleLogger, type EventsLogger } from './logger.js'
 import type { Source } from './transport.js'
 import type { Worker } from './worker.js'
 
@@ -53,7 +53,7 @@ export const startWorker = (
   }
   const logger =
     options.logger === undefined
-      ? silentLogger
+      ? consoleLogger
       : checkLogger(label, options.logger)
 
   const controller = new AbortController()

@@ -5,7 +5,7 @@ import {
 } from '../duration.js'
 import type { Envelope } from '../envelope.js'
 import { PartialSendError } from '../errors.js'
-import { checkLogger, silentLogger, type EventsLogger } from '../logger.js'
+import { checkLogger, consoleLogger, type EventsLogger } from '../logger.js'
 import { decodePulledBody } from './cloudflare-queues-internal.js'
 import type { Source, Transport } from '../transport.js'
 import type { HandleResult, Worker } from '../worker.js'
@@ -395,7 +395,7 @@ export const createCloudflareQueueHandler = (
       : bindingOf(label, 'deadLetter', values.deadLetter)
   const logger =
     values.logger === undefined
-      ? silentLogger
+      ? consoleLogger
       : checkLogger(label, values.logger)
 
   const settle = async (

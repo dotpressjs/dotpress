@@ -17,13 +17,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dotpress/adapter-fastify": "^2.0.0-alpha.7",
-    "@dotpress/auth": "^2.0.0-alpha.7",
-    "@dotpress/cache": "^2.0.0-alpha.7",
-    "@dotpress/core": "^2.0.0-alpha.7",
-    "@dotpress/events": "^2.0.0-alpha.7",
-    "@dotpress/mailer": "^2.0.0-alpha.7",
-    "@dotpress/openapi": "^2.0.0-alpha.7",
+    "@dotpress/adapter-fastify": "^2.0.0-alpha.8",
+    "@dotpress/auth": "^2.0.0-alpha.8",
+    "@dotpress/cache": "^2.0.0-alpha.8",
+    "@dotpress/core": "^2.0.0-alpha.8",
+    "@dotpress/events": "^2.0.0-alpha.8",
+    "@dotpress/mailer": "^2.0.0-alpha.8",
+    "@dotpress/openapi": "^2.0.0-alpha.8",
     "bullmq": "^6.7.2",
     "fastify": "^5.12.8",
     "mjml": "^5.4.1",
@@ -32,7 +32,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@dotpress/testing": "^2.0.0-alpha.7",
+    "@dotpress/testing": "^2.0.0-alpha.8",
     "@types/node": "^22.20.5",
     "typescript": "~6.0.3",
     "vitest": "^5.1.0"

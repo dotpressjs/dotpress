@@ -40,7 +40,7 @@ The durations are [`Duration` values](/concepts/options#durations), rounded to t
 | `enabled` | `false` | Enables the cookie mode: login with `mode: 'cookie'`. |
 | `accessTokenInCookie` | `false` | Also sets the access token as a cookie. Recommended for browsers. |
 | `httpOnly` | `true` | Hides the cookies from the JavaScript of the page. |
-| `secure` | `true` | HTTPS only. Browsers accept secure cookies on `http://localhost`. |
+| `secure` | `true` | HTTPS only. Chrome and Firefox accept secure cookies on `http://localhost`, Safari does not: see [Cookies](/auth/cookies#the-cookies). |
 | `sameSite` | `'lax'` | `SameSite` of the access token cookie. |
 | `refreshTokenSameSite` | `'strict'` | `SameSite` of the refresh token cookie; `'none'` when `sameSite` is `'none'`. |
 | `trustedOrigins` | the `cors` origins with credentials, else `[]` | Other origins allowed to send authenticated cookie requests. |

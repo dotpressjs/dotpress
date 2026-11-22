@@ -61,7 +61,7 @@ Then refresh before `expiresAt` with `POST /auth/refresh`: the cookies are renew
 - **Both cookies live as long as the refresh token**, not `accessTokenTTL`: a refresh needs the access token, even expired.
 - **The path** of the refresh token cookie must be the browser path of the auth routes: with a wrong path, the browser does not send it, and refreshes fail with `401 NO_TOKENS_PROVIDED`. It is set by `authPlugin()`, after the `basePath` or `publicBasePath` of the app; without the plugin, it is `/auth`. An auth service serves one path: create one per app when several apps serve the auth routes under different paths.
 - **Names**: without `secure`, the default names have no prefix. Custom names (`accessTokenName`, `refreshTokenName`) are kept as is, and checked at startup: a `__Host-` or `__Secure-` name without the attributes it requires would be silently rejected by browsers.
-- `secure` is `true` by default. Browsers accept secure cookies on `http://localhost`; set `secure: false` only for another plain HTTP host in development.
+- `secure` is `true` by default. Chrome and Firefox accept secure cookies on `http://localhost`, Safari does not: with Safari, develop over HTTPS (a local certificate, made with [mkcert](https://github.com/FiloSottile/mkcert) for instance), or set `secure: false` in development only. The default names then have no prefix. Set `secure: false` as well for another plain HTTP host in development.
 
 Every setting of the cookie mode is listed in the [Auth reference](/reference/auth#cookie-settings).
 

@@ -383,7 +383,7 @@ const app = await createApp({ adapter: expressAdapter(), plugins: [authPlugin(au
   ```
 
 - **Only RS256** is accepted.
-- **The `secure` flag of cookies is `true` by default** (v1: only when `NODE_ENV` is `production`). Browsers accept secure cookies on `http://localhost`.
+- **The `secure` flag of cookies is `true` by default** (v1: only when `NODE_ENV` is `production`). Chrome and Firefox accept secure cookies on `http://localhost`; Safari needs HTTPS, or `secure: false` in development.
 - **In cookie mode, list the origins of your app** if it is not served from the API origin: in the `cors` option with `credentials: true`, or in `cookies.trustedOrigins`. Cross-site requests from other origins are no longer authenticated by the cookie. See [Cookie mode and CSRF](/auth/cookies#protection-against-cross-site-request-forgery).
 
 ### The data provider

@@ -1,5 +1,15 @@
 # @dotpress/mailer
 
+## 2.0.0-alpha.7
+
+### Patch Changes
+
+- [#32](https://github.com/dotpressjs/dotpress/pull/32) [`a592d8b`](https://github.com/dotpressjs/dotpress/commit/a592d8b6c70a997c4568724715b6e5313768c701) Thanks [@renoguyon](https://github.com/renoguyon)! - The SES provider sends attachments in base64. Without a transfer encoding, SES sent them as 7bit and dropped binary content: images and PDFs arrived empty. A text attachment given as a string with a `text/*` type and no charset now declares `charset=utf-8`.
+
+- [#34](https://github.com/dotpressjs/dotpress/pull/34) [`682567a`](https://github.com/dotpressjs/dotpress/commit/682567a3260690b68e0c9e1ccf3124ec549548ae) Thanks [@renoguyon](https://github.com/renoguyon)! - The text version converted from the HTML lays out data tables in columns, such as an `mj-table`: their cells were run together. Layout tables, marked `role="presentation"` (MJML marks all of them), are still converted as blocks.
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.7
+
 ## 2.0.0-alpha.6
 
 ### Patch Changes

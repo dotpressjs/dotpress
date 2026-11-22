@@ -1,5 +1,18 @@
 # @dotpress/openapi
 
+## 2.0.0-alpha.7
+
+### Minor Changes
+
+- [#28](https://github.com/dotpressjs/dotpress/pull/28) [`6ac5808`](https://github.com/dotpressjs/dotpress/commit/6ac58085da76f349433bf01d1240c0e78c4df0a1) Thanks [@renoguyon](https://github.com/renoguyon)! - The API reference page sets its own Content Security Policy: the Scalar script, its inline script by hash, styles, and requests to the document and to its `servers`. It replaces the policy that a security middleware sets for the whole app before the routes, such as `helmet()`, which blocked the page.
+  
+  `ui.contentSecurityPolicy` adds sources to the directives of the page, or sets no policy with `false`.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.7
+
 ## 2.0.0-alpha.6
 
 ### Minor Changes

@@ -243,9 +243,13 @@ step('Installing the optional peer dependencies')
 // The oldest TypeScript supported, as documented in Installation: Zod 4
 // needs 5.5.
 const OLDEST_TYPESCRIPT = '~5.5.4'
+// The latest major, which `npm install -D typescript` installs. The
+// tooling of the repository stays on 6 (typescript-eslint).
+const LATEST_TYPESCRIPT = '^7.0.2'
 const tools = [
   `typescript@${rootPkg.devDependencies.typescript}`,
   `typescript-oldest@npm:typescript@${OLDEST_TYPESCRIPT}`,
+  `typescript-latest@npm:typescript@${LATEST_TYPESCRIPT}`,
   `@types/node@${rootPkg.devDependencies['@types/node']}`,
   'esbuild@^0.28.0',
 ]
@@ -266,6 +270,7 @@ const compilers = [
   { name: 'typescript', target: 'es2023' },
   // TypeScript 5.5 knows no es2023 target.
   { name: 'typescript-oldest', target: 'es2022' },
+  { name: 'typescript-latest', target: 'es2023' },
 ]
 const checks = compilers.flatMap((compiler) =>
   ['node16', 'bundler'].map((resolution) => ({ ...compiler, resolution }))

@@ -27,6 +27,7 @@ export type { Envelope } from './envelope.js'
 export {
   EventEmitError,
   EventPayloadError,
+  EventSendTimeoutError,
   EventsError,
   PartialSendError,
 } from './errors.js'

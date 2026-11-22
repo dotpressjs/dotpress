@@ -32,6 +32,25 @@ export class EventPayloadError extends EventsError {
   }
 }
 
+/**
+ * A transport did not answer within the `sendTimeout` of the bus: the error
+ * of its messages in `EventEmitError#failed`. The send may still complete
+ * later; `retry()` sends the same message ids, which queues that
+ * deduplicate ignore.
+ */
+export class EventSendTimeoutError extends EventsError {
+  override name = 'EventSendTimeoutError'
+
+  constructor(
+    /** Name of the transport (`default`, `edge`…). */
+    readonly transport: string,
+    /** The `sendTimeout` of the bus, in milliseconds. */
+    readonly timeout: number
+  ) {
+    super(`Transport "${transport}" did not answer within ${timeout} ms.`)
+  }
+}
+
 /** A message sent by `emit()`: one per listener. */
 export interface MessageRef {
   /**

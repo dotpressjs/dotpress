@@ -260,7 +260,7 @@ export const createSqsTransport = (options: SqsTransportOptions): Transport => {
 
   return {
     kind: 'aws-sqs',
-    send: async (envelopes, { delay }) => {
+    send: async (envelopes, { delay, signal }) => {
       if (delay !== undefined && delay > MAX_DELAY_SECONDS) {
         throw new RangeError(
           `SQS accepts delays of at most ${MAX_DELAY_SECONDS} seconds, got ${delay}.`
@@ -323,7 +323,8 @@ export const createSqsTransport = (options: SqsTransportOptions): Transport => {
             new SendMessageBatchCommand({
               QueueUrl: queueUrl,
               Entries: entries,
-            })
+            }),
+            ...(signal ? [{ abortSignal: signal }] : [])
           )) as { Failed?: { Id?: string; Code?: string; Message?: string }[] }
           for (const { Id, Code, Message } of result.Failed ?? []) {
             failed.push({

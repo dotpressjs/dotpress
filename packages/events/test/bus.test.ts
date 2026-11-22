@@ -9,9 +9,11 @@ import {
   defineListener,
   EventEmitError,
   EventPayloadError,
+  EventSendTimeoutError,
   EventsError,
   PartialSendError,
   type Envelope,
+  type Transport,
 } from '../src/index.js'
 import { messageId } from '../src/envelope.js'
 import {
@@ -544,6 +546,163 @@ describe('emit()', () => {
     })
   })
 
+  describe('send timeout', () => {
+    /** A transport that answers when told to, like a queue that is down. */
+    const createStalledTransport = () => {
+      const signals: AbortSignal[] = []
+      let sending: (() => void) | undefined
+      const sent = new Promise<void>((resolve) => (sending = resolve))
+      let answer: (() => void) | undefined
+      let fail: ((error: Error) => void) | undefined
+      const transport: Transport = {
+        kind: 'stalled',
+        send: (_envelopes, { signal }) => {
+          if (signal) signals.push(signal)
+          sending?.()
+          return new Promise<void>((resolve, reject) => {
+            answer = resolve
+            fail = reject
+          })
+        },
+      }
+      return {
+        transport,
+        signals,
+        /** Resolves when send() is called. */
+        sent,
+        answer: () => answer?.(),
+        fail: (error: Error) => fail?.(error),
+      }
+    }
+
+    it('fails the messages of a transport that does not answer', async () => {
+      const stalled = createStalledTransport()
+      const edge = createRecordingTransport()
+      const events = createEventBus({
+        transports: { default: stalled.transport, edge } as never,
+        listeners: [welcome, invalidate],
+        sendTimeout: '20ms',
+      })
+
+      const error = (await events
+        .emit(userCreated, { userId: '42' })
+        .catch((e: unknown) => e)) as EventEmitError
+      expect(error).toBeInstanceOf(EventEmitError)
+      expect(error.message).toBe(
+        'Event "user.created" not fully emitted: 1 of 2 messages failed (send-welcome-mail): Transport "default" did not answer within 20 ms.'
+      )
+      expect(error.sent).toEqual([
+        expect.objectContaining({ listener: 'invalidate-cache' }),
+      ])
+      const timeout = error.failed[0]?.error
+      expect(timeout).toBeInstanceOf(EventSendTimeoutError)
+      expect(timeout).toBeInstanceOf(EventsError)
+      expect(timeout).toMatchObject({
+        name: 'EventSendTimeoutError',
+        transport: 'default',
+        timeout: 20,
+      })
+      // The transport is told to stop.
+      expect(stalled.signals[0]?.aborted).toBe(true)
+      expect(stalled.signals[0]?.reason).toBe(timeout)
+
+      // The send fails late: ignored, no unhandled rejection.
+      stalled.fail(new Error('connection closed'))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+
+    it('sends the same messages again with retry()', async () => {
+      const stalled = createStalledTransport()
+      const events = createEventBus({
+        transport: stalled.transport,
+        listeners: [welcome],
+        sendTimeout: 0.02,
+      })
+      const error = (await events
+        .emit(userCreated, { userId: '42' })
+        .catch((e: unknown) => e)) as EventEmitError
+      // A late success of the abandoned send is ignored too.
+      stalled.answer()
+
+      const retried = error.retry()
+      stalled.answer()
+      await expect(retried).resolves.toMatchObject({
+        messages: [{ id: error.failed[0]?.id, listener: 'send-welcome-mail' }],
+      })
+    })
+
+    it('waits 10 seconds by default', async () => {
+      vi.useFakeTimers()
+      try {
+        const stalled = createStalledTransport()
+        const events = createEventBus({
+          transport: stalled.transport,
+          listeners: [welcome],
+        })
+        const emitted = events
+          .emit(userCreated, { userId: '42' })
+          .catch((e: unknown) => e)
+        // The message ids are computed before the send (Web Crypto).
+        await stalled.sent
+        await vi.advanceTimersByTimeAsync(9_999)
+        expect(stalled.signals[0]?.aborted).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        const error = (await emitted) as EventEmitError
+        expect(error.failed[0]?.error).toMatchObject({ timeout: 10_000 })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('waits without limit with false', async () => {
+      const stalled = createStalledTransport()
+      const events = createEventBus({
+        transport: stalled.transport,
+        listeners: [welcome],
+        sendTimeout: false,
+      })
+      const emitted = events.emit(userCreated, { userId: '42' })
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(stalled.signals).toEqual([])
+      stalled.answer()
+      await expect(emitted).resolves.toMatchObject({ messages: [{}] })
+    })
+
+    it('does not limit in-process transports', async () => {
+      const slow = defineListener(userCreated, {
+        name: 'slow',
+        handle: () => new Promise((resolve) => setTimeout(resolve, 40)),
+      })
+      const events = createEventBus({
+        transport: createSyncTransport(),
+        listeners: [slow],
+        sendTimeout: '10ms',
+      })
+      await expect(
+        events.emit(userCreated, { userId: '42' })
+      ).resolves.toMatchObject({ messages: [{ listener: 'slow' }] })
+    })
+
+    it('checks the option', () => {
+      const create = (sendTimeout: unknown) => () =>
+        createEventBus({
+          transport: createRecordingTransport(),
+          listeners: [welcome],
+          sendTimeout: sendTimeout as never,
+        })
+      expect(create(0)).toThrow(
+        'createEventBus(): sendTimeout must be a positive duration, or false.'
+      )
+      expect(create('soon')).toThrow(
+        'createEventBus(): sendTimeout must be a number of seconds'
+      )
+      expect(create(true)).toThrow(
+        'createEventBus(): sendTimeout must be a number of seconds'
+      )
+      expect(create('5s')).not.toThrow()
+    })
+  })
+
   describe('retry()', () => {
     it('sends the failed messages again, and only them', async () => {
       const aws = createRecordingTransport()
@@ -565,8 +724,11 @@ describe('emit()', () => {
 
       const result = await error.retry()
       const [failedCall, retryCall] = aws.send.mock.calls
-      expect(retryCall).toEqual(failedCall)
-      expect(retryCall?.[1]).toEqual({ delay: 30 })
+      expect(retryCall?.[0]).toEqual(failedCall?.[0])
+      expect(retryCall?.[1]).toEqual({
+        delay: 30,
+        signal: expect.any(AbortSignal),
+      })
       expect(retryCall?.[0].map(({ listener }) => listener)).toEqual([
         'send-welcome-mail',
         'geocode-user',

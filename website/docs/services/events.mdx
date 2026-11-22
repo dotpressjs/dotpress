@@ -127,6 +127,8 @@ try {
 
 A new failure throws a new `EventEmitError`, whose `sent` also lists the messages sent before, with its own `retry()`. The error does not expose the payload: it can be logged as is.
 
+A queue that cannot be reached does not always fail at once: a client may wait for the connection to come back. `emit()` waits 10 seconds at most for each transport (`sendTimeout` of `createEventBus()`, `false` for no limit); the messages of a transport that did not answer fail with an `EventSendTimeoutError`. A send given up this way may still complete later: `retry()` sends the same message ids, and listeners ignore duplicates by `id`.
+
 ### Emitting again: `emissionId`
 
 `retry()` only works in the process that emitted. Each call to `emit()` is a new emission, with new message ids: emitting again later (a job that replays an outbox, a webhook received twice) runs again the listeners whose message was already sent. To avoid that, pass an `emissionId`, the idempotency key of the emission. The message ids derive from it: the same `emissionId` gives the same ids, and listeners ignore the duplicates by `id`.

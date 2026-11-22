@@ -52,6 +52,7 @@ A handler throws to be retried.
 | `transports` | Instead of `transport`: transports by name, `default` for the events without `transport`. |
 | `logger` | Any logger with `info`, `warn` and `error`, and optionally `debug`. Silent by default. |
 | `onFailure` | Failures of the listeners run by the `sync` and `memory` transports. |
+| `sendTimeout` | How long `emit()` waits for a transport: a number of seconds or a duration. 10 seconds by default; `false` waits without limit. Beyond it, the messages of the transport fail with an `EventSendTimeoutError`. The `sync` and `memory` transports are not limited. |
 
 The bus checks at startup that every listener has its transport. Names other than `default` are declared for type checking:
 
@@ -148,13 +149,14 @@ Payloads are never logged.
 | `TypeError` | Invalid options of `defineEvent()`, `defineListener()`, `createEventBus()`, `emit()`… |
 | `EventPayloadError` | At `emit()`: the payload does not match the schema, or is not serializable as JSON. Fields: `event`, `issues`. |
 | `EventEmitError` | Some messages could not be sent. Fields: `sent`, `failed`, `cause`. `retry()` sends the failed messages again, with the same ids: it resolves like `emit()`, or throws a new `EventEmitError` whose `sent` adds up the attempts. |
+| `EventSendTimeoutError` | In `EventEmitError#failed`: a transport did not answer within `sendTimeout`. Fields: `transport`, `timeout` (milliseconds). The send may still complete later. |
 | `PartialSendError` | For transport authors: some messages of a `send()` call failed. `failed` lists them: `{ id, error }`, by message id. |
 
 The error classes extend `EventsError`.
 
 ## Custom transports
 
-A transport has a `kind`, a `send(envelopes, { delay })` method, where `delay` is a number of whole seconds, and optionally `close()`. A source has a `kind` and a `consume(worker, { signal, logger })` method. Envelopes are plain JSON objects:
+A transport has a `kind`, a `send(envelopes, { delay, signal })` method, where `delay` is a number of whole seconds and `signal` is aborted when the bus stops waiting (`sendTimeout`), and optionally `close()`. A source has a `kind` and a `consume(worker, { signal, logger })` method. Envelopes are plain JSON objects:
 
 ```ts
 { v: 1, id, emissionId, event, listener, payload, emittedAt, metadata }

@@ -9,11 +9,12 @@ import { messageId, type Envelope } from './envelope.js'
 import {
   EventEmitError,
   EventPayloadError,
+  EventSendTimeoutError,
   PartialSendError,
   type FailedMessage,
   type MessageRef,
 } from './errors.js'
-import { toSeconds, type Duration } from './duration.js'
+import { toMilliseconds, toSeconds, type Duration } from './duration.js'
 import { checkLogger, silentLogger, type EventsLogger } from './logger.js'
 import { inProcessOf, isTransport, type Transport } from './transport.js'
 import { createWorker, listenersByName, type FailureHook } from './worker.js'
@@ -32,6 +33,15 @@ export type EventBusOptions = {
    * `memory`). Workers have their own.
    */
   onFailure?: FailureHook | undefined
+  /**
+   * How long `emit()` waits for a transport, such as a queue that cannot
+   * be reached: a number of seconds, or a duration like `'5s'`. Beyond it,
+   * the messages of this transport fail with an `EventSendTimeoutError`,
+   * and `emit()` throws an `EventEmitError`. 10 seconds by default; `false`
+   * waits without limit. In-process transports (`sync`, `memory`) are not
+   * limited.
+   */
+  sendTimeout?: Duration | false | undefined
 } & (
   | {
       /** The transport of every event. */
@@ -105,7 +115,9 @@ const OPTIONS = new Set([
   'onFailure',
   'transport',
   'transports',
+  'sendTimeout',
 ])
+const DEFAULT_SEND_TIMEOUT = 10_000
 const METADATA_KEY = /^[A-Za-z0-9._-]{1,128}$/
 const LINE_BREAK = /[\r\n]/
 const CONTROL = /\p{Cc}/u
@@ -232,6 +244,17 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
   if (onFailure !== undefined && typeof onFailure !== 'function') {
     throw new TypeError(`${label}: onFailure must be a function.`)
   }
+  const sendTimeout =
+    options.sendTimeout === false
+      ? undefined
+      : options.sendTimeout === undefined
+        ? DEFAULT_SEND_TIMEOUT
+        : toMilliseconds(options.sendTimeout, `${label}: sendTimeout`)
+  if (sendTimeout === 0) {
+    throw new TypeError(
+      `${label}: sendTimeout must be a positive duration, or false.`
+    )
+  }
 
   // Transports by name.
   if (
@@ -306,6 +329,38 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
   const listenersOf = (event: string) =>
     [...listeners.values()].filter((listener) => listener.event.name === event)
 
+  // A send limited to sendTimeout. An abandoned send may still settle: its
+  // result is ignored.
+  const sendWithin = async (
+    name: string,
+    transport: Transport,
+    envelopes: readonly Envelope[],
+    delay: number | undefined
+  ) => {
+    if (sendTimeout === undefined || inProcessOf(transport)) {
+      return transport.send(envelopes, { delay })
+    }
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new EventSendTimeoutError(name, sendTimeout)
+        controller.abort(error)
+        reject(error)
+      }, sendTimeout)
+    })
+    const sending = transport.send(envelopes, {
+      delay,
+      signal: controller.signal,
+    })
+    sending.catch(() => {})
+    try {
+      await Promise.race([sending, expired])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   // One send() per transport, in parallel.
   const sendMessages = async (
     messages: readonly Message[],
@@ -321,9 +376,11 @@ export const createEventBus = (options: EventBusOptions): EventBus => {
     await Promise.all(
       [...groups].map(async ([name, group]) => {
         try {
-          await (transports.get(name) as Transport).send(
+          await sendWithin(
+            name,
+            transports.get(name) as Transport,
             group.map(({ envelope }) => envelope),
-            { delay }
+            delay
           )
           for (const { ref } of group) sent.push(ref)
         } catch (error) {

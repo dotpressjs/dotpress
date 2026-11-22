@@ -330,6 +330,22 @@ describe('SQS transport', () => {
     ])
   })
 
+  it('gives the abort signal of the bus to the SQS client', async () => {
+    const send = vi.fn(async () => ({}))
+    const events = createEventBus({
+      transport: createSqsTransport({
+        queueUrl: 'https://sqs.test/q',
+        client: { send },
+      }),
+      listeners: [listenerOf('a', () => {})],
+      sendTimeout: '5s',
+    })
+    await events.emit(userCreated, { userId: '1' })
+    expect(send).toHaveBeenCalledWith(expect.anything(), {
+      abortSignal: expect.any(AbortSignal),
+    })
+  })
+
   it('reports errors of the API', async () => {
     const queue = newQueue()
     server.failNext(

@@ -1,5 +1,12 @@
 # @dotpress/cache
 
+## 2.0.0-alpha.8
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.8
+
 ## 2.0.0-alpha.7
 
 ### Patch Changes

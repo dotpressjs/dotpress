@@ -1,6 +1,6 @@
 {
   "name": "@dotpress/adapter-hono",
-  "version": "2.0.0-alpha.7",
+  "version": "2.0.0-alpha.8",
   "description": "Hono adapter for Dotpress, on Node.js and AWS Lambda",
   "author": "Renaud Guyon",
   "license": "MIT",

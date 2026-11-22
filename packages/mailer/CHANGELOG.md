@@ -1,5 +1,13 @@
 # @dotpress/mailer
 
+## 2.0.0-alpha.8
+
+### Patch Changes
+
+- [#41](https://github.com/dotpressjs/dotpress/pull/41) [`485f9f6`](https://github.com/dotpressjs/dotpress/commit/485f9f606961d4785c913eb11f4e4afe51edc7cf) Thanks [@renoguyon](https://github.com/renoguyon)! - The SES provider sends a message with inline attachments as raw content, built with its images next to the HTML version in a `multipart/related` part. With simple content, SES placed them apart: Thunderbird, among others, showed the image at the end of the message, and its alternative text in the HTML.
+- Updated dependencies []:
+  - @dotpress/core@2.0.0-alpha.8
+
 ## 2.0.0-alpha.7
 
 ### Patch Changes

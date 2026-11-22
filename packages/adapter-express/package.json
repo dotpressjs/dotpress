@@ -1,6 +1,6 @@
 {
   "name": "@dotpress/adapter-express",
-  "version": "2.0.0-alpha.7",
+  "version": "2.0.0-alpha.8",
   "description": "Express 4 and 5 adapter for Dotpress",
   "author": "Renaud Guyon",
   "license": "MIT",

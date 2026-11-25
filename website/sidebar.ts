@@ -13,6 +13,7 @@ const guides: SidebarGroup[] = [
       { text: 'Installation', link: '/getting-started/installation' },
       { text: 'Quickstart', link: '/getting-started/quickstart' },
       { text: 'Project structure', link: '/getting-started/project-structure' },
+      { text: 'AI assistants', link: '/getting-started/ai-assistants' },
     ],
   },
   {

@@ -1,6 +1,7 @@
 import { defineConfig } from '@rspress/core'
 import { pluginTwoslash } from '@rspress/plugin-twoslash'
 import ts from 'typescript'
+import { pluginLlms, renderLlmsTxt } from './llms.ts'
 import { sidebar } from './sidebar.ts'
 
 const REPOSITORY = 'https://github.com/dotpressjs/dotpress'
@@ -21,6 +22,9 @@ export default defineConfig({
     height: 25,
   },
   icon: '/favicon.ico',
+  // llms.txt, llms-full.txt and a Markdown version of each page, for AI
+  // assistants: see llms.ts.
+  llms: { llmsTxt: renderLlmsTxt },
   head: [
     [
       'link',
@@ -50,6 +54,7 @@ export default defineConfig({
     ],
   ],
   plugins: [
+    pluginLlms(),
     // The code blocks marked `twoslash` are compiled against the packages of
     // the workspace: a type error fails the build, and the reader sees the
     // inferred types on hover.
@@ -89,6 +94,8 @@ export default defineConfig({
       { text: 'Examples', link: '/examples/', activeMatch: '^/examples/' },
     ],
     sidebar,
+    // Copy the page in Markdown, or open it in an assistant.
+    llmsUI: { placement: 'outline' },
     socialLinks: [{ icon: 'github', mode: 'link', content: REPOSITORY }],
     footer: { message: 'Released under the MIT License.' },
   },

@@ -59,7 +59,7 @@ defineRoute({
   schema: (z) => ({
     response: z.object({ id: z.string(), email: z.email() }),
   }),
-  handler: () => ({ id: 'u_1' }),
+  handler: () => ({ id: 'u_1' }), // Error: `email` is missing
 })
 ```
 

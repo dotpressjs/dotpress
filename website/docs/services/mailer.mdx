@@ -36,7 +36,7 @@ const invoiceReady = defineTemplate({
 
 await mailer.send(invoiceReady, {
   to: 'ada@example.com',
-  data: { number: 'F-2026-001', amount: '€42.00' },
+  data: { number: 'F-2026-001', amount: '€42.00' }, // Error: `url` is missing
 })
 ```
 
